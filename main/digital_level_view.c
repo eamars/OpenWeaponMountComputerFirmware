@@ -1,0 +1,418 @@
+#include <math.h>
+
+#include "esp_log.h"
+#include "esp_err.h"
+#include "nvs.h"
+
+#include "digital_level_view.h"
+#include "app_cfg.h"
+#include "bno085.h"
+#include "esp_lvgl_port.h"
+#include "countdown_timer.h"
+
+#include "freertos/task.h"
+
+#define TAG "DigitalLevelView"
+#define DIGITAL_LEVEL_VIEW_NAMESPACE "DLV"
+
+
+
+digital_level_view_config_t digital_level_view_config;
+const digital_level_view_config_t digital_level_view_config_default = {
+    .roll_display_gain = 1.0f,
+    .pitch_display_gain = 0.1f, // Default gain of 1/10
+    .delta_level_threshold = 1.0f, // Default level threshold
+    .user_roll_rad_offset = 0.0,       // Default to no offset
+    .colour_left_tilt_indicator = LV_COLOR_MAKE(0x00, 0x96, 0x88),              // Light blue
+    .colour_right_tilt_indicator = LV_COLOR_MAKE(0xFF, 0xC1, 0x07),             // Amber
+    .colour_horizontal_level_indicator = LV_COLOR_MAKE(0x4C, 0xAF, 0x50),       // Light green
+    .colour_foreground = LV_COLOR_MAKE(0x00, 0x00, 0x00)                        // Black
+};
+
+lv_obj_t * tilt_angle_label = NULL;
+lv_obj_t * horizontal_indicator_line_left = NULL;
+lv_obj_t * horizontal_indicator_line_right = NULL;
+lv_obj_t * digital_level_bg_canvas = NULL;
+lv_obj_t * countdown_timer_arc = NULL;
+lv_obj_t * countdown_timer_label = NULL;
+
+static TaskHandle_t sensor_event_poller_task_handle;
+static SemaphoreHandle_t sensor_event_poller_task_control;
+extern bno085_ctx_t bno085_dev;
+countdown_timer_t countdown_timer;
+
+// NOT threadsafe copy of roll and pitch to be shared within the module
+static float roll, pitch;
+
+
+void tilt_angle_button_short_press_cb(lv_event_t * e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_SHORT_CLICKED) {
+        ESP_LOGI(TAG, "Short clicked");
+
+        // Take a snapshot of current roll and use that as offset
+        digital_level_view_config.user_roll_rad_offset = roll;
+        digital_level_view_config.user_roll_rad_offset = -digital_level_view_config.user_roll_rad_offset;  // take negative
+
+        ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
+
+        // // Write to NVS
+        // nvs_handle_t handle;
+        // esp_err_t err;
+        // err = nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle);
+        // ESP_ERROR_CHECK(err);
+        // err = nvs_set_blob(handle, "cfg", &digital_level_view_config, sizeof(digital_level_view_config));
+
+        // ESP_LOGI(TAG, "Write to NVS");
+    }
+}
+
+
+ void update_timer_cb(void *p, int time_left_sec) {
+    // ESP_LOGI(TAG, "Time Left :%d", time_left_sec);
+    if (lvgl_port_lock(0)) {
+        lv_label_set_text_fmt(countdown_timer_label, "%d", time_left_sec);
+        lv_arc_set_value(countdown_timer_arc, time_left_sec);
+        lvgl_port_unlock();
+    }
+    
+ }
+
+
+void countdown_timer_button_short_press_event_cb(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_SHORT_CLICKED) {
+        countdown_timer_state_t current_state = get_countdown_timer_state(&countdown_timer);
+        ESP_LOGI(TAG, "Current state %d", current_state);
+        switch (current_state)
+        {
+        case COUNTDOWN_TIMER_EXPIRED:
+            countdown_timer_start(&countdown_timer);
+
+            // Update UI
+            if (lvgl_port_lock(20)) {
+                lv_arc_set_range(countdown_timer_arc, 0, countdown_timer.countdown_time_sec);
+                lvgl_port_unlock();
+            }
+
+            break;
+        case COUNTDOWN_TIMER_PAUSE:
+            countdown_timer_continue(&countdown_timer);
+            break;
+
+        case COUNTODWN_TIMER_RUN:
+            countdown_timer_pause(&countdown_timer);
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+void countdown_timer_button_long_press_event_cb(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_LONG_PRESSED) {
+        countdown_timer_start(&countdown_timer);
+        if (lvgl_port_lock(20)) {
+            lv_arc_set_range(countdown_timer_arc, 0, countdown_timer.countdown_time_sec);
+            lvgl_port_unlock();
+        }
+    }
+}
+
+
+void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
+    float max_delta_vertical_shift = DISP_V_RES_PIXEL/ 4.0;  // maximum vertical shift for the indicator lines
+    float max_delta_vertical_vertex = DISP_V_RES_PIXEL / 2.0f - 20;  // Maximum vertical verticies for the triangle
+
+    // -------------------------
+    // Update line location based on pitch
+    // -------------------------
+    float delta_vertical_shift = -tanf(pitch_rad) * (DISP_V_RES_PIXEL / 2);
+    
+    // Apply gain to the pitch
+    delta_vertical_shift *= digital_level_view_config.pitch_display_gain;
+
+    // Limit the vertical shift to a maximum value
+    if (delta_vertical_shift > max_delta_vertical_shift) delta_vertical_shift = max_delta_vertical_shift;
+    if (delta_vertical_shift < -max_delta_vertical_shift) delta_vertical_shift = -max_delta_vertical_shift;
+
+    // Update line location
+    lv_obj_set_pos(horizontal_indicator_line_left, 0, delta_vertical_shift);
+    lv_obj_set_pos(horizontal_indicator_line_right, 0, delta_vertical_shift);
+
+
+    // Calculate vertical location for the polygon (drawn as triangle)
+    float vertical_base_position = DISP_V_RES_PIXEL / 2 + delta_vertical_shift;
+
+    // -------------------------
+    // Update background canvas
+    // -------------------------
+    // Based on input roll, fill the background canvas with different colors
+    float threshold_rad = DEG_TO_RAD(digital_level_view_config.delta_level_threshold);
+    if (roll_rad < -threshold_rad) {
+        lv_canvas_fill_bg(digital_level_bg_canvas, digital_level_view_config.colour_left_tilt_indicator, LV_OPA_COVER);
+    }
+    else if (roll_rad > threshold_rad) {
+        lv_canvas_fill_bg(digital_level_bg_canvas, digital_level_view_config.colour_right_tilt_indicator, LV_OPA_COVER);
+    }
+    else {
+        lv_canvas_fill_bg(digital_level_bg_canvas, digital_level_view_config.colour_horizontal_level_indicator, LV_OPA_COVER);
+    }
+
+    // Draw new layer on the canvas
+    lv_layer_t layer;
+    lv_canvas_init_layer(digital_level_bg_canvas, &layer);
+
+    // Special case: If below than threshold, draw rectangle instead
+    if (fabsf(roll_rad) < threshold_rad) {
+        // Draw rectangle
+        lv_draw_rect_dsc_t rect_dsc;
+        lv_draw_rect_dsc_init(&rect_dsc);
+        rect_dsc.bg_color = digital_level_view_config.colour_horizontal_level_indicator;
+        lv_area_t coords = {0, DISP_V_RES_PIXEL/ 2, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL};
+        lv_draw_rect(&layer, &rect_dsc, &coords);
+    }
+    else {
+        // Calculate verticies for the triangle
+        float dy = fabsf(tanf(roll_rad) * (DISP_H_RES_PIXEL / 2));
+
+        // Apply gain
+        dy *= digital_level_view_config.roll_display_gain;
+
+        // Limit the vertical shift to a maximum value
+        if (dy > max_delta_vertical_vertex) dy = max_delta_vertical_vertex;
+
+        // Draw triangle
+        lv_draw_triangle_dsc_t tri_dsc;
+        lv_draw_triangle_dsc_init(&tri_dsc);
+        tri_dsc.color = digital_level_view_config.colour_foreground;
+
+        // Depending on the roll direction, set the points of the triangle
+        if (roll_rad < 0) {
+            tri_dsc.p[0].x = 0;
+            tri_dsc.p[0].y = vertical_base_position - dy;
+        }
+        else {
+            tri_dsc.p[0].x = DISP_H_RES_PIXEL;
+            tri_dsc.p[0].y = vertical_base_position - dy;
+        }
+        tri_dsc.p[1].x = DISP_H_RES_PIXEL;
+        tri_dsc.p[1].y = vertical_base_position + dy;
+        tri_dsc.p[2].x = 0;
+        tri_dsc.p[2].y = vertical_base_position + dy;
+        lv_draw_triangle(&layer, &tri_dsc);
+
+        // Draw rectangle
+        lv_draw_rect_dsc_t rect_dsc;
+        lv_draw_rect_dsc_init(&rect_dsc);
+        rect_dsc.bg_color = digital_level_view_config.colour_foreground;
+        lv_area_t coords = {0, vertical_base_position + dy, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL};
+        lv_draw_rect(&layer, &rect_dsc, &coords);
+    }
+    lv_canvas_finish_layer(digital_level_bg_canvas, &layer);
+ }
+
+
+ void update_roll_deg_indicator(float roll_rad) {
+    lv_label_set_text_fmt(tilt_angle_label, "%d", (int) roundf(RAD_TO_DEG(roll_rad)));
+}
+
+
+
+ void update_digital_level_view(float roll_rad, float pitch_rad)
+ {
+    // Update the tilt angle label
+    update_roll_deg_indicator(roll_rad);
+
+    // Update the canvas drawing
+    update_tilt_canvas_draw(roll_rad, pitch_rad);
+ }
+
+
+ static void sensor_event_poller_task(void *p) {
+    TickType_t last_poll_tick = xTaskGetTickCount();
+
+    while (1) {
+        // Block wait for the task is allowed to run
+        xSemaphoreTake(sensor_event_poller_task_control, portMAX_DELAY);
+
+        // Wait for data
+        bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &roll, &pitch, true);
+
+        // Redraw the screen
+        if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
+            update_digital_level_view(roll + digital_level_view_config.user_roll_rad_offset, pitch);
+            lvgl_port_unlock();
+        }
+
+        xSemaphoreGive(sensor_event_poller_task_control);  // allow the task to run
+
+        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(20));
+    }
+}
+
+void create_roll_deg_indicator(lv_obj_t * parent) {
+    // Create button
+    static lv_style_t btn_style;  // NOTE: "static" is required to hold the style within the memory
+    lv_style_init(&btn_style);
+    lv_style_set_bg_opa(&btn_style, LV_OPA_TRANSP);
+    lv_style_set_border_width(&btn_style, 2);
+    lv_style_set_border_color(&btn_style, lv_color_white());
+    lv_style_set_shadow_width(&btn_style, 0);
+
+    lv_obj_t * tilt_angle_button = lv_btn_create(parent);
+    lv_obj_add_style(tilt_angle_button, &btn_style, LV_PART_MAIN);
+    lv_obj_set_width(tilt_angle_button, 80);
+    lv_obj_add_event_cb(tilt_angle_button, tilt_angle_button_short_press_cb, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_align(tilt_angle_button, LV_ALIGN_CENTER, 0, -120);
+    lv_obj_remove_flag(tilt_angle_button, LV_OBJ_FLAG_PRESS_LOCK);
+
+    // Create label on the button
+    tilt_angle_label = lv_label_create(tilt_angle_button);
+    lv_label_set_text(tilt_angle_label, "--");
+    lv_obj_set_style_text_color(tilt_angle_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(tilt_angle_label, &lv_font_montserrat_32, LV_PART_MAIN);
+    lv_obj_align(tilt_angle_label, LV_ALIGN_CENTER, 0, 0);
+}
+
+void create_countdown_timer(lv_obj_t * parent) {
+    /* 
+    For arc, the main is the background, indicator is the foreground
+    */
+    lv_obj_t * countdown_timer_button = lv_btn_create(parent);
+    lv_obj_set_style_radius(countdown_timer_button, LV_RADIUS_CIRCLE, 0); // Make it fully round
+    lv_obj_set_style_bg_opa(countdown_timer_button, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(countdown_timer_button, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_color(countdown_timer_button, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(countdown_timer_button, 0, LV_PART_MAIN);
+    lv_obj_set_size(countdown_timer_button, 130, 130);
+    lv_obj_center(countdown_timer_button);
+
+    lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_short_press_event_cb, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_long_press_event_cb, LV_EVENT_LONG_PRESSED, NULL);
+
+    countdown_timer_arc = lv_arc_create(countdown_timer_button);
+    lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
+    // lv_obj_set_style_arc_color(countdown_timer, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(countdown_timer_arc, LV_OPA_TRANSP, LV_PART_MAIN);
+
+    // lv_obj_set_size(countdown_timer, 130, 130);
+    lv_obj_set_style_arc_width(countdown_timer_arc, 10, 0);
+    lv_arc_set_rotation(countdown_timer_arc, 270);
+    lv_arc_set_bg_angles(countdown_timer_arc, 0, 360);
+    lv_obj_remove_style(countdown_timer_arc, NULL, LV_PART_KNOB);   /*Be sure the knob is not displayed*/
+    lv_obj_remove_flag(countdown_timer_arc, LV_OBJ_FLAG_CLICKABLE);  /*To not allow adjusting by click*/
+
+    lv_obj_center(countdown_timer_arc);
+
+    countdown_timer_label = lv_label_create(countdown_timer_button);
+
+    lv_label_set_text(countdown_timer_label, "0");
+    lv_obj_set_style_text_color(countdown_timer_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(countdown_timer_label, &lv_font_montserrat_32, LV_PART_MAIN);
+    lv_obj_align(countdown_timer_label, LV_ALIGN_CENTER, 0, 0);
+}
+
+void create_digital_level_layout(lv_obj_t *parent)
+{
+    create_roll_deg_indicator(parent);
+    create_countdown_timer(parent);
+
+    // Create two lines on both side of the screen to indicate the horizontal level
+    static lv_style_t line_style;
+    lv_style_init(&line_style);
+    lv_style_set_line_width(&line_style, 8);
+    lv_style_set_line_color(&line_style, lv_color_white());
+
+    horizontal_indicator_line_left = lv_line_create(parent);
+    horizontal_indicator_line_right = lv_line_create(parent);
+
+    static lv_point_precise_t line_points[] = { { 0, 0 }, { 10, 0 } };
+    lv_line_set_points(horizontal_indicator_line_left, line_points, 2); /*Set the points*/
+    lv_obj_add_style(horizontal_indicator_line_left, &line_style, LV_PART_MAIN);
+    lv_obj_align(horizontal_indicator_line_left, LV_ALIGN_LEFT_MID, 5, 0);
+
+    lv_line_set_points(horizontal_indicator_line_right, line_points, 2); /*Set the points*/
+    lv_obj_add_style(horizontal_indicator_line_right, &line_style, LV_PART_MAIN);
+    lv_obj_align(horizontal_indicator_line_right, LV_ALIGN_RIGHT_MID, -5, 0);
+}
+
+void create_digital_level_view(lv_obj_t *parent)
+{
+    esp_err_t err;
+
+    // Read configuration from NVS
+    ESP_LOGI(TAG, "Read tilt_information_overlay_config");
+    nvs_handle_t handle;
+    err = nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle);
+    ESP_ERROR_CHECK(err);
+
+    size_t required_size = sizeof(digital_level_view_config);
+    err = nvs_get_blob(handle, "cfg", &digital_level_view_config, &required_size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(TAG, "Initialize digital_level_view_config with default values");
+
+        // Initialize with default values
+        memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
+
+        // Write to NVS
+        err = nvs_set_blob(handle, "cfg", &digital_level_view_config, required_size);
+        ESP_ERROR_CHECK(err);
+        err = nvs_commit(handle);
+        ESP_ERROR_CHECK(err);
+    } else {
+        ESP_ERROR_CHECK(err);
+    }
+
+    // create canvas for background drawing
+    LV_DRAW_BUF_DEFINE_STATIC(draw_buf, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, LV_COLOR_FORMAT_RGB565);
+    LV_DRAW_BUF_INIT_STATIC(draw_buf);
+
+    // Create a canvas and initialize its palette
+    digital_level_bg_canvas = lv_canvas_create(parent);
+    lv_canvas_set_draw_buf(digital_level_bg_canvas, &draw_buf);
+    lv_canvas_fill_bg(digital_level_bg_canvas, digital_level_view_config.colour_horizontal_level_indicator, LV_OPA_COVER);
+    lv_obj_center(digital_level_bg_canvas);
+
+    // Create overlays
+    create_digital_level_layout(parent);
+
+    // Set initial value
+    update_digital_level_view(DEG_TO_RAD(0), DEG_TO_RAD(0));
+
+    // Create event poller task 
+    sensor_event_poller_task_control = xSemaphoreCreateBinary();
+    BaseType_t rtos_return = xTaskCreate(
+        sensor_event_poller_task, 
+        "dlv_poller", 
+        SENSOR_EVENT_POLLER_TASK_STACK,
+        NULL,
+        SENSOR_EVENT_POLLER_TASK_PRIORITY,
+        &sensor_event_poller_task_handle
+    );
+    if (rtos_return != pdPASS) {
+        ESP_LOGE(TAG, "Failed to allocate memory for sensor_poller");
+        ESP_ERROR_CHECK(ESP_FAIL);
+    }
+
+
+    // Initialize timer
+    countdown_timer.timer_update_cb = update_timer_cb;
+    countdown_timer.countdown_time_sec = 120;
+    countdown_timer_init(&countdown_timer);
+    lv_arc_set_range(countdown_timer_arc, 0, countdown_timer.countdown_time_sec);
+}
+
+
+void enable_digital_level_view(bool enable) {
+    ESP_LOGI(TAG, "Digital Level View %d", enable);
+    if (enable) {
+        xSemaphoreGive(sensor_event_poller_task_control);
+    }
+    else {
+        xSemaphoreTake(sensor_event_poller_task_control, portMAX_DELAY);
+    }
+}
+
+

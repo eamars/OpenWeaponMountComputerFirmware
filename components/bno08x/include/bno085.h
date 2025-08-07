@@ -1,0 +1,79 @@
+#ifndef BNO085_H
+#define BNO085_H
+
+#include <math.h>
+
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#include "freertos/timers.h"
+
+#include "driver/i2c_master.h"  
+#include "driver/uart.h"
+#include "sh2.h"
+#include "sh2_SensorValue.h"
+
+#define BNO085_SENSOR_POLLER_TASK_PRIORITY 2  // low priority for high frequency poller
+#define BNO085_SENSOR_POLLER_TASK_STACK 4096
+#define BNO085_SENSOR_POLLER_PERIOD_MS 10
+
+#define DEG_TO_RAD(deg) ((deg) * M_PI / 180.0f)
+#define RAD_TO_DEG(rad) ((rad) * 180.0f / M_PI)
+
+
+typedef struct {
+    sh2_SensorId_t sensor_id;
+    uint32_t interval_ms;
+} sensor_config_t;
+
+
+typedef struct {
+    sh2_Hal_t _HAL; // SH2 HAL interface -> Align the memory with the context structure allowing better type casting
+
+    QueueHandle_t sensor_value_queue;
+    TaskHandle_t sensor_poller_task_handle;
+
+    sensor_config_t enabled_sensor_report_list[SH2_MAX_SENSOR_EVENT_LEN];
+
+    // Implement specific atributes
+    i2c_master_dev_handle_t dev_handle;
+    int rst_pin;
+    int int_pin;
+    
+} bno085_ctx_t;
+
+
+/**
+ * @brief Initialize the BNO085 sensor.
+ *
+ * @param ctx Pointer to the BNO085 context.
+ * @return esp_err_t ESP_OK on success, error code otherwise.
+ */
+esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle);
+
+/**
+ * @brief Enable BNO085 report.
+ *
+ * @param ctx Pointer to the BNO085 context.
+ * @return esp_err_t ESP_OK on success, error code otherwise.
+ */
+esp_err_t bno085_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t interval_ms);
+
+
+/**
+ * @brief Read BNO085 event
+ *
+ * @param ctx Pointer to the BNO085 context.
+ * @return esp_err_t ESP_OK on success, error code otherwise.
+ */
+esp_err_t bno085_wait_for_event(bno085_ctx_t *ctx, sh2_SensorValue_t *sensor_value, bool block_wait);
+
+esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, float *roll, float *pitch, bool block_wait);
+
+
+// Copied from https://github.com/sparkfun/SparkFun_BNO08x_Arduino_Library/blob/main/src/SparkFun_BNO08x_Arduino_Library.cpp
+float q_to_roll_sf(float r, float i, float j, float k);
+float q_to_pitch_sf(float r, float i, float j, float k);
+float q_to_yaw_sf(float r, float i, float j, float k);
+
+
+#endif // BNO085_H
