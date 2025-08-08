@@ -35,6 +35,7 @@ lv_obj_t * horizontal_indicator_line_right = NULL;
 lv_obj_t * digital_level_bg_canvas = NULL;
 lv_obj_t * countdown_timer_arc = NULL;
 lv_obj_t * countdown_timer_label = NULL;
+lv_obj_t * dope_bar = NULL;
 
 static TaskHandle_t sensor_event_poller_task_handle;
 static SemaphoreHandle_t sensor_event_poller_task_control;
@@ -68,11 +69,14 @@ void tilt_angle_button_short_press_cb(lv_event_t * e) {
 }
 
 
- void update_timer_cb(void *p, int time_left_sec) {
-    // ESP_LOGI(TAG, "Time Left :%d", time_left_sec);
+ void update_timer_cb(void *p, int time_left_ms) {
+    int time_left_sec = (int) ceilf(time_left_ms / 1000.0);
+    int percentage = (int) ceilf(time_left_ms * 100.0 / countdown_timer.countdown_time_ms);
+
+    // Calculate the percentage 
     if (lvgl_port_lock(0)) {
         lv_label_set_text_fmt(countdown_timer_label, "%d", time_left_sec);
-        lv_arc_set_value(countdown_timer_arc, time_left_sec);
+        lv_arc_set_value(countdown_timer_arc, percentage);
         lvgl_port_unlock();
     }
     
@@ -88,12 +92,6 @@ void countdown_timer_button_short_press_event_cb(lv_event_t *e) {
         {
         case COUNTDOWN_TIMER_EXPIRED:
             countdown_timer_start(&countdown_timer);
-
-            // Update UI
-            if (lvgl_port_lock(20)) {
-                lv_arc_set_range(countdown_timer_arc, 0, countdown_timer.countdown_time_sec);
-                lvgl_port_unlock();
-            }
 
             break;
         case COUNTDOWN_TIMER_PAUSE:
@@ -113,10 +111,6 @@ void countdown_timer_button_long_press_event_cb(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_LONG_PRESSED) {
         countdown_timer_start(&countdown_timer);
-        if (lvgl_port_lock(20)) {
-            lv_arc_set_range(countdown_timer_arc, 0, countdown_timer.countdown_time_sec);
-            lvgl_port_unlock();
-        }
     }
 }
 
@@ -281,7 +275,7 @@ void create_countdown_timer(lv_obj_t * parent) {
     For arc, the main is the background, indicator is the foreground
     */
     lv_obj_t * countdown_timer_button = lv_btn_create(parent);
-    lv_obj_set_style_radius(countdown_timer_button, LV_RADIUS_CIRCLE, 0); // Make it fully round
+    // lv_obj_set_style_radius(countdown_timer_button, LV_RADIUS_CIRCLE, 0); // Make it fully round
     lv_obj_set_style_bg_opa(countdown_timer_button, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(countdown_timer_button, 0, LV_PART_MAIN);
     lv_obj_set_style_border_color(countdown_timer_button, lv_color_white(), LV_PART_MAIN);
@@ -303,7 +297,7 @@ void create_countdown_timer(lv_obj_t * parent) {
     lv_arc_set_bg_angles(countdown_timer_arc, 0, 360);
     lv_obj_remove_style(countdown_timer_arc, NULL, LV_PART_KNOB);   /*Be sure the knob is not displayed*/
     lv_obj_remove_flag(countdown_timer_arc, LV_OBJ_FLAG_CLICKABLE);  /*To not allow adjusting by click*/
-
+    lv_arc_set_range(countdown_timer_arc, 0, 100);  // 100 divisions for the full arc
     lv_obj_center(countdown_timer_arc);
 
     countdown_timer_label = lv_label_create(countdown_timer_button);
@@ -314,10 +308,75 @@ void create_countdown_timer(lv_obj_t * parent) {
     lv_obj_align(countdown_timer_label, LV_ALIGN_CENTER, 0, 0);
 }
 
+
+lv_obj_t * create_dope_card(lv_obj_t *parent, char *target_identifier, char *dope) {
+
+    lv_obj_t * column_layout = lv_obj_create(parent);
+    // TODO: Layout needed to be fixed
+    // lv_obj_set_flex_flow(column_layout, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_size(column_layout, 70, 55);
+
+    lv_obj_set_style_pad_top(column_layout, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(column_layout, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(column_layout, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(column_layout, 0, LV_PART_MAIN);
+
+    // set transparent background and border
+    lv_obj_set_style_bg_opa(column_layout, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(column_layout, 0, LV_PART_MAIN);
+
+    // Disable scroll 
+    lv_obj_remove_flag(column_layout, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Add target identifier
+    lv_obj_t *target_identifer_label = lv_label_create(column_layout);
+    lv_label_set_text_static(target_identifer_label, target_identifier);
+    lv_obj_set_style_text_font(target_identifer_label, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(target_identifer_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_center(target_identifer_label);
+    lv_obj_align(target_identifer_label, LV_ALIGN_TOP_MID, 0, 0);
+
+
+    lv_obj_t *dope_label = lv_label_create(column_layout);
+    lv_label_set_text_static(dope_label, dope);
+    lv_obj_set_style_text_color(dope_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(dope_label, &lv_font_montserrat_32, LV_PART_MAIN);
+    lv_obj_align(dope_label, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+
+    return column_layout;
+}
+
+void create_dope_bar(lv_obj_t * parent) {
+    dope_bar = lv_obj_create(parent);
+    lv_obj_set_size(dope_bar, lv_pct(100), 80);
+    lv_obj_set_scroll_snap_x(dope_bar, LV_SCROLL_SNAP_CENTER);
+    lv_obj_set_flex_flow(dope_bar, LV_FLEX_FLOW_ROW);
+    lv_obj_align(dope_bar, LV_ALIGN_CENTER, 0, 120);
+    lv_obj_update_snap(dope_bar, LV_ANIM_ON);
+    lv_obj_set_scrollbar_mode(dope_bar, LV_SCROLLBAR_MODE_OFF);  // hide scrollbar
+    lv_obj_send_event(dope_bar, LV_EVENT_SCROLL, NULL);  // focus on the first item
+    // lv_obj_add_flag(dope_bar, LV_OBJ_FLAG_SCROLL_ONE);  // only scroll one item
+
+    // set transparent background and border
+    lv_obj_set_style_bg_color(dope_bar, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(dope_bar, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(dope_bar, 0, LV_PART_MAIN);
+
+
+    lv_obj_t * dope1 = create_dope_card(dope_bar, "A", "1.5");
+    lv_obj_t * dope2 = create_dope_card(dope_bar, "B", "0.4");
+    lv_obj_t * dope3 = create_dope_card(dope_bar, "C", "7.2");
+    lv_obj_t * dope4 = create_dope_card(dope_bar, "D", "8.4");
+    lv_obj_t * dope5 = create_dope_card(dope_bar, "E", "1.2");
+}
+
+
 void create_digital_level_layout(lv_obj_t *parent)
 {
     create_roll_deg_indicator(parent);
     create_countdown_timer(parent);
+    create_dope_bar(parent);
 
     // Create two lines on both side of the screen to indicate the horizontal level
     static lv_style_t line_style;
@@ -399,9 +458,9 @@ void create_digital_level_view(lv_obj_t *parent)
 
     // Initialize timer
     countdown_timer.timer_update_cb = update_timer_cb;
-    countdown_timer.countdown_time_sec = 120;
+    countdown_timer.countdown_time_ms = 120 * 1000;
     countdown_timer_init(&countdown_timer);
-    lv_arc_set_range(countdown_timer_arc, 0, countdown_timer.countdown_time_sec);
+    
 }
 
 

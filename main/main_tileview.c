@@ -77,7 +77,7 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_add_event_cb(main_tileview, tile_change_callback, LV_EVENT_VALUE_CHANGED, NULL);
 
     // Tile 0, 0: Digital Level Tile
-    tile_digital_level_view = lv_tileview_add_tile(main_tileview, 0, 0, LV_DIR_ALL);
+    tile_digital_level_view = lv_tileview_add_tile(main_tileview, 0, 0, LV_DIR_RIGHT | LV_DIR_BOTTOM);
     lv_obj_set_user_data(tile_digital_level_view, enable_digital_level_view);  // store the callback
     create_digital_level_view(tile_digital_level_view);
 
@@ -86,7 +86,7 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 
     // Tile 0, 1: "Send It" view
-    tile_send_it_level_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_ALL);
+    tile_send_it_level_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_TOP);
 
     lv_obj_set_user_data(tile_send_it_level_view, enable_send_it_view);
     create_send_it_view(tile_send_it_level_view);

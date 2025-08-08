@@ -39,11 +39,11 @@ void countdown_timer_task(void *p) {
         switch (current_state) {
             case COUNTDOWN_TIMER_READY: {
                 // Refill time
-                time_left_ms = ctx->countdown_time_sec * 1000;
+                time_left_ms = ctx->countdown_time_ms;
 
                 // Update GUI
                 if (ctx->timer_update_cb) {
-                    ctx->timer_update_cb(ctx->timer_update_cb_args, ctx->countdown_time_sec);
+                    ctx->timer_update_cb(ctx->timer_update_cb_args, ctx->countdown_time_ms);
                 }
                 
                 // Move to next state
@@ -59,7 +59,7 @@ void countdown_timer_task(void *p) {
                 }
 
                 if (ctx->timer_update_cb) {
-                    ctx->timer_update_cb(ctx->timer_update_cb_args, (int) ceilf(time_left_ms / 1000.0));
+                    ctx->timer_update_cb(ctx->timer_update_cb_args, time_left_ms);
                 }
 
                 if (time_left_ms == 0) {
@@ -94,8 +94,8 @@ esp_err_t countdown_timer_init(countdown_timer_t *ctx) {
     if (ctx->update_period_ms <= 0) {
         ctx->update_period_ms = COUNTDOWN_TIMER_TASK_DEFAULT_UPDATE_PERIOD_MS;
     }
-    if (ctx->countdown_time_sec <= 0) {
-        ctx->countdown_time_sec = 120;
+    if (ctx->countdown_time_ms <= 0) {
+        ctx->countdown_time_ms = 120 * 1000;
     }
 
     BaseType_t rtos_return = xTaskCreate(

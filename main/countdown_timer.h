@@ -31,7 +31,7 @@ typedef struct {
     TaskHandle_t countdown_timer_task_handle;
     timer_update_cb_t timer_update_cb;
     void *timer_update_cb_args;
-    int countdown_time_sec;
+    int countdown_time_ms;
     int update_period_ms;
     SemaphoreHandle_t state_mux;
     countdown_timer_state_t countdown_timer_state;
