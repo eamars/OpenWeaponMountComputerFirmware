@@ -1,5 +1,8 @@
 #include <math.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include "esp_log.h"
 #include "esp_err.h"
 #include "nvs.h"
@@ -9,8 +12,9 @@
 #include "bno085.h"
 #include "esp_lvgl_port.h"
 #include "countdown_timer.h"
+#include "system_config_view.h"
 
-#include "freertos/task.h"
+
 
 #define TAG "DigitalLevelView"
 #define DIGITAL_LEVEL_VIEW_NAMESPACE "DLV"
@@ -23,10 +27,10 @@ const digital_level_view_config_t digital_level_view_config_default = {
     .pitch_display_gain = 0.1f, // Default gain of 1/10
     .delta_level_threshold = 1.0f, // Default level threshold
     .user_roll_rad_offset = 0.0,       // Default to no offset
-    .colour_left_tilt_indicator = LV_COLOR_MAKE(0x00, 0x96, 0x88),              // Light blue
-    .colour_right_tilt_indicator = LV_COLOR_MAKE(0xFF, 0xC1, 0x07),             // Amber
-    .colour_horizontal_level_indicator = LV_COLOR_MAKE(0x4C, 0xAF, 0x50),       // Light green
-    .colour_foreground = LV_COLOR_MAKE(0x00, 0x00, 0x00)                        // Black
+    .colour_left_tilt_indicator = LV_PALETTE_LIGHT_BLUE,              // Light blue
+    .colour_right_tilt_indicator = LV_PALETTE_AMBER,                    // Amber
+    .colour_horizontal_level_indicator = LV_PALETTE_LIGHT_GREEN,       // Light green
+    .colour_foreground = LV_PALETTE_BLACK                               // Black
 };
 
 lv_obj_t * tilt_angle_label = NULL;
@@ -49,7 +53,6 @@ static float roll, pitch;
 void tilt_angle_button_short_press_cb(lv_event_t * e) {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_SHORT_CLICKED) {
-        ESP_LOGI(TAG, "Short clicked");
 
         // Take a snapshot of current roll and use that as offset
         digital_level_view_config.user_roll_rad_offset = roll;
@@ -58,6 +61,7 @@ void tilt_angle_button_short_press_cb(lv_event_t * e) {
         ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
 
         // // Write to NVS
+        // memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
         // nvs_handle_t handle;
         // esp_err_t err;
         // err = nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle);
@@ -145,13 +149,13 @@ void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
     // Based on input roll, fill the background canvas with different colors
     float threshold_rad = DEG_TO_RAD(digital_level_view_config.delta_level_threshold);
     if (roll_rad < -threshold_rad) {
-        lv_canvas_fill_bg(digital_level_bg_canvas, digital_level_view_config.colour_left_tilt_indicator, LV_OPA_COVER);
+        lv_canvas_fill_bg(digital_level_bg_canvas, lv_palette_main(digital_level_view_config.colour_left_tilt_indicator), LV_OPA_COVER);
     }
     else if (roll_rad > threshold_rad) {
-        lv_canvas_fill_bg(digital_level_bg_canvas, digital_level_view_config.colour_right_tilt_indicator, LV_OPA_COVER);
+        lv_canvas_fill_bg(digital_level_bg_canvas, lv_palette_main(digital_level_view_config.colour_right_tilt_indicator), LV_OPA_COVER);
     }
     else {
-        lv_canvas_fill_bg(digital_level_bg_canvas, digital_level_view_config.colour_horizontal_level_indicator, LV_OPA_COVER);
+        lv_canvas_fill_bg(digital_level_bg_canvas, lv_palette_main(digital_level_view_config.colour_horizontal_level_indicator), LV_OPA_COVER);
     }
 
     // Draw new layer on the canvas
@@ -163,7 +167,7 @@ void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
         // Draw rectangle
         lv_draw_rect_dsc_t rect_dsc;
         lv_draw_rect_dsc_init(&rect_dsc);
-        rect_dsc.bg_color = digital_level_view_config.colour_horizontal_level_indicator;
+        rect_dsc.bg_color = lv_palette_main(digital_level_view_config.colour_horizontal_level_indicator);
         lv_area_t coords = {0, DISP_V_RES_PIXEL/ 2, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL};
         lv_draw_rect(&layer, &rect_dsc, &coords);
     }
@@ -180,7 +184,7 @@ void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
         // Draw triangle
         lv_draw_triangle_dsc_t tri_dsc;
         lv_draw_triangle_dsc_init(&tri_dsc);
-        tri_dsc.color = digital_level_view_config.colour_foreground;
+        tri_dsc.color = lv_palette_main(digital_level_view_config.colour_foreground);
 
         // Depending on the roll direction, set the points of the triangle
         if (roll_rad < 0) {
@@ -200,7 +204,7 @@ void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
         // Draw rectangle
         lv_draw_rect_dsc_t rect_dsc;
         lv_draw_rect_dsc_init(&rect_dsc);
-        rect_dsc.bg_color = digital_level_view_config.colour_foreground;
+        rect_dsc.bg_color = lv_palette_main(digital_level_view_config.colour_foreground);
         lv_area_t coords = {0, vertical_base_position + dy, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL};
         lv_draw_rect(&layer, &rect_dsc, &coords);
     }
@@ -431,7 +435,7 @@ void create_digital_level_view(lv_obj_t *parent)
     // Create a canvas and initialize its palette
     digital_level_bg_canvas = lv_canvas_create(parent);
     lv_canvas_set_draw_buf(digital_level_bg_canvas, &draw_buf);
-    lv_canvas_fill_bg(digital_level_bg_canvas, digital_level_view_config.colour_horizontal_level_indicator, LV_OPA_COVER);
+    lv_canvas_fill_bg(digital_level_bg_canvas, lv_palette_main(digital_level_view_config.colour_horizontal_level_indicator), LV_OPA_COVER);
     lv_obj_center(digital_level_bg_canvas);
 
     // Create overlays
@@ -475,3 +479,76 @@ void enable_digital_level_view(bool enable) {
 }
 
 
+/* 
+----------------------------------------------------
+Configuration Menu Items
+----------------------------------------------------
+*/
+
+static void update_float_item_gain_10(lv_event_t *e) {
+    lv_obj_t * spinbox = lv_event_get_target_obj(e);
+    float * target_ptr = lv_event_get_user_data(e);
+    int32_t value = lv_spinbox_get_value(spinbox);
+    *target_ptr = value / 10.0;
+}
+
+
+static void update_colour(lv_event_t *e) {
+    lv_obj_t * colour_indicator = lv_event_get_target_obj(e);
+    lv_palette_t * colour_idx = lv_obj_get_user_data(colour_indicator);
+    lv_palette_t * target_colour_idx = lv_event_get_user_data(e);
+    *target_colour_idx = *colour_idx;
+    ESP_LOGI(TAG, "Target colour updated to %d", *target_colour_idx);
+}
+
+
+lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
+    lv_obj_t * container;
+    lv_obj_t * config_item;
+
+    // Create a sub page for digital_level_view
+    lv_obj_t * sub_page_digital_level_view = lv_menu_page_create(parent, NULL);
+
+    // Roll display gain
+    container = create_menu_container_with_text(sub_page_digital_level_view, NULL, "Roll Display Gain");
+    config_item = create_spin_box(container, 10, 20, 2, 1, (int32_t) (digital_level_view_config.roll_display_gain * 10), update_float_item_gain_10, &digital_level_view_config.roll_display_gain);
+
+    // Pitch display gain
+    container = create_menu_container_with_text(sub_page_digital_level_view, NULL, "Pitch Display Gain");
+    config_item = create_spin_box(container, 1, 10, 2, 1, (int32_t) (digital_level_view_config.pitch_display_gain * 10), update_float_item_gain_10, &digital_level_view_config.pitch_display_gain);
+
+    // delta level threshold
+    container = create_menu_container_with_text(sub_page_digital_level_view, NULL, "Level Threshold (deg)");
+    config_item = create_spin_box(container, 5, 20, 2, 1, (int32_t) (digital_level_view_config.delta_level_threshold * 10), update_float_item_gain_10, &digital_level_view_config.delta_level_threshold);
+
+    // Left tilt indicator colour
+    container = create_menu_container_with_text(sub_page_digital_level_view, LV_SYMBOL_EYE_OPEN, "Left Tilt Colour");
+    config_item = create_colour_picker(container, digital_level_view_config.colour_left_tilt_indicator, update_colour, &digital_level_view_config.colour_left_tilt_indicator);
+
+    // Right tilt indicator colour
+    container = create_menu_container_with_text(sub_page_digital_level_view, LV_SYMBOL_EYE_OPEN, "Right Tilt Colour");
+    config_item = create_colour_picker(container, digital_level_view_config.colour_right_tilt_indicator, update_colour, &digital_level_view_config.colour_right_tilt_indicator);
+
+    // Horizontal tilt indicator colour
+    container = create_menu_container_with_text(sub_page_digital_level_view, LV_SYMBOL_EYE_OPEN, "Leveled Colour");
+    config_item = create_colour_picker(container, digital_level_view_config.colour_horizontal_level_indicator, update_colour, &digital_level_view_config.colour_horizontal_level_indicator);
+
+    // Horizontal tilt indicator colour
+    container = create_menu_container_with_text(sub_page_digital_level_view, LV_SYMBOL_EYE_OPEN, "Foreground Colour");
+    config_item = create_colour_picker(container, digital_level_view_config.colour_foreground, update_colour, &digital_level_view_config.colour_foreground);
+
+
+    // Add to the menu
+    lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
+    lv_obj_t * img = lv_image_create(cont);
+    lv_obj_t * label = lv_label_create(cont);
+
+    lv_image_set_src(img, LV_SYMBOL_RIGHT);
+    lv_label_set_text(label, "Digital Level View");
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+    lv_obj_set_flex_grow(label, 1);
+
+    lv_menu_set_load_page_event(parent, cont, sub_page_digital_level_view);
+
+    return sub_page_digital_level_view;
+}

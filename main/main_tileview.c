@@ -3,6 +3,7 @@
 #include "main_tileview.h"
 #include "digital_level_view.h"
 #include "send_it_view.h"
+#include "system_config_view.h"
 
 #include "bno085.h"
 
@@ -21,10 +22,9 @@ lv_obj_t * tile_digital_level_view = NULL;
 lv_obj_t * tile_send_it_level_view = NULL;
 
 // Col1
-lv_obj_t * tile_timer_config_view = NULL;
+lv_obj_t * tile_system_config_view = NULL;
 
 // Col2
-lv_obj_t * tile_config_page_view = NULL;
 
 
 
@@ -81,10 +81,6 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_set_user_data(tile_digital_level_view, enable_digital_level_view);  // store the callback
     create_digital_level_view(tile_digital_level_view);
 
-    // Switch to digitial level tile by default
-    lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);
-    lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
-
     // Tile 0, 1: "Send It" view
     tile_send_it_level_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_TOP);
 
@@ -92,8 +88,16 @@ void create_main_tileview(lv_obj_t *parent)
     create_send_it_view(tile_send_it_level_view);
 
     // Tile 1, 0
-    tile_timer_config_view = lv_tileview_add_tile(main_tileview, 1, 0, LV_DIR_HOR);
+    tile_system_config_view = lv_tileview_add_tile(main_tileview, 1, 0, LV_DIR_HOR);
+    create_system_config_view(tile_system_config_view);
 
     // Tile 2, 0: Configuration Page
-    tile_config_page_view = lv_tileview_add_tile(main_tileview, 2, 0, LV_DIR_HOR);
+    // tile_config_page_view = lv_tileview_add_tile(main_tileview, 2, 0, LV_DIR_HOR);
+
+
+    // Switch to the default view
+    // lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);
+    // lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+    lv_tileview_set_tile(main_tileview, tile_system_config_view, LV_ANIM_OFF);
+    lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 }
