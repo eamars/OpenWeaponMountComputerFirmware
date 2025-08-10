@@ -37,8 +37,6 @@ lv_obj_t * tilt_angle_label = NULL;
 lv_obj_t * horizontal_indicator_line_left = NULL;
 lv_obj_t * horizontal_indicator_line_right = NULL;
 lv_obj_t * digital_level_bg_canvas = NULL;
-lv_obj_t * countdown_timer_arc = NULL;
-lv_obj_t * countdown_timer_label = NULL;
 lv_obj_t * dope_bar = NULL;
 
 static TaskHandle_t sensor_event_poller_task_handle;
@@ -69,52 +67,6 @@ void tilt_angle_button_short_press_cb(lv_event_t * e) {
         // err = nvs_set_blob(handle, "cfg", &digital_level_view_config, sizeof(digital_level_view_config));
 
         // ESP_LOGI(TAG, "Write to NVS");
-    }
-}
-
-
- void update_timer_cb(void *p, int time_left_ms) {
-    int time_left_sec = (int) ceilf(time_left_ms / 1000.0);
-    int percentage = (int) ceilf(time_left_ms * 100.0 / countdown_timer.countdown_time_ms);
-
-    // Calculate the percentage 
-    if (lvgl_port_lock(0)) {
-        lv_label_set_text_fmt(countdown_timer_label, "%d", time_left_sec);
-        lv_arc_set_value(countdown_timer_arc, percentage);
-        lvgl_port_unlock();
-    }
-    
- }
-
-
-void countdown_timer_button_short_press_event_cb(lv_event_t *e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_SHORT_CLICKED) {
-        countdown_timer_state_t current_state = get_countdown_timer_state(&countdown_timer);
-        ESP_LOGI(TAG, "Current state %d", current_state);
-        switch (current_state)
-        {
-        case COUNTDOWN_TIMER_EXPIRED:
-            countdown_timer_start(&countdown_timer);
-
-            break;
-        case COUNTDOWN_TIMER_PAUSE:
-            countdown_timer_continue(&countdown_timer);
-            break;
-
-        case COUNTODWN_TIMER_RUN:
-            countdown_timer_pause(&countdown_timer);
-            break;
-        default:
-            break;
-        }
-    }
-}
-
-void countdown_timer_button_long_press_event_cb(lv_event_t *e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_LONG_PRESSED) {
-        countdown_timer_start(&countdown_timer);
     }
 }
 
@@ -274,45 +226,6 @@ void create_roll_deg_indicator(lv_obj_t * parent) {
     lv_obj_align(tilt_angle_label, LV_ALIGN_CENTER, 0, 0);
 }
 
-void create_countdown_timer(lv_obj_t * parent) {
-    /* 
-    For arc, the main is the background, indicator is the foreground
-    */
-    lv_obj_t * countdown_timer_button = lv_btn_create(parent);
-    // lv_obj_set_style_radius(countdown_timer_button, LV_RADIUS_CIRCLE, 0); // Make it fully round
-    lv_obj_set_style_bg_opa(countdown_timer_button, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(countdown_timer_button, 0, LV_PART_MAIN);
-    lv_obj_set_style_border_color(countdown_timer_button, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(countdown_timer_button, 0, LV_PART_MAIN);
-    lv_obj_set_size(countdown_timer_button, 130, 130);
-    lv_obj_center(countdown_timer_button);
-
-    lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_short_press_event_cb, LV_EVENT_SHORT_CLICKED, NULL);
-    lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_long_press_event_cb, LV_EVENT_LONG_PRESSED, NULL);
-
-    countdown_timer_arc = lv_arc_create(countdown_timer_button);
-    lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
-    // lv_obj_set_style_arc_color(countdown_timer, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(countdown_timer_arc, LV_OPA_TRANSP, LV_PART_MAIN);
-
-    // lv_obj_set_size(countdown_timer, 130, 130);
-    lv_obj_set_style_arc_width(countdown_timer_arc, 10, 0);
-    lv_arc_set_rotation(countdown_timer_arc, 270);
-    lv_arc_set_bg_angles(countdown_timer_arc, 0, 360);
-    lv_obj_remove_style(countdown_timer_arc, NULL, LV_PART_KNOB);   /*Be sure the knob is not displayed*/
-    lv_obj_remove_flag(countdown_timer_arc, LV_OBJ_FLAG_CLICKABLE);  /*To not allow adjusting by click*/
-    lv_arc_set_range(countdown_timer_arc, 0, 100);  // 100 divisions for the full arc
-    lv_obj_center(countdown_timer_arc);
-
-    countdown_timer_label = lv_label_create(countdown_timer_button);
-
-    lv_label_set_text(countdown_timer_label, "0");
-    lv_obj_set_style_text_color(countdown_timer_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(countdown_timer_label, &lv_font_montserrat_32, LV_PART_MAIN);
-    lv_obj_align(countdown_timer_label, LV_ALIGN_CENTER, 0, 0);
-}
-
-
 lv_obj_t * create_dope_card(lv_obj_t *parent, char *target_identifier, char *dope) {
 
     lv_obj_t * column_layout = lv_obj_create(parent);
@@ -379,7 +292,7 @@ void create_dope_bar(lv_obj_t * parent) {
 void create_digital_level_layout(lv_obj_t *parent)
 {
     create_roll_deg_indicator(parent);
-    create_countdown_timer(parent);
+    create_countdown_timer_widget(parent, &countdown_timer);
     create_dope_bar(parent);
 
     // Create two lines on both side of the screen to indicate the horizontal level
@@ -458,13 +371,6 @@ void create_digital_level_view(lv_obj_t *parent)
         ESP_LOGE(TAG, "Failed to allocate memory for sensor_poller");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
-
-
-    // Initialize timer
-    countdown_timer.timer_update_cb = update_timer_cb;
-    countdown_timer.countdown_time_ms = 120 * 1000;
-    countdown_timer_init(&countdown_timer);
-    
 }
 
 

@@ -87,8 +87,6 @@ lv_obj_t * create_spin_box(lv_obj_t * container,
     lv_obj_set_height(plus_button, lv_obj_get_height(spinbox));
     lv_obj_set_width(plus_button, lv_pct(30));
 
-    ESP_LOGI(TAG, "Height: %ld", lv_obj_get_height(spinbox));
-
     return container;
 }
 
@@ -107,7 +105,6 @@ static void lv_colour_picker_left_event_cb(lv_event_t *e) {
 
     // Apply callback
     lv_obj_send_event(colour_indicator, LV_EVENT_VALUE_CHANGED, NULL);
-    ESP_LOGI(TAG, "Current colour %d", *colour_idx);
 }
 
 static void lv_colour_picker_right_event_cb(lv_event_t *e) {
@@ -135,7 +132,6 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t default_colou
 
     lv_palette_t * colour_idx = malloc(sizeof(lv_palette_t)); 
     *colour_idx = default_colour;
-    ESP_LOGI(TAG, "default colour %d", *colour_idx);
 
     lv_obj_set_user_data(colour_indicator, colour_idx);
     lv_led_set_color(colour_indicator, lv_palette_main(*colour_idx));  // set default colour

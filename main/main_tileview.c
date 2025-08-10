@@ -4,6 +4,7 @@
 #include "digital_level_view.h"
 #include "send_it_view.h"
 #include "system_config_view.h"
+#include "countdown_timer_config_view.h"
 
 #include "bno085.h"
 
@@ -16,15 +17,6 @@ typedef void (*tile_update_enable_cb_t) (bool);
 
 
 lv_obj_t * main_tileview = NULL;
-
-// Col0
-lv_obj_t * tile_digital_level_view = NULL;
-lv_obj_t * tile_send_it_level_view = NULL;
-
-// Col1
-lv_obj_t * tile_system_config_view = NULL;
-
-// Col2
 
 
 
@@ -76,28 +68,31 @@ void create_main_tileview(lv_obj_t *parent)
     // Add callback to the scroll event
     lv_obj_add_event_cb(main_tileview, tile_change_callback, LV_EVENT_VALUE_CHANGED, NULL);
 
-    // Tile 0, 0: Digital Level Tile
-    tile_digital_level_view = lv_tileview_add_tile(main_tileview, 0, 0, LV_DIR_RIGHT | LV_DIR_BOTTOM);
-    lv_obj_set_user_data(tile_digital_level_view, enable_digital_level_view);  // store the callback
-    create_digital_level_view(tile_digital_level_view);
-
-    // Tile 0, 1: "Send It" view
-    tile_send_it_level_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_TOP);
-
+    // Tile 0, 0: "Send It" view
+    lv_obj_t * tile_send_it_level_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_RIGHT);  // send it view can only be swiped right
     lv_obj_set_user_data(tile_send_it_level_view, enable_send_it_view);
     create_send_it_view(tile_send_it_level_view);
 
-    // Tile 1, 0
-    tile_system_config_view = lv_tileview_add_tile(main_tileview, 1, 0, LV_DIR_HOR);
-    create_system_config_view(tile_system_config_view);
+    // Tile 0, 0: Timer config view
+    lv_obj_t * tile_countdown_timer_config_view = lv_tileview_add_tile(main_tileview, 1, 0, LV_DIR_BOTTOM);
+    create_countdown_timer_config_view(tile_countdown_timer_config_view);
 
-    // Tile 2, 0: Configuration Page
-    // tile_config_page_view = lv_tileview_add_tile(main_tileview, 2, 0, LV_DIR_HOR);
+    // Tile 0, 1: Digital Level Tile
+    lv_obj_t * tile_digital_level_view = lv_tileview_add_tile(main_tileview, 1, 1, LV_DIR_ALL);
+    lv_obj_set_user_data(tile_digital_level_view, enable_digital_level_view);  // store the callback
+    create_digital_level_view(tile_digital_level_view);
+
+    // Tile 0, 2: Dope config view
+    lv_obj_t * tile_dope_config_view = lv_tileview_add_tile(main_tileview, 1, 2, LV_DIR_TOP);
+
+    // Tile 1, 0
+    lv_obj_t * tile_system_config_view = lv_tileview_add_tile(main_tileview, 2, 1, LV_DIR_HOR);
+    create_system_config_view(tile_system_config_view);
 
 
     // Switch to the default view
     // lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);
     // lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
-    lv_tileview_set_tile(main_tileview, tile_system_config_view, LV_ANIM_OFF);
+    lv_tileview_set_tile(main_tileview, tile_countdown_timer_config_view, LV_ANIM_OFF);
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 }
