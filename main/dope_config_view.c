@@ -1,5 +1,6 @@
 #include "dope_config_view.h"
 #include "esp_log.h"
+#include "esp_lvgl_port.h"
 
 #define TAG "DopeConfigView"
 
@@ -22,7 +23,7 @@ lv_obj_t * dope_item_settings = NULL;
 lv_obj_t * dope_item_settings_major_roller = NULL;
 lv_obj_t * dope_item_settings_minor_roller = NULL;
 lv_obj_t * dope_item_settings_enable_switch = NULL;
-lv_obj_t * dope_item_settings_apply_button = NULL;
+int current_selected_dope_item = 0;
 
 
 void set_dope_item_settings_visibility(bool is_visible) {
@@ -54,10 +55,9 @@ void set_dope_item_settings(dope_data_t *data) {
 
 
 static void apply_dope_item_settings(lv_event_t * e) {
-    dope_data_t * data = lv_event_get_user_data(e);
-
     // ESP_LOGI(TAG, "Applying settings for dope item %d", data->idx);
-    
+    dope_data_t *data = &all_dope_data[current_selected_dope_item];
+
     // Read user input
     int dope_major_decimal = (int) lv_roller_get_selected(dope_item_settings_major_roller);
     int dope_minor_decimal = (int) lv_roller_get_selected(dope_item_settings_minor_roller);
@@ -85,18 +85,14 @@ static void apply_dope_item_settings(lv_event_t * e) {
 
 static void open_edit_window(lv_event_t * e) {
     lv_obj_t * dope_item = lv_event_get_target(e);
-    dope_data_t * data = lv_event_get_user_data(e);
+    dope_data_t * dope_data = lv_obj_get_user_data(dope_item);
+
+    // Update current selection
+    current_selected_dope_item = dope_data->idx;
 
     // Populate the settings page and show it
-    set_dope_item_settings(data);
+    set_dope_item_settings(&all_dope_data[current_selected_dope_item]);
     set_dope_item_settings_visibility(true);
-
-    // Clear event callback
-    for(uint32_t i = 0; i <  lv_obj_get_event_count(dope_item_settings_apply_button); i += 1) {
-        lv_obj_remove_event(dope_item_settings_apply_button, i);
-    }
-    // Set callback to the apply button
-    lv_obj_add_event_cb(dope_item_settings_apply_button, apply_dope_item_settings, LV_EVENT_CLICKED, data);
 }
 
 
@@ -106,6 +102,8 @@ static void close_edit_window(lv_event_t * e) {
 
 void create_dope_config_view(lv_obj_t * parent) {
     lv_obj_t * dope_list = lv_list_create(parent);
+    memset(all_dope_data, 0, sizeof(all_dope_data));
+    current_selected_dope_item = 0;
 
     // Set styling
     lv_obj_set_size(dope_list, lv_pct(100), lv_pct(100));
@@ -148,7 +146,8 @@ void create_dope_config_view(lv_obj_t * parent) {
             lv_label_set_text(all_dope_data[i].dope_item_icon, LV_SYMBOL_EYE_CLOSE);
         }
 
-        lv_obj_add_event_cb(all_dope_data[i].dope_item, open_edit_window, LV_EVENT_CLICKED, &all_dope_data[i]);
+        lv_obj_add_event_cb(all_dope_data[i].dope_item, open_edit_window, LV_EVENT_CLICKED, NULL);
+        lv_obj_set_user_data(all_dope_data[i].dope_item, &all_dope_data[i]);
     }
 
     // Create per item settings
@@ -207,12 +206,15 @@ void create_dope_config_view(lv_obj_t * parent) {
     lv_obj_align(dope_item_settings_enable_switch, LV_ALIGN_RIGHT_MID, 0, 0);
 
     // Add Save and cancel button to the bottom container
-    dope_item_settings_apply_button = lv_msgbox_add_footer_button(dope_item_settings, "Apply");
+    lv_obj_t * dope_item_settings_apply_button = lv_msgbox_add_footer_button(dope_item_settings, "Apply");
     lv_obj_set_flex_grow(dope_item_settings_apply_button, 1);
 
     lv_obj_t * dope_item_settings_cancel_button = lv_msgbox_add_footer_button(dope_item_settings, "Cancel");
     lv_obj_add_event_cb(dope_item_settings_cancel_button, close_edit_window, LV_EVENT_CLICKED, NULL);
     lv_obj_set_flex_grow(dope_item_settings_cancel_button, 1);
+
+    // Set callback to the apply button
+    lv_obj_add_event_cb(dope_item_settings_apply_button, apply_dope_item_settings, LV_EVENT_CLICKED, NULL);
 
     // Set hide by default
     set_dope_item_settings_visibility(false);

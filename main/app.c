@@ -67,7 +67,7 @@ void app_main(void)
     lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = io_handle,
         .panel_handle = panel_handle,
-        .buffer_size = DISP_H_RES_PIXEL * DISP_V_RES_PIXEL / 4,
+        .buffer_size = DISP_H_RES_PIXEL * DISP_V_RES_PIXEL / 5,
         .double_buffer = true,
         .hres = DISP_H_RES_PIXEL,
         .vres = DISP_V_RES_PIXEL,
