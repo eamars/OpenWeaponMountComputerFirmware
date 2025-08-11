@@ -126,7 +126,9 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     lv_obj_t * top_container = lv_obj_create(parent);
     lv_obj_t * bottom_container = lv_obj_create(parent);
 
-    lv_obj_set_size(top_container, lv_pct(100), lv_pct(40));
+    lv_obj_set_width(top_container, lv_pct(100));
+    lv_obj_set_style_pad_all(top_container, 1, 0);  // remove all paddings for container
+
     // lv_obj_set_style_bg_color(top_container, lv_palette_main(LV_PALETTE_YELLOW), 0);
     lv_obj_set_style_bg_opa(top_container, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_flex_flow(top_container, LV_FLEX_FLOW_ROW);
@@ -136,6 +138,8 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
                       LV_FLEX_ALIGN_CENTER); // track cross axis center
 
     lv_obj_set_size(bottom_container, lv_pct(100), lv_pct(60));
+    lv_obj_set_style_pad_all(bottom_container, 1, 0);  // remove all paddings for container
+
     // lv_obj_set_style_bg_color(bottom_container, lv_palette_main(LV_PALETTE_LIGHT_BLUE), 0);
     lv_obj_set_style_bg_opa(bottom_container, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_flex_flow(bottom_container, LV_FLEX_FLOW_COLUMN);
@@ -149,12 +153,14 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     lv_obj_set_size(minute_roller, lv_pct(45), lv_pct(100));
     lv_roller_set_options(minute_roller, roller_minute, LV_ROLLER_MODE_INFINITE);
     lv_obj_add_event_cb(minute_roller, roller_update_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_set_style_text_font(minute_roller, &lv_font_montserrat_20, 0);
     enable_roller(minute_roller, false);
 
     second_roller = lv_roller_create(top_container);
     lv_obj_set_size(second_roller, lv_pct(45), lv_pct(100));
     lv_roller_set_options(second_roller, roller_second, LV_ROLLER_MODE_INFINITE);
     lv_obj_add_event_cb(second_roller, roller_update_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_set_style_text_font(second_roller, &lv_font_montserrat_20, 0);
     enable_roller(second_roller, false);
 
     // Add two presets under the second container

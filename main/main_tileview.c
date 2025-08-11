@@ -5,6 +5,7 @@
 #include "send_it_view.h"
 #include "system_config_view.h"
 #include "countdown_timer_config_view.h"
+#include "dope_config_view.h"
 
 #include "bno085.h"
 
@@ -84,6 +85,7 @@ void create_main_tileview(lv_obj_t *parent)
 
     // Tile 0, 2: Dope config view
     lv_obj_t * tile_dope_config_view = lv_tileview_add_tile(main_tileview, 1, 2, LV_DIR_TOP);
+    create_dope_config_view(tile_dope_config_view);
 
     // Tile 1, 0
     lv_obj_t * tile_system_config_view = lv_tileview_add_tile(main_tileview, 2, 1, LV_DIR_HOR);
@@ -93,6 +95,6 @@ void create_main_tileview(lv_obj_t *parent)
     // Switch to the default view
     // lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);
     // lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
-    lv_tileview_set_tile(main_tileview, tile_countdown_timer_config_view, LV_ANIM_OFF);
+    lv_tileview_set_tile(main_tileview, tile_dope_config_view, LV_ANIM_OFF);
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 }
