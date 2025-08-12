@@ -6,6 +6,7 @@
 #include "system_config_view.h"
 #include "countdown_timer_config_view.h"
 #include "dope_config_view.h"
+#include "acceleration_analysis_view.h"
 
 #include "bno085.h"
 
@@ -83,14 +84,18 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_set_user_data(tile_digital_level_view, enable_digital_level_view);  // store the callback
     create_digital_level_view(tile_digital_level_view);
 
-    // Tile 0, 2: Dope config view
+    // Tile 1, 2: Dope config view
     lv_obj_t * tile_dope_config_view = lv_tileview_add_tile(main_tileview, 1, 2, LV_DIR_TOP);
     create_dope_config_view(tile_dope_config_view);
 
-    // Tile 1, 0
+    // Tile 2, 1
     lv_obj_t * tile_system_config_view = lv_tileview_add_tile(main_tileview, 2, 1, LV_DIR_HOR);
     create_system_config_view(tile_system_config_view);
 
+    // Tile 3, 1
+    lv_obj_t * tile_acceleration_analysis_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
+    lv_obj_set_user_data(tile_acceleration_analysis_view, enable_acceleration_analysis_view);
+    create_acceleration_analysis_view(tile_acceleration_analysis_view);
 
     // Switch to the default view
     // lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);

@@ -54,7 +54,7 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
  * @brief Enable BNO085 report.
  *
  * @param ctx Pointer to the BNO085 context.
- * @param interval_ms Interval in milliseconds for the report.
+ * @param interval_ms Interval in milliseconds for the report. Setting to 0 to disable.
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
 esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms);
@@ -63,7 +63,7 @@ esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t 
  * @brief Enable linear acceleration report
  *
  * @param ctx Pointer to the BNO085 context.
- * @param interval_ms Interval in milliseconds for the report.
+ * @param interval_ms Interval in milliseconds for the report. Setting to 0 to disable.
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
 esp_err_t bno085_enable_linear_acceleration_report(bno085_ctx_t *ctx, uint32_t interval_ms);
