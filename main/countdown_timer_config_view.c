@@ -122,6 +122,7 @@ static void roller_update_event_cb(lv_event_t * e) {
 void create_countdown_timer_config_view(lv_obj_t * parent) {
     memset(presets, 0, sizeof(presets));
     lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(parent, LV_DIR_NONE);  // no scroll
 
     lv_obj_t * top_container = lv_obj_create(parent);
     lv_obj_t * bottom_container = lv_obj_create(parent);

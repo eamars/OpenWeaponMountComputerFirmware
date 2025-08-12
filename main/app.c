@@ -28,10 +28,47 @@
 #include "app_cfg.h"
 #include "bno085.h"
 
+
+#define TAG "App"
+
 bno085_ctx_t bno085_dev;
+
+
+void print_memory_info(void) {
+    // Heap info
+    size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
+    size_t min_free_heap = heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT);
+
+    lv_mem_monitor_t mon;
+    lv_mem_monitor(&mon); // Fill the monitor struct
+
+    ESP_LOGI(TAG, "Free heap: %u kbytes | Min free heap: %u kbytes",
+             (unsigned)free_heap / 1024, (unsigned)min_free_heap / 1024);
+
+    // Optional: Internal RAM only
+    ESP_LOGI(TAG, "Free internal heap: %u kbytes",
+             (unsigned)esp_get_free_internal_heap_size() / 1024);
+
+    ESP_LOGI(TAG, "LVGL free: %u kbytes | LVGL total: %u kbytes",
+             mon.free_size / 1024, mon.total_size / 1024);
+}
+
+
+
+void mem_monitor_task(void *pvParameters) {
+    while (1) {
+        print_memory_info();
+        // print_all_tasks_stack_usage();
+        ESP_LOGI(TAG, "---------------------------");
+        vTaskDelay(pdMS_TO_TICKS(2000)); // Every 2 seconds
+    }
+}
 
 void app_main(void)
 {
+    // Create task to monitor memory usage
+    xTaskCreate(mem_monitor_task, "mem_monitor_task", 2048, NULL, 3, NULL);
+
     //Initialize NVS storage
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {

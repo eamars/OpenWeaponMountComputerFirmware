@@ -13,7 +13,7 @@
 #include "esp_lvgl_port.h"
 #include "countdown_timer.h"
 #include "system_config_view.h"
-
+#include "dope_config_view.h"
 
 
 #define TAG "DigitalLevelView"
@@ -226,74 +226,12 @@ void create_roll_deg_indicator(lv_obj_t * parent) {
     lv_obj_align(tilt_angle_label, LV_ALIGN_CENTER, 0, 0);
 }
 
-lv_obj_t * create_dope_card(lv_obj_t *parent, char *target_identifier, char *dope) {
-
-    lv_obj_t * column_layout = lv_obj_create(parent);
-    // TODO: Layout needed to be fixed
-    // lv_obj_set_flex_flow(column_layout, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_size(column_layout, 70, 55);
-
-    lv_obj_set_style_pad_top(column_layout, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(column_layout, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(column_layout, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(column_layout, 0, LV_PART_MAIN);
-
-    // set transparent background and border
-    lv_obj_set_style_bg_opa(column_layout, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(column_layout, 0, LV_PART_MAIN);
-
-    // Disable scroll 
-    lv_obj_remove_flag(column_layout, LV_OBJ_FLAG_SCROLLABLE);
-
-    // Add target identifier
-    lv_obj_t *target_identifer_label = lv_label_create(column_layout);
-    lv_label_set_text_static(target_identifer_label, target_identifier);
-    lv_obj_set_style_text_font(target_identifer_label, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_set_style_text_color(target_identifer_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_center(target_identifer_label);
-    lv_obj_align(target_identifer_label, LV_ALIGN_TOP_MID, 0, 0);
-
-
-    lv_obj_t *dope_label = lv_label_create(column_layout);
-    lv_label_set_text_static(dope_label, dope);
-    lv_obj_set_style_text_color(dope_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(dope_label, &lv_font_montserrat_32, LV_PART_MAIN);
-    lv_obj_align(dope_label, LV_ALIGN_BOTTOM_MID, 0, 0);
-
-
-    return column_layout;
-}
-
-void create_dope_bar(lv_obj_t * parent) {
-    dope_bar = lv_obj_create(parent);
-    lv_obj_set_size(dope_bar, lv_pct(100), 80);
-    lv_obj_set_scroll_snap_x(dope_bar, LV_SCROLL_SNAP_CENTER);
-    lv_obj_set_flex_flow(dope_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_align(dope_bar, LV_ALIGN_CENTER, 0, 120);
-    lv_obj_update_snap(dope_bar, LV_ANIM_ON);
-    lv_obj_set_scrollbar_mode(dope_bar, LV_SCROLLBAR_MODE_OFF);  // hide scrollbar
-    lv_obj_send_event(dope_bar, LV_EVENT_SCROLL, NULL);  // focus on the first item
-    // lv_obj_add_flag(dope_bar, LV_OBJ_FLAG_SCROLL_ONE);  // only scroll one item
-
-    // set transparent background and border
-    lv_obj_set_style_bg_color(dope_bar, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(dope_bar, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(dope_bar, 0, LV_PART_MAIN);
-
-
-    lv_obj_t * dope1 = create_dope_card(dope_bar, "A", "1.5");
-    lv_obj_t * dope2 = create_dope_card(dope_bar, "B", "0.4");
-    lv_obj_t * dope3 = create_dope_card(dope_bar, "C", "7.2");
-    lv_obj_t * dope4 = create_dope_card(dope_bar, "D", "8.4");
-    lv_obj_t * dope5 = create_dope_card(dope_bar, "E", "1.2");
-}
-
 
 void create_digital_level_layout(lv_obj_t *parent)
 {
     create_roll_deg_indicator(parent);
     create_countdown_timer_widget(parent, &countdown_timer);
-    create_dope_bar(parent);
+    create_dope_card_list_widget(parent);
 
     // Create two lines on both side of the screen to indicate the horizontal level
     static lv_style_t line_style;

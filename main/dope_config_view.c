@@ -12,9 +12,12 @@ const char * minor_roller_options = ".0\n.1\n.2\n.3\n.4\n.5\n.6\n.7\n.8\n.9";
 typedef struct {
     int idx;
     int dope_10;
+    char target_identifier[4];
+    char dope_label_text[8];
     lv_obj_t * dope_item;
     lv_obj_t * dope_item_icon;
     lv_obj_t * dope_item_menu_label;
+    lv_obj_t * dope_card_view;
     bool enable;
 } dope_data_t;
 
@@ -24,6 +27,13 @@ lv_obj_t * dope_item_settings_major_roller = NULL;
 lv_obj_t * dope_item_settings_minor_roller = NULL;
 lv_obj_t * dope_item_settings_enable_switch = NULL;
 int current_selected_dope_item = 0;
+
+// View to be created showing enabled dope item
+lv_obj_t * dope_card_list = NULL;
+
+
+// Forward declaration
+lv_obj_t * create_dope_card(lv_obj_t *parent, dope_data_t *dope_data);
 
 
 void set_dope_item_settings_visibility(bool is_visible) {
@@ -37,7 +47,7 @@ void set_dope_item_settings_visibility(bool is_visible) {
 void set_dope_item_settings(dope_data_t *data) {
     // Set title
     lv_obj_t *title = lv_msgbox_get_title(dope_item_settings);
-    lv_label_set_text_fmt(title, "Target %c", data->idx + 'A');
+    lv_label_set_text_fmt(title, "Target %s", data->target_identifier);
 
     // Update the rollers with the current dope values
     lv_roller_set_selected(dope_item_settings_major_roller, data->dope_10 / 10, LV_ANIM_OFF);
@@ -65,18 +75,36 @@ static void apply_dope_item_settings(lv_event_t * e) {
     data->dope_10 = dope_major_decimal * 10 + dope_minor_decimal;
     data->enable = lv_obj_has_state(dope_item_settings_enable_switch, LV_STATE_CHECKED);
 
-    // Update dope item title
-    lv_label_set_text_fmt(data->dope_item_menu_label, "%d.%d", dope_major_decimal, dope_minor_decimal);
-
-    // Update icon
-    // lv_obj_t *icon_label = lv_obj_get_child(data->dope_item, 0);
+    // Update dope label (under multiple views due the sharing memory)
+    snprintf(data->dope_label_text, sizeof(data->dope_label_text), "%d.%d", dope_major_decimal, dope_minor_decimal);
 
     if (data->enable) {
         lv_obj_add_state(data->dope_item, LV_STATE_CHECKED);
         lv_label_set_text(data->dope_item_icon, LV_SYMBOL_EYE_OPEN);
+
+        // Update the visibility of the dope card too
+        lv_obj_clear_flag(data->dope_card_view, LV_OBJ_FLAG_HIDDEN);
+
+        // show the top level card list
+        lv_obj_clear_flag(dope_card_list, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_clear_state(data->dope_item, LV_STATE_CHECKED);
         lv_label_set_text(data->dope_item_icon, LV_SYMBOL_EYE_CLOSE);
+
+        // Update the visibility of the dope card too
+        lv_obj_add_flag(data->dope_card_view, LV_OBJ_FLAG_HIDDEN);
+
+        // If no card is visible then disable the dope_card_list too
+        bool is_all_card_disabled = true;
+        for (int i = 0; i < DOPE_CONFIG_MAX_DOPE_ITEM; i++) {
+            if (all_dope_data[i].enable) {
+                is_all_card_disabled = false;
+                break;
+            }
+        }
+        if (is_all_card_disabled) {
+            lv_obj_add_flag(dope_card_list, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     set_dope_item_settings_visibility(false);
@@ -123,18 +151,24 @@ void create_dope_config_view(lv_obj_t * parent) {
 
         // Set icon
         all_dope_data[i].dope_item_icon = lv_label_create(all_dope_data[i].dope_item);
-        // lv_obj_align(all_dope_data[i].dope_item_icon, LV_ALIGN_LEFT_MID, 0, 0);
+            // lv_obj_align(all_dope_data[i].dope_item_icon, LV_ALIGN_LEFT_MID, 0, 0);
 
         // Set name and default
+        snprintf(all_dope_data[i].target_identifier, sizeof(all_dope_data[i].target_identifier), "%c", 'A' + i);
         lv_obj_t * target_idx_label = lv_label_create(all_dope_data[i].dope_item);
         lv_obj_set_style_text_font(target_idx_label, &lv_font_montserrat_20, 0);
-        lv_label_set_text_fmt(target_idx_label, "%c", all_dope_data[i].idx + 'A');
+        lv_label_set_text_static(target_idx_label, all_dope_data[i].target_identifier);
         // lv_obj_align(target_idx_label, LV_ALIGN_LEFT_MID, 0, 0);
 
         all_dope_data[i].dope_item_menu_label = lv_label_create(all_dope_data[i].dope_item);
         lv_obj_set_style_text_font(all_dope_data[i].dope_item_menu_label, &lv_font_montserrat_20, 0);
-        lv_label_set_text_fmt(all_dope_data[i].dope_item_menu_label, "%d.%d", all_dope_data[i].dope_10 / 10, all_dope_data[i].dope_10 % 10);
+        snprintf(all_dope_data[i].dope_label_text, sizeof(all_dope_data[i].dope_label_text), "%d.%d", (int8_t) (all_dope_data[i].dope_10 / 10),  (int8_t) (all_dope_data[i].dope_10 % 10));
+        lv_label_set_text_static(all_dope_data[i].dope_item_menu_label, all_dope_data[i].dope_label_text);
         // lv_obj_align(all_dope_data[i].dope_item_menu_label, LV_ALIGN_RIGHT_MID, 0, 0);
+
+        // create corresponding dope card and set to invisible
+        all_dope_data[i].dope_card_view = create_dope_card(dope_card_list, &all_dope_data[i]);
+        lv_obj_add_flag(all_dope_data[i].dope_card_view, LV_OBJ_FLAG_HIDDEN);
 
         // Set state
         if (all_dope_data[i].enable) {
@@ -218,4 +252,78 @@ void create_dope_config_view(lv_obj_t * parent) {
 
     // Set hide by default
     set_dope_item_settings_visibility(false);
+}
+
+
+
+lv_obj_t * create_dope_card(lv_obj_t *parent, dope_data_t *dope_data) {
+
+    lv_obj_t * column_layout = lv_obj_create(parent);
+
+    lv_obj_set_size(column_layout, 70, 55);
+
+    lv_obj_set_style_pad_top(column_layout, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(column_layout, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(column_layout, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(column_layout, 0, LV_PART_MAIN);
+
+    // set transparent background and border
+    lv_obj_set_style_bg_opa(column_layout, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(column_layout, 0, LV_PART_MAIN);
+
+    // Disable scroll 
+    lv_obj_remove_flag(column_layout, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Add target identifier
+    lv_obj_t *target_identifer_label = lv_label_create(column_layout);
+    lv_label_set_text_static(target_identifer_label, dope_data->target_identifier);
+    lv_obj_set_style_text_font(target_identifer_label, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(target_identifer_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_center(target_identifer_label);
+    lv_obj_align(target_identifer_label, LV_ALIGN_TOP_MID, 0, 0);
+
+
+    lv_obj_t *dope_label = lv_label_create(column_layout);
+    lv_label_set_text_static(dope_label, dope_data->dope_label_text);
+    lv_obj_set_style_text_color(dope_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(dope_label, &lv_font_montserrat_32, LV_PART_MAIN);
+    lv_obj_align(dope_label, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    // Set pointer to the label as the user data
+    lv_obj_set_user_data(column_layout, dope_label);
+
+    return column_layout;
+}
+
+
+lv_obj_t * create_dope_card_list_widget(lv_obj_t * parent) {
+    if (!dope_card_list) {
+        dope_card_list = lv_obj_create(parent);
+    }
+    
+    lv_obj_set_size(dope_card_list, lv_pct(100), 80);  // a fixed height object
+    lv_obj_set_flex_flow(dope_card_list, LV_FLEX_FLOW_ROW);
+    lv_obj_set_scroll_dir(dope_card_list, LV_DIR_HOR);  // only horizontal scroll
+    lv_obj_set_flex_align(dope_card_list,
+                    LV_FLEX_FLOW_ROW,  // main axis (row) center
+                    LV_FLEX_ALIGN_CENTER,  // cross axis center
+                    LV_FLEX_ALIGN_CENTER); // track cross axis center
+
+    lv_obj_align(dope_card_list, LV_ALIGN_CENTER, 0, 120);
+    lv_obj_update_snap(dope_card_list, LV_ANIM_ON);
+    lv_obj_set_scroll_snap_x(dope_card_list, LV_SCROLL_SNAP_CENTER); // optional snap
+    lv_obj_set_scrollbar_mode(dope_card_list, LV_SCROLLBAR_MODE_OFF);  // hide scrollbar
+    lv_obj_send_event(dope_card_list, LV_EVENT_SCROLL, NULL);  // focus on the first item
+
+    // set transparent background and border
+    lv_obj_set_style_bg_opa(dope_card_list, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(dope_card_list, 0, LV_PART_MAIN);
+    // lv_obj_set_style_bg_opa(dope_card_list, LV_OPA_COVER, LV_PART_MAIN);
+    // lv_obj_set_style_bg_color(dope_card_list, lv_palette_main(LV_PALETTE_YELLOW), 0);
+
+    // Set invisible by default
+    lv_obj_add_flag(dope_card_list, LV_OBJ_FLAG_HIDDEN);
+
+
+    return dope_card_list;
 }
