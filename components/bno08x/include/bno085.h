@@ -14,7 +14,7 @@
 
 #define BNO085_SENSOR_POLLER_TASK_PRIORITY 2  // low priority for high frequency poller
 #define BNO085_SENSOR_POLLER_TASK_STACK 4096
-#define BNO085_SENSOR_POLLER_PERIOD_MS 10
+// #define BNO085_SENSOR_POLLER_PERIOD_MS 10
 
 #define DEG_TO_RAD(deg) ((deg) * M_PI / 180.0f)
 #define RAD_TO_DEG(rad) ((rad) * 180.0f / M_PI)
@@ -34,8 +34,8 @@ typedef struct {
 
     // Implement specific atributes
     i2c_master_dev_handle_t dev_handle;
-    int rst_pin;
-    int int_pin;
+    int reset_pin;
+    int interrupt_pin;
     
 } bno085_ctx_t;
 
@@ -44,9 +44,11 @@ typedef struct {
  * @brief Initialize the BNO085 sensor.
  *
  * @param ctx Pointer to the BNO085 context.
+ * @param i2c_bus_handle I2C bus handle for communication.
+ * @param interrupt_pin GPIO pin for the interrupt.
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
-esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle);
+esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, int interrupt_pin);
 
 /**
  * @brief Enable BNO085 report.
@@ -86,9 +88,6 @@ esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, flo
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
 esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x, float *y, float *z, bool block_wait);
-
-float q_to_pitch_sf(float r, float i, float j, float k);
-float q_to_yaw_sf(float r, float i, float j, float k);
 
 
 #endif // BNO085_H

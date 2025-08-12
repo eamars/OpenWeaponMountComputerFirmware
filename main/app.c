@@ -69,6 +69,9 @@ void app_main(void)
     // Create task to monitor memory usage
     xTaskCreate(mem_monitor_task, "mem_monitor_task", 2048, NULL, 3, NULL);
 
+    // Install interrupt service (so each module don't need to run again)
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+
     //Initialize NVS storage
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -83,7 +86,7 @@ void app_main(void)
 
     // Initialize BNO085 sensor
     // ESP_ERROR_CHECK(bno085_init(&bno085_dev, UART_NUM_0, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_8));
-    ESP_ERROR_CHECK(bno085_init_i2c(&bno085_dev, i2c_bus_handle));
+    ESP_ERROR_CHECK(bno085_init_i2c(&bno085_dev, i2c_bus_handle, BNO085_INT_PIN));
     ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 10));
 
     // Initialize SPI touch screen and I2C display

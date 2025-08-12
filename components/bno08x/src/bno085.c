@@ -16,12 +16,31 @@
 #define HARD_RESET_DELAY_MS 1000
 #define SOFT_RESET_DELAY_MS 300
 
+
+// Forward declaration
+float q_to_roll_sf(float dqw, float dqx, float dqy, float dqz);
+float q_to_pitch_sf(float dqw, float dqx, float dqy, float dqz);
+float q_to_yaw_sf(float dqw, float dqx, float dqy, float dqz);
+
+
 uint32_t get_time_us(sh2_Hal_t *self) {
     uint32_t time_us = esp_timer_get_time() & 0xFFFFFFFFul;
 
     return time_us;
 }
 
+
+static void disable_interrupt(bno085_ctx_t *ctx) {
+    if (ctx->interrupt_pin != GPIO_NUM_NC) {
+        gpio_intr_disable(ctx->interrupt_pin);
+    }
+}
+
+static void enable_interrupt(bno085_ctx_t *ctx) {
+    if (ctx->interrupt_pin != GPIO_NUM_NC) {
+        gpio_intr_enable(ctx->interrupt_pin);
+    }
+}
 
 static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     // Cast cookie back to the context
@@ -47,12 +66,19 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
 
 
 void bno085_hard_reset(bno085_ctx_t *ctx) {
-    gpio_set_level(ctx->rst_pin, 0);  // set to low (active low)
-    vTaskDelay(pdMS_TO_TICKS(HARD_RESET_DELAY_MS));
-    gpio_set_level(ctx->rst_pin, 1);  // set to high
-    vTaskDelay(pdMS_TO_TICKS(HARD_RESET_DELAY_MS));
+    if (ctx->reset_pin != GPIO_NUM_NC) {
+        disable_interrupt(ctx);
+        gpio_set_level(ctx->reset_pin, 0);  // set to low (active low)
+        vTaskDelay(pdMS_TO_TICKS(HARD_RESET_DELAY_MS));
+        gpio_set_level(ctx->reset_pin, 1);  // set to high
+        vTaskDelay(pdMS_TO_TICKS(HARD_RESET_DELAY_MS));
+        enable_interrupt(ctx);
 
-    ESP_LOGI(TAG, "BNO085 Resetted");
+        ESP_LOGI(TAG, "BNO085 Resetted");
+    }
+    else {
+        ESP_LOGI(TAG, "BNO085 Reset pin not configured, skipping hard reset");
+    }
 }
 
 
@@ -146,12 +172,23 @@ int i2c_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
 }
 
 
-void sensor_poller_task(void *self) {
-    TickType_t last_poll_tick = xTaskGetTickCount();
+/**
+ * @brief Interrupt handler for the BNO085 sensor
+ */
+void IRAM_ATTR bno085_interrupt_handler(void *arg) {
+    bno085_ctx_t *ctx = (bno085_ctx_t *) arg;
 
+    // Permit the sensor poller to run
+    if (ctx->sensor_poller_task_handle) {
+        vTaskNotifyGiveFromISR(ctx->sensor_poller_task_handle, 0);
+    }   
+}
+
+void sensor_poller_task(void *self) {
     while (1) {
+        // Wait until the interrupt happens
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         sh2_service();
-        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(BNO085_SENSOR_POLLER_PERIOD_MS));
     }
 }
 
@@ -213,10 +250,29 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
 }
 
 
-esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle) {
+esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, int interrupt_pin) {
     // Initialize configuration
     memset(ctx, 0x0, sizeof(bno085_ctx_t));
+    ctx->reset_pin = GPIO_NUM_NC;  // No reset pin configured by default
+    ctx->interrupt_pin = GPIO_NUM_NC;  // no interrupt pin configured before initialized
 
+    // Configure Interrupt
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << interrupt_pin),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,  // enable internal pull up to avoid floating state during BNO085 chip reset
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_NEGEDGE, // Trigger on falling edge (active low)
+    };
+    ESP_ERROR_CHECK(gpio_config(&io_conf));
+
+    // Setup interrupt handler
+    ESP_ERROR_CHECK(gpio_isr_handler_add(interrupt_pin, bno085_interrupt_handler, (void *) ctx));
+
+    // Record
+    ctx->interrupt_pin = interrupt_pin;
+
+    // Configure I2C
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = BNO085_I2C_ADDRESS,
@@ -237,7 +293,6 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
         ESP_LOGE(TAG, "Failed to detect BNO085 i2c slave device");
         return ESP_FAIL;
     }
-
 
     // Add I2C slave to the master
     ESP_ERROR_CHECK(i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, &ctx->dev_handle));
