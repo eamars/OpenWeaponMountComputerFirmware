@@ -34,20 +34,15 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
         return;
     }
 
+    // Read sensor type and send it to the corresponding 
+    sensor_config_t * target_report_config = &ctx->enabled_sensor_report_list[sensor_value.sensorId];
+    if (target_report_config->sensor_value_queue == NULL) {
+        ESP_LOGE(TAG, "Sensor value queue is not initialized for sensor ID %d", sensor_value.sensorId);
+        return;
+    }
 
-    // xQueueSend(ctx->sensor_value_queue, &sensor_value, 0);
-    // // Try to send
-    // if (xQueueSend(ctx->sensor_value_queue, &sensor_value, 0) == pdPASS) {
-    //     // Queue is empty then nothing needed to be done
-    // }
-    // else {
-    //     // Queue is full, remove the oldest one
-    //     sh2_SensorValue_t dump;
-    //     if (xQueueReceive(ctx->sensor_value_queue, &dump, 0) == pdPASS) {
-    //         xQueueSend(ctx->sensor_value_queue, &sensor_value, 0);  // write to the queue after removing the oldest element
-    //     }
-    // }
-    xQueueOverwrite(ctx->sensor_value_queue, &sensor_value);
+    // Send it to the corresponding queue
+    xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
 }
 
 
@@ -160,20 +155,6 @@ void sensor_poller_task(void *self) {
     }
 }
 
-
-int _register_sensor_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t interval_ms) {
-    for (int i = 0; i < SH2_MAX_SENSOR_EVENT_LEN; i += 1) {
-        // find an empty slot to store the sensor report
-        if (ctx->enabled_sensor_report_list[i].sensor_id == 0) {
-            ctx->enabled_sensor_report_list[i].sensor_id = sensor_id;
-            ctx->enabled_sensor_report_list[i].interval_ms = interval_ms;
-
-            return i;
-        }
-    }
-
-    return -1;
-}
 
 esp_err_t _bno085_enable_report(sh2_SensorId_t sensor_id, uint32_t interval_ms) {
     static sh2_SensorConfig_t config = {
@@ -292,9 +273,6 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
         return ESP_FAIL;
     }
 
-    // Initialize queue
-    ctx->sensor_value_queue = xQueueCreate(1, sizeof(sh2_SensorValue_t));
-
     // Create task to process event
     BaseType_t rtos_return = xTaskCreate(
         sensor_poller_task, 
@@ -316,18 +294,40 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
 
 esp_err_t bno085_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t interval_ms) {
     // look for a slot to save the config
-    int slot = _register_sensor_report(ctx, sensor_id, interval_ms);
-    if (slot == -1) {
-        return ESP_FAIL;
-    }
+    sensor_config_t * target_report_config = &ctx->enabled_sensor_report_list[sensor_id];
 
     // enable report
-    ESP_LOGI(TAG, "Enabling Report 0x%x with interval %dms. Stored at index %d", sensor_id, interval_ms, slot);
+    ESP_LOGI(TAG, "Enabling Report 0x%x with interval %dms. Stored at index %d", sensor_id, interval_ms);
+
+    // Create queue if not created already
+    if (target_report_config->sensor_value_queue == NULL) {
+        target_report_config->sensor_value_queue = xQueueCreate(1, sizeof(sh2_SensorValue_t));
+        if (target_report_config->sensor_value_queue == NULL) {
+            ESP_LOGE(TAG, "Failed to create queue for sensor report");
+            return ESP_FAIL;
+        }
+    }
+
+    // Fill other house keeping information
+    target_report_config->sensor_id = sensor_id;
+    target_report_config->interval_ms = interval_ms;
+
+    // Enable report at the sensor
     return _bno085_enable_report(sensor_id, interval_ms);
 }
 
 
-esp_err_t bno085_wait_for_event(bno085_ctx_t *ctx, sh2_SensorValue_t *sensor_value, bool block_wait) {
+esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
+    return bno085_enable_report(ctx, SH2_GAME_ROTATION_VECTOR, interval_ms);
+}
+
+
+esp_err_t bno085_enable_linear_acceleration_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
+    return bno085_enable_report(ctx, SH2_LINEAR_ACCELERATION, interval_ms);   
+}
+
+
+esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, float *roll, float *pitch, bool block_wait) {
     TickType_t wait_ticks;
     if (block_wait) {
         wait_ticks = portMAX_DELAY;
@@ -336,29 +336,51 @@ esp_err_t bno085_wait_for_event(bno085_ctx_t *ctx, sh2_SensorValue_t *sensor_val
         wait_ticks = 0;
     }
 
-    xQueueReceive(ctx->sensor_value_queue, sensor_value, wait_ticks);
+    sh2_SensorValue_t sensor_value;
+
+    // Wait for the queue from the corresponding report
+    if (xQueueReceive(ctx->enabled_sensor_report_list[SH2_GAME_ROTATION_VECTOR].sensor_value_queue, &sensor_value, wait_ticks) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to receive game rotation vector report");
+        return ESP_FAIL;
+    }
+
+    // Decode sensor event
+    if (sensor_value.sensorId == SH2_GAME_ROTATION_VECTOR) {
+        float r, i, j, k;
+        r = sensor_value.un.gameRotationVector.real;
+        i = sensor_value.un.gameRotationVector.i;
+        j = sensor_value.un.gameRotationVector.j;
+        k = sensor_value.un.gameRotationVector.k;
+
+        *pitch = q_to_pitch_sf(r, i, j, k);
+        *roll = q_to_roll_sf(r, i, j, k);
+    }
 
     return ESP_OK;
 }
 
+esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x, float *y, float *z, bool block_wait) {
+    TickType_t wait_ticks;
+    if (block_wait) {
+        wait_ticks = portMAX_DELAY;
+    }
+    else {
+        wait_ticks = 0;
+    }
 
-esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, float *roll, float *pitch, bool block_wait) {
-    while (1) {
-        sh2_SensorValue_t sensor_value;
-        ESP_ERROR_CHECK(bno085_wait_for_event(ctx, &sensor_value, true));
+    sh2_SensorValue_t sensor_value;
 
-        // Decode sensor event
-        if (sensor_value.sensorId == SH2_GAME_ROTATION_VECTOR) {
-            float r, i, j, k;
-            r = sensor_value.un.gameRotationVector.real;
-            i = sensor_value.un.gameRotationVector.i;
-            j = sensor_value.un.gameRotationVector.j;
-            k = sensor_value.un.gameRotationVector.k;
+    // Wait for the queue from the corresponding report
+    if (xQueueReceive(ctx->enabled_sensor_report_list[SH2_LINEAR_ACCELERATION].sensor_value_queue, &sensor_value, wait_ticks) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to receive linear acceleration report");
+        return ESP_FAIL;
+    }
 
-            *pitch = q_to_pitch_sf(r, i, j, k);
-            *roll = q_to_roll_sf(r, i, j, k);
-        }
-        break;
+    // Decode sensor event
+    if (sensor_value.sensorId == SH2_LINEAR_ACCELERATION) {
+        *x = sensor_value.un.linearAcceleration.x;
+        *y = sensor_value.un.linearAcceleration.y;
+        *z = sensor_value.un.linearAcceleration.z;
     }
 
     return ESP_OK;

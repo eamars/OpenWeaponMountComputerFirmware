@@ -84,7 +84,7 @@ void app_main(void)
     // Initialize BNO085 sensor
     // ESP_ERROR_CHECK(bno085_init(&bno085_dev, UART_NUM_0, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_8));
     ESP_ERROR_CHECK(bno085_init_i2c(&bno085_dev, i2c_bus_handle));
-    ESP_ERROR_CHECK(bno085_enable_report(&bno085_dev, SH2_GAME_ROTATION_VECTOR, 10));
+    ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 10));
 
     // Initialize SPI touch screen and I2C display
     esp_lcd_panel_io_handle_t io_handle = NULL;

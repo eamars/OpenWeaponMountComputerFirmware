@@ -23,15 +23,13 @@
 typedef struct {
     sh2_SensorId_t sensor_id;
     uint32_t interval_ms;
+    QueueHandle_t sensor_value_queue;
 } sensor_config_t;
 
 
 typedef struct {
     sh2_Hal_t _HAL; // SH2 HAL interface -> Align the memory with the context structure allowing better type casting
-
-    QueueHandle_t sensor_value_queue;
     TaskHandle_t sensor_poller_task_handle;
-
     sensor_config_t enabled_sensor_report_list[SH2_MAX_SENSOR_EVENT_LEN];
 
     // Implement specific atributes
@@ -54,24 +52,41 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
  * @brief Enable BNO085 report.
  *
  * @param ctx Pointer to the BNO085 context.
+ * @param interval_ms Interval in milliseconds for the report.
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
-esp_err_t bno085_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t interval_ms);
+esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms);
+
+/**
+ * @brief Enable linear acceleration report
+ *
+ * @param ctx Pointer to the BNO085 context.
+ * @param interval_ms Interval in milliseconds for the report.
+ * @return esp_err_t ESP_OK on success, error code otherwise.
+ */
+esp_err_t bno085_enable_linear_acceleration_report(bno085_ctx_t *ctx, uint32_t interval_ms);
 
 
 /**
- * @brief Read BNO085 event
+ * @brief Wait for BNO085 game rotation vector roll and pitch values.
  *
  * @param ctx Pointer to the BNO085 context.
+ * @param roll Pointer to store the roll value.
+ * @param pitch Pointer to store the pitch value.
+ * @param block_wait Whether to block wait for the values.
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
-esp_err_t bno085_wait_for_event(bno085_ctx_t *ctx, sh2_SensorValue_t *sensor_value, bool block_wait);
-
 esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, float *roll, float *pitch, bool block_wait);
 
+/**
+ * @brief Wait for linear acceleration report
+ *
+ * @param ctx Pointer to the BNO085 context.
+ * @param interval_ms Interval in milliseconds for the report.
+ * @return esp_err_t ESP_OK on success, error code otherwise.
+ */
+esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x, float *y, float *z, bool block_wait);
 
-// Copied from https://github.com/sparkfun/SparkFun_BNO08x_Arduino_Library/blob/main/src/SparkFun_BNO08x_Arduino_Library.cpp
-float q_to_roll_sf(float r, float i, float j, float k);
 float q_to_pitch_sf(float r, float i, float j, float k);
 float q_to_yaw_sf(float r, float i, float j, float k);
 
