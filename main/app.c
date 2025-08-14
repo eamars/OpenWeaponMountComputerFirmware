@@ -16,10 +16,10 @@
 #include "esp_check.h"
 #include "esp_err.h"
 
-#include "bsp_display.h"
-#include "bsp_touch.h"
-#include "bsp_i2c.h"
-#include "bsp_spi.h"
+// #include "bsp_display.h"  // to be removed
+#include "bsp_touch.h"  // to be removed
+
+#include "driver/i2c_master.h"
 
 #include "nvs_flash.h"
 #include "esp_lvgl_port.h"
@@ -64,6 +64,98 @@ void mem_monitor_task(void *pvParameters) {
     }
 }
 
+i2c_master_bus_handle_t initialize_i2c_master() {
+    i2c_master_bus_handle_t i2c_bus_handle;
+    i2c_master_bus_config_t i2c_mst_config = {};
+    i2c_mst_config.clk_source = I2C_CLK_SRC_DEFAULT;
+    i2c_mst_config.i2c_port = (i2c_port_num_t) I2C_PORT_NUM;
+    i2c_mst_config.scl_io_num = I2C_MASTER_SCL;
+    i2c_mst_config.sda_io_num = I2C_MASTER_SDA;
+    i2c_mst_config.glitch_ignore_cnt = 7;
+    i2c_mst_config.flags.enable_internal_pullup = 1;
+
+    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &i2c_bus_handle));
+    return i2c_bus_handle;
+}
+
+esp_err_t initialize_nvs_flash() {
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was truncated and needs to be erased
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+
+    return ret;
+}
+
+esp_err_t initialize_spi_master() {
+    spi_bus_config_t buscfg = {
+        .miso_io_num = SPI_MISO,
+        .mosi_io_num = SPI_MOSI,
+        .sclk_io_num = SPI_SCLK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1
+    };
+
+    ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
+    return ESP_OK;
+}
+
+esp_err_t initialize_display_esp32_c6(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle, uint8_t brightness_pct) {
+    esp_lcd_panel_io_spi_config_t io_config = JD9853_PANEL_IO_SPI_CONFIG(LCD_CS, LCD_DC, NULL, NULL);
+    io_config.pclk_hz = LCD_PIXEL_CLOCK_HZ;
+
+    // Attach LCD to the SPI bus
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t) SPI_HOST, &io_config, io_handle));
+
+    esp_lcd_panel_dev_config_t panel_config = {
+        .reset_gpio_num = LCD_RST,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+        .bits_per_pixel = 16,
+    };
+
+    esp_lcd_new_panel_jd9853(*io_handle, &panel_config, panel_handle);
+
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(*panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(*panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(*panel_handle, true));
+    // ESP_ERROR_CHECK(esp_lcd_panel_set_gap(*panel_handle, 0, 34));
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(*panel_handle, false, false));
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(*panel_handle, true));
+
+    // Initialize backlight
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode = LCD_BL_LEDC_MODE,
+        .timer_num = LCD_BL_LEDC_TIMER,
+        .duty_resolution = LCD_BL_LEDC_DUTY_RES,
+        .freq_hz = LCD_BL_LEDC_FREQUENCY,
+        .clk_cfg = LEDC_AUTO_CLK
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+    // Prepare and apply the LEDC PWM configuration
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode = LCD_BL_LEDC_MODE,
+        .channel = LCD_BL_LEDC_CHANNEL,
+        .timer_sel = LCD_BL_LEDC_TIMER,
+        .intr_type = LEDC_INTR_DISABLE,
+        .gpio_num = LCD_BL,
+        .duty = 0, // Set duty to 0% 
+        .hpoint = 0
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+
+    // Set brightness
+    uint32_t duty = (brightness_pct * (LCD_BL_LEDC_DUTY - 1)) / 100;
+    ESP_ERROR_CHECK(ledc_set_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL));
+
+    return ESP_OK;
+}
+
+
+
 void app_main(void)
 {
     // Create task to monitor memory usage
@@ -73,34 +165,30 @@ void app_main(void)
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
 
     //Initialize NVS storage
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        // NVS partition was truncated and needs to be erased
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
+    ESP_ERROR_CHECK(initialize_nvs_flash());
 
     // Initialize I2C
-    i2c_master_bus_handle_t i2c_bus_handle = bsp_i2c_init();
+    i2c_master_bus_handle_t i2c_bus_handle = initialize_i2c_master();
 
     // Initialize BNO085 sensor
     // ESP_ERROR_CHECK(bno085_init(&bno085_dev, UART_NUM_0, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_8));
     ESP_ERROR_CHECK(bno085_init_i2c(&bno085_dev, i2c_bus_handle, BNO085_INT_PIN));
     ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 10));
 
+    // Initialize SPI master
+    ESP_ERROR_CHECK(initialize_spi_master());
+    
     // Initialize SPI touch screen and I2C display
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_touch_handle_t touch_handle = NULL;
-    bsp_spi_init();
-    bsp_display_init(&io_handle, &panel_handle, 0);
+    initialize_display_esp32_c6(&io_handle, &panel_handle, 100);
     bsp_touch_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION);
     ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, DISP_PANEL_H_GAP, DISP_PANEL_V_GAP));
 
     // Initialize LVGL
     const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    ret = lvgl_port_init(&lvgl_cfg);
+    esp_err_t ret = lvgl_port_init(&lvgl_cfg);
     ESP_ERROR_CHECK(ret);
 
     // Add display to LVGL
@@ -134,10 +222,6 @@ void app_main(void)
         .handle = touch_handle
     };
     lvgl_port_add_touch(&touch_cfg);
-
-    // Set display brightness
-    bsp_display_brightness_init();
-    bsp_display_set_brightness(100); // Set brightness to 100%
 
     // Create LVGL application
     if (lvgl_port_lock(0)) {

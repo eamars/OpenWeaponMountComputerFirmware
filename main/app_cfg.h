@@ -9,6 +9,14 @@
 
 
 #if CONFIG_IDF_TARGET_ESP32C6
+    // Display module
+    #include "esp_lcd_jd9853.h"
+    #include "esp_lcd_panel_io.h"
+    #include "esp_lcd_panel_vendor.h"
+    #include "esp_lcd_panel_ops.h"
+    #include "driver/ledc.h"
+
+
     // Define SPI ports
     #define SPI_HOST (SPI2_HOST)
     #define SPI_MISO (GPIO_NUM_3)
@@ -18,13 +26,20 @@
     // Define I2C ports
     #define I2C_PORT_NUM (I2C_NUM_0)
     #define I2C_MASTER_SDA (GPIO_NUM_18)
-    #define I2C_MASTER_SCL (GPIO_NUM_29)
+    #define I2C_MASTER_SCL (GPIO_NUM_19)
 
     // Define SPI for display
     #define LCD_CS (GPIO_NUM_14)
     #define LCD_DC (GPIO_NUM_15)
     #define LCD_RST (GPIO_NUM_12)
     #define LCD_BL (GPIO_NUM_23)
+    #define LCD_PIXEL_CLOCK_HZ (80 * 1000 * 1000)
+    #define LCD_BL_LEDC_TIMER LEDC_TIMER_0
+    #define LCD_BL_LEDC_MODE LEDC_LOW_SPEED_MODE
+    #define LCD_BL_LEDC_CHANNEL LEDC_CHANNEL_0
+    #define LCD_BL_LEDC_DUTY_RES LEDC_TIMER_10_BIT // Set duty resolution to 13 bits
+    #define LCD_BL_LEDC_DUTY (1024)                // Set duty to 50%. 1024 * 50% = 4096
+    #define LCD_BL_LEDC_FREQUENCY (5000)          // Frequency in Hertz. Set frequency at 5 kHz
 
     #define DISP_H_RES_PIXEL (172)
     #define DISP_V_RES_PIXEL (320)
@@ -35,6 +50,9 @@
     #define BNO085_INT_PIN (GPIO_NUM_9)
 
 #elif CONFIG_IDF_TARGET_ESP32S3
+    // Display module
+    #include "esp_lcd_sh8601.h"
+
     // Define SPI ports
     #define SPI_HOST (SPI2_HOST)
     #define SPI_MISO (GPIO_NUM_40)
