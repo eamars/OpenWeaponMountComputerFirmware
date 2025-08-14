@@ -1,6 +1,24 @@
 file(GLOB_RECURSE SRC_FILES "*.c")
 
+set(ALL_DEPS
+    freertos
+    bno08x
+    lvgl
+    driver
+    esp_lcd
+    nvs_flash
+    esp_lcd_touch
+    esp_lvgl_port
+)
+
+
+if(IDF_TARGET STREQUAL "esp32c6")
+    list(APPEND ALL_DEPS "esp_lcd_jd9853" "esp_lcd_touch_axs5106" "nvs_flash" "esp_lcd_sh8601")
+elseif (IDF_TARGET STREQUAL "esp32s3")
+    list(APPEND ALL_DEPS "esp_lcd_sh8601")
+endif()
+
 idf_component_register(
     SRCS ${SRC_FILES}
     INCLUDE_DIRS "."
-    REQUIRES "esp_bsp" "freertos" "bno08x" "lvgl")
+    REQUIRES ${ALL_DEPS})

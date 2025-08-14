@@ -16,6 +16,9 @@
     #include "esp_lcd_panel_ops.h"
     #include "driver/ledc.h"
 
+    // Touch layer
+    #include "esp_lcd_touch_axs5106.h"
+
 
     // Define SPI ports
     #define SPI_HOST (SPI2_HOST)
@@ -31,7 +34,7 @@
     // Define SPI for display
     #define LCD_CS (GPIO_NUM_14)
     #define LCD_DC (GPIO_NUM_15)
-    #define LCD_RST (GPIO_NUM_12)
+    #define LCD_RST (GPIO_NUM_22)
     #define LCD_BL (GPIO_NUM_23)
     #define LCD_PIXEL_CLOCK_HZ (80 * 1000 * 1000)
     #define LCD_BL_LEDC_TIMER LEDC_TIMER_0
@@ -40,6 +43,9 @@
     #define LCD_BL_LEDC_DUTY_RES LEDC_TIMER_10_BIT // Set duty resolution to 13 bits
     #define LCD_BL_LEDC_DUTY (1024)                // Set duty to 50%. 1024 * 50% = 4096
     #define LCD_BL_LEDC_FREQUENCY (5000)          // Frequency in Hertz. Set frequency at 5 kHz
+
+    #define TP_RST (GPIO_NUM_20)
+    #define TP_INT (GPIO_NUM_21)
 
     #define DISP_H_RES_PIXEL (172)
     #define DISP_V_RES_PIXEL (320)

@@ -5,6 +5,7 @@
 #include "esp_task.h"
 
 #include "driver/gpio.h"
+#include "esp_timer.h"
 
 #include "bno085.h"
 #include "sh2_err.h"
