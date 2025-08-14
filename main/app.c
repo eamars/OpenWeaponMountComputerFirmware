@@ -89,34 +89,48 @@ esp_err_t initialize_nvs_flash() {
     return ret;
 }
 
-esp_err_t initialize_spi_master() {
-    spi_bus_config_t buscfg = {
-        .miso_io_num = SPI_MISO,
-        .mosi_io_num = SPI_MOSI,
-        .sclk_io_num = SPI_SCLK,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1
-    };
-
-    ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
-    return ESP_OK;
-}
 
 #if CONFIG_IDF_TARGET_ESP32C6
+    esp_err_t initialize_spi_master() {
+        spi_bus_config_t buscfg = {
+            .miso_io_num = SPI_MISO,
+            .mosi_io_num = SPI_MOSI,
+            .sclk_io_num = SPI_SCLK,
+            .quadwp_io_num = -1,
+            .quadhd_io_num = -1
+        };
+
+        ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
+        return ESP_OK;
+    }
+
+
     esp_err_t initialize_display_esp32_c6(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle, uint8_t brightness_pct) {
+        // Initialize SPI host
+        spi_bus_config_t buscfg = {
+            .miso_io_num = SPI_MISO,
+            .mosi_io_num = SPI_MOSI,
+            .sclk_io_num = SPI_SCLK,
+            .quadwp_io_num = -1,
+            .quadhd_io_num = -1
+        };
+
+        ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
+
         esp_lcd_panel_io_spi_config_t io_config = JD9853_PANEL_IO_SPI_CONFIG(LCD_CS, LCD_DC, NULL, NULL);
         io_config.pclk_hz = LCD_PIXEL_CLOCK_HZ;
 
         // Attach LCD to the SPI bus
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t) SPI_HOST, &io_config, io_handle));
 
+        // Initialize LCD display
         esp_lcd_panel_dev_config_t panel_config = {
             .reset_gpio_num = LCD_RST,
             .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
             .bits_per_pixel = 16,
         };
 
-        esp_lcd_new_panel_jd9853(*io_handle, &panel_config, panel_handle);
+        ESP_ERROR_CHECK(esp_lcd_new_panel_jd9853(*io_handle, &panel_config, panel_handle));
 
         ESP_ERROR_CHECK(esp_lcd_panel_reset(*panel_handle));
         ESP_ERROR_CHECK(esp_lcd_panel_init(*panel_handle));
@@ -202,17 +216,85 @@ esp_err_t initialize_spi_master() {
     }
 #elif CONFIG_IDF_TARGET_ESP32S3
 
+    static const sh8601_lcd_init_cmd_t lcd_init_cmds[] = {
+        {0x11, (uint8_t []){0x00}, 0, 80},   
+        {0xC4, (uint8_t []){0x80}, 1, 0},
+    
+        {0x35, (uint8_t []){0x00}, 1, 0},
+
+        {0x53, (uint8_t []){0x20}, 1, 1},
+        {0x63, (uint8_t []){0xFF}, 1, 1},
+        {0x51, (uint8_t []){0x00}, 1, 1},
+
+        {0x29, (uint8_t []){0x00}, 0, 10},
+
+        {0x51, (uint8_t []){0xFF}, 1, 0},    //亮度
+    };
+
+
+    esp_err_t initialize_display_esp32_s3(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle) {
+        // Initialize QSPI Host
+        spi_bus_config_t buscfg = SH8601_PANEL_BUS_QSPI_CONFIG(
+            LCD_PCLK, 
+            LCD_DATA0,
+            LCD_DATA1,
+            LCD_DATA2, 
+            LCD_DATA3,
+            DISP_H_RES_PIXEL * DISP_V_RES_PIXEL * LCD_BIT_PER_PIXEL / 8
+        );
+        ESP_ERROR_CHECK(spi_bus_initialize(SPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
+
+        esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(LCD_CS, NULL, NULL);
+
+        // Attach LCD to QSPI
+        ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t) SPI_HOST, &io_config, io_handle));
+
+        // Initialize LCD display
+        sh8601_vendor_config_t vendor_config = {
+            .init_cmds = lcd_init_cmds,
+            .init_cmds_size = sizeof(lcd_init_cmds) / sizeof(lcd_init_cmds[0]),
+            .flags = {
+                .use_qspi_interface = 1,
+            },
+        };
+
+        esp_lcd_panel_dev_config_t panel_config = {
+            .reset_gpio_num = LCD_RST,
+            .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+            .bits_per_pixel = LCD_BIT_PER_PIXEL,
+            .vendor_config = &vendor_config,
+        };
+
+        ESP_ERROR_CHECK(esp_lcd_new_panel_sh8601(*io_handle, &panel_config, panel_handle));
+        ESP_ERROR_CHECK(esp_lcd_panel_reset(*panel_handle));
+        ESP_ERROR_CHECK(esp_lcd_panel_init(*panel_handle));
+
+        return ESP_OK;
+    }
+
+    esp_err_t initialize_touch_esp32_s3(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_handle_t bus_handle, uint16_t xmax, uint16_t ymax, uint16_t rotation) {
+        static i2c_master_dev_handle_t dev_handle;
+        i2c_device_config_t dev_cfg = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = I2C_ADDR_FT3168
+        };
+
+        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
+
+        // Add touch driver
+        esp_lcd_touch_config_t tp_cfg = {};
+        tp_cfg.x_max = xmax < ymax ? xmax : ymax;
+        tp_cfg.y_max = xmax < ymax ? ymax : xmax;
+
+        // touch_handle->read_data = 
+        // touch_handle->get_xy = 
+        // touch_handle->del = 
+        // touch_handle->config.x_max = xmax < ymax ? xmax : ymax;
+        // touch_handle->config.y_max = xmax < ymax ? ymax : xmax;
+
+    }
 
 #endif
-
-
-esp_err_t initialize_display_esp32_s3() {
-    esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(EXAMPLE_PIN_NUM_LCD_CS,
-                                                                                example_notify_lvgl_flush_ready,
-                                                                                &disp_drv);
-}
-
-
 
 void app_main(void)
 {
@@ -232,19 +314,17 @@ void app_main(void)
     // ESP_ERROR_CHECK(bno085_init(&bno085_dev, UART_NUM_0, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_8));
     ESP_ERROR_CHECK(bno085_init_i2c(&bno085_dev, i2c_bus_handle, BNO085_INT_PIN));
     ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 10));
-
-    // Initialize SPI master
-    ESP_ERROR_CHECK(initialize_spi_master());
     
     // Initialize SPI touch screen and I2C display
-#if CONFIG_IDF_TARGET_ESP32C6
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_touch_handle_t touch_handle = NULL;
+#if CONFIG_IDF_TARGET_ESP32C6
     ESP_ERROR_CHECK(initialize_display_esp32_c6(&io_handle, &panel_handle, 100));
     ESP_ERROR_CHECK(initialize_touch_esp32c6(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
     ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, DISP_PANEL_H_GAP, DISP_PANEL_V_GAP));
 #elif CONFIG_IDF_TARGET_ESP32S3
+    ESP_ERROR_CHECK(initialize_display_esp32_s3(&io_handle, &panel_handle));
 
 #endif
     // Initialize LVGL

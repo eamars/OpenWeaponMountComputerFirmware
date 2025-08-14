@@ -79,6 +79,14 @@
     #define LCD_DATA3         (GPIO_NUM_14)
     #define LCD_RST           (GPIO_NUM_21)
 
+    #define I2C_ADDR_FT3168 0x38
+
+    #if CONFIG_LV_COLOR_DEPTH == 32
+        #define LCD_BIT_PER_PIXEL       (24)
+    #elif CONFIG_LV_COLOR_DEPTH == 16
+        #define LCD_BIT_PER_PIXEL       (16)
+    #endif  // CONFIG_LV_COLOR_DEPTH
+
     #define DISP_H_RES_PIXEL (280)
     #define DISP_V_RES_PIXEL (456)
 
