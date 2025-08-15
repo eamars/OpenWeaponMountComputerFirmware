@@ -57,7 +57,8 @@
 
 #elif CONFIG_IDF_TARGET_ESP32S3
     // Display module
-    #include "esp_lcd_sh8601.h"
+    #include "esp_lcd_co5300.h"
+    #include "esp_lcd_touch_ft3168.h"
 
     // Define SPI ports
     #define SPI_HOST (SPI2_HOST)
@@ -92,7 +93,7 @@
     #define DISP_H_RES_PIXEL (280)
     #define DISP_V_RES_PIXEL (456)
 
-    #define DISP_PANEL_H_GAP (0) // Horizontal gap for display panel
+    #define DISP_PANEL_H_GAP (20) // Horizontal gap for display panel
     #define DISP_PANEL_V_GAP (0)  // Vertical gap for display panel
 
     #define BNO085_INT_PIN (GPIO_NUM_45)

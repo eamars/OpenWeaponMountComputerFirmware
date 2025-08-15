@@ -287,7 +287,9 @@ void create_digital_level_view(lv_obj_t *parent)
     size_t buf_size = LV_CANVAS_BUF_SIZE(DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, bpp, LV_DRAW_BUF_STRIDE_ALIGN);
     ESP_LOGI(TAG, "Canvas buffer size: %d bytes", buf_size);
 
-    lv_canvas_draw_buffer = malloc(buf_size);
+    // lv_canvas_draw_buffer = malloc(buf_size);
+    lv_canvas_draw_buffer = heap_caps_calloc(1, buf_size, MALLOC_CAP_DEFAULT);
+
     if (lv_canvas_draw_buffer == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory for canvas draw buffer");
         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);

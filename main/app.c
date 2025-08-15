@@ -48,7 +48,6 @@ void mem_monitor_task(void *pvParameters) {
         size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
         size_t min_free_heap = heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT);
 
-        lv_mem_monitor(&mon); // Fill the monitor struct
 
         ESP_LOGI(TAG, "Free heap: %u kbytes | Min free heap: %u kbytes",
                 (unsigned)free_heap / 1024, (unsigned)min_free_heap / 1024);
@@ -57,9 +56,13 @@ void mem_monitor_task(void *pvParameters) {
         ESP_LOGI(TAG, "Free internal heap: %u kbytes",
                 (unsigned)esp_get_free_internal_heap_size() / 1024);
 
+#if CONFIG_IDF_TARGET_ESP32C6
+        lv_mem_monitor(&mon); // Fill the monitor struct
+
         ESP_LOGI(TAG, "LVGL free: %u kbytes | LVGL total: %u kbytes",
                 mon.free_size / 1024, mon.total_size / 1024);
-        // print_all_tasks_stack_usage();
+#endif  // CONFIG_IDF_TARGET_ESP32C6
+
         ESP_LOGI(TAG, "---------------------------");
         vTaskDelay(pdMS_TO_TICKS(2000)); // Every 2 seconds
     }
@@ -106,7 +109,7 @@ esp_err_t initialize_nvs_flash() {
     }
 
 
-    esp_err_t initialize_display_esp32_c6(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle, uint8_t brightness_pct) {
+    esp_err_t initialize_display(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle, uint8_t brightness_pct) {
         // Initialize SPI host
         spi_bus_config_t buscfg = {
             .miso_io_num = SPI_MISO,
@@ -170,7 +173,7 @@ esp_err_t initialize_nvs_flash() {
         return ESP_OK;
     }
 
-    esp_err_t initialize_touch_esp32c6(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_handle_t bus_handle, uint16_t xmax, uint16_t ymax, uint16_t rotation) {
+    esp_err_t initialize_touch(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_handle_t bus_handle, uint16_t xmax, uint16_t ymax, uint16_t rotation) {
         static i2c_master_dev_handle_t dev_handle;
         i2c_device_config_t dev_cfg = {
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
@@ -216,44 +219,25 @@ esp_err_t initialize_nvs_flash() {
         return ESP_OK;
     }
 #elif CONFIG_IDF_TARGET_ESP32S3
-
-    static const sh8601_lcd_init_cmd_t lcd_init_cmds[] = {
-        {0x11, (uint8_t []){0x00}, 0, 80},   
-        {0xC4, (uint8_t []){0x80}, 1, 0},
-    
-        {0x35, (uint8_t []){0x00}, 1, 0},
-
-        {0x53, (uint8_t []){0x20}, 1, 1},
-        {0x63, (uint8_t []){0xFF}, 1, 1},
-        {0x51, (uint8_t []){0x00}, 1, 1},
-
-        {0x29, (uint8_t []){0x00}, 0, 10},
-
-        {0x51, (uint8_t []){0xFF}, 1, 0},    //亮度
-    };
-
-
-    esp_err_t initialize_display_esp32_s3(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle) {
+    esp_err_t initialize_display(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle, uint8_t brightness_pct) {
         // Initialize QSPI Host
-        spi_bus_config_t buscfg = SH8601_PANEL_BUS_QSPI_CONFIG(
+        spi_bus_config_t buscfg = CO5300_PANEL_BUS_QSPI_CONFIG(
             LCD_PCLK, 
             LCD_DATA0,
             LCD_DATA1,
             LCD_DATA2, 
             LCD_DATA3,
-            DISP_H_RES_PIXEL * DISP_V_RES_PIXEL * LCD_BIT_PER_PIXEL / 8
+            DISP_H_RES_PIXEL * 80 * sizeof(uint16_t)
         );
         ESP_ERROR_CHECK(spi_bus_initialize(SPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
-        esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(LCD_CS, NULL, NULL);
+        esp_lcd_panel_io_spi_config_t io_config = CO5300_PANEL_IO_QSPI_CONFIG(LCD_CS, NULL, NULL);
 
         // Attach LCD to QSPI
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t) SPI_HOST, &io_config, io_handle));
 
         // Initialize LCD display
-        sh8601_vendor_config_t vendor_config = {
-            .init_cmds = lcd_init_cmds,
-            .init_cmds_size = sizeof(lcd_init_cmds) / sizeof(lcd_init_cmds[0]),
+        co5300_vendor_config_t vendor_config = {
             .flags = {
                 .use_qspi_interface = 1,
             },
@@ -266,18 +250,27 @@ esp_err_t initialize_nvs_flash() {
             .vendor_config = &vendor_config,
         };
 
-        ESP_ERROR_CHECK(esp_lcd_new_panel_sh8601(*io_handle, &panel_config, panel_handle));
+        ESP_ERROR_CHECK(esp_lcd_new_panel_co5300(*io_handle, &panel_config, panel_handle));
         ESP_ERROR_CHECK(esp_lcd_panel_reset(*panel_handle));
         ESP_ERROR_CHECK(esp_lcd_panel_init(*panel_handle));
+
+        // Set brightness
+        uint32_t lcd_cmd = 0x51;
+        lcd_cmd &= 0xff;
+        lcd_cmd <<= 8;
+        lcd_cmd |= 0x02 << 24;
+        uint8_t param = 255 * brightness_pct / 100;
+        esp_lcd_panel_io_tx_param(*io_handle, lcd_cmd, &param,1);
 
         return ESP_OK;
     }
 
-    esp_err_t initialize_touch_esp32_s3(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_handle_t bus_handle, uint16_t xmax, uint16_t ymax, uint16_t rotation) {
+    esp_err_t initialize_touch(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_handle_t bus_handle, uint16_t xmax, uint16_t ymax, uint16_t rotation) {
         static i2c_master_dev_handle_t dev_handle;
         i2c_device_config_t dev_cfg = {
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-            .device_address = I2C_ADDR_FT3168
+            .device_address = I2C_ADDR_FT3168,
+            .scl_speed_hz = 400000,
         };
 
         ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
@@ -286,12 +279,34 @@ esp_err_t initialize_nvs_flash() {
         esp_lcd_touch_config_t tp_cfg = {};
         tp_cfg.x_max = xmax < ymax ? xmax : ymax;
         tp_cfg.y_max = xmax < ymax ? ymax : xmax;
+        tp_cfg.driver_data = dev_handle;
+        if (90 == rotation)
+        {
+            tp_cfg.flags.swap_xy = 1;
+            tp_cfg.flags.mirror_x = 0;
+            tp_cfg.flags.mirror_y = 0;
+        }
+        else if (180 == rotation)
+        {
+            tp_cfg.flags.swap_xy = 0;
+            tp_cfg.flags.mirror_x = 0;
+            tp_cfg.flags.mirror_y = 1;
+        }
+        else if (270 == rotation)
+        {
+            tp_cfg.flags.swap_xy = 1;
+            tp_cfg.flags.mirror_x = 1;
+            tp_cfg.flags.mirror_y = 1;
+        }
+        else
+        {
+            tp_cfg.flags.swap_xy = 0;
+            tp_cfg.flags.mirror_x = 1;
+            tp_cfg.flags.mirror_y = 0;
+        }
 
-        // touch_handle->read_data = 
-        // touch_handle->get_xy = 
-        // touch_handle->del = 
-        // touch_handle->config.x_max = xmax < ymax ? xmax : ymax;
-        // touch_handle->config.y_max = xmax < ymax ? ymax : xmax;
+        ESP_ERROR_CHECK(esp_lcd_touch_new_ft3168(&tp_cfg, touch_handle));
+
         return ESP_OK;
     }
 
@@ -320,14 +335,11 @@ void app_main(void)
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_touch_handle_t touch_handle = NULL;
-#if CONFIG_IDF_TARGET_ESP32C6
-    ESP_ERROR_CHECK(initialize_display_esp32_c6(&io_handle, &panel_handle, 100));
-    ESP_ERROR_CHECK(initialize_touch_esp32c6(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
-    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, DISP_PANEL_H_GAP, DISP_PANEL_V_GAP));
-#elif CONFIG_IDF_TARGET_ESP32S3
-    ESP_ERROR_CHECK(initialize_display_esp32_s3(&io_handle, &panel_handle));
 
-#endif
+    ESP_ERROR_CHECK(initialize_display(&io_handle, &panel_handle, 100));
+    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, DISP_PANEL_H_GAP, DISP_PANEL_V_GAP));
+    ESP_ERROR_CHECK(initialize_touch(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
+
     // Initialize LVGL
     const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
     esp_err_t ret = lvgl_port_init(&lvgl_cfg);
@@ -337,7 +349,7 @@ void app_main(void)
     lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = io_handle,
         .panel_handle = panel_handle,
-        .buffer_size = DISP_H_RES_PIXEL * DISP_V_RES_PIXEL / 5,
+        .buffer_size = DISP_H_RES_PIXEL * DISP_V_RES_PIXEL / 4,
         .double_buffer = true,
         .hres = DISP_H_RES_PIXEL,
         .vres = DISP_V_RES_PIXEL,
@@ -348,9 +360,15 @@ void app_main(void)
             .mirror_x = false,
             .mirror_y = false
         },
+#if CONFIG_IDF_TARGET_ESP32S3
+        .trans_size = 8 * 1024,
+#endif  // CONFIG_IDF_TARGET_ESP32S3
         .flags = {
             .buff_dma = true,
             .swap_bytes = true,
+#if CONFIG_IDF_TARGET_ESP32S3
+            .buff_spiram = true,
+#endif  // CONFIG_TARGET_ESP32S3
         }
     };
 
