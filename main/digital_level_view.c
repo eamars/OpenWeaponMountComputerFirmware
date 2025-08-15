@@ -43,6 +43,7 @@ static TaskHandle_t sensor_event_poller_task_handle;
 static SemaphoreHandle_t sensor_event_poller_task_control;
 extern bno085_ctx_t bno085_dev;
 countdown_timer_t countdown_timer;
+uint8_t *lv_canvas_draw_buffer;
 
 // NOT threadsafe copy of roll and pitch to be shared within the module
 static float roll, pitch;
@@ -279,13 +280,19 @@ void create_digital_level_view(lv_obj_t *parent)
         ESP_ERROR_CHECK(err);
     }
 
-    // create canvas for background drawing
-    LV_DRAW_BUF_DEFINE_STATIC(draw_buf, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, LV_COLOR_FORMAT_RGB565);
-    LV_DRAW_BUF_INIT_STATIC(draw_buf);
-
     // Create a canvas and initialize its palette
     digital_level_bg_canvas = lv_canvas_create(parent);
-    lv_canvas_set_draw_buf(digital_level_bg_canvas, &draw_buf);
+    // Allocate memory for buffer
+    uint32_t bpp = lv_color_format_get_bpp(LV_COLOR_FORMAT_RGB565); // = 16
+    size_t buf_size = LV_CANVAS_BUF_SIZE(DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, bpp, LV_DRAW_BUF_STRIDE_ALIGN);
+    ESP_LOGI(TAG, "Canvas buffer size: %d bytes", buf_size);
+
+    lv_canvas_draw_buffer = malloc(buf_size);
+    if (lv_canvas_draw_buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for canvas draw buffer");
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
+    lv_canvas_set_buffer(digital_level_bg_canvas, (void *) lv_canvas_draw_buffer, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, LV_COLOR_FORMAT_RGB565);
     lv_canvas_fill_bg(digital_level_bg_canvas, lv_palette_main(digital_level_view_config.colour_horizontal_level_indicator), LV_OPA_COVER);
     lv_obj_center(digital_level_bg_canvas);
 

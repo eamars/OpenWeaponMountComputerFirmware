@@ -87,6 +87,8 @@
         #define LCD_BIT_PER_PIXEL       (16)
     #endif  // CONFIG_LV_COLOR_DEPTH
 
+    #define BNO085_INT_PIN (GPIO_NUM_45)
+
     #define DISP_H_RES_PIXEL (280)
     #define DISP_V_RES_PIXEL (456)
 
