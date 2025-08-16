@@ -270,16 +270,22 @@ esp_err_t initialize_nvs_flash() {
         i2c_device_config_t dev_cfg = {
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
             .device_address = I2C_ADDR_FT3168,
-            .scl_speed_hz = 400000,
+            .scl_speed_hz = 300000,
         };
 
-        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
+        // Detect the presence of device
+        ESP_RETURN_ON_ERROR(i2c_master_probe(bus_handle, I2C_ADDR_FT3168, -1), TAG, "Failed to probe FT3168");
+
+        ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle), TAG, "Failed to add FT3168");
 
         // Add touch driver
         esp_lcd_touch_config_t tp_cfg = {};
         tp_cfg.x_max = xmax < ymax ? xmax : ymax;
         tp_cfg.y_max = xmax < ymax ? ymax : xmax;
         tp_cfg.driver_data = dev_handle;
+        tp_cfg.rst_gpio_num = GPIO_NUM_NC;
+        tp_cfg.int_gpio_num = GPIO_NUM_NC;
+
         if (90 == rotation)
         {
             tp_cfg.flags.swap_xy = 1;
@@ -305,7 +311,7 @@ esp_err_t initialize_nvs_flash() {
             tp_cfg.flags.mirror_y = 0;
         }
 
-        ESP_ERROR_CHECK(esp_lcd_touch_new_ft3168(&tp_cfg, touch_handle));
+        ESP_RETURN_ON_ERROR(esp_lcd_touch_new_ft3168(&tp_cfg, touch_handle), TAG, "Failed to initialize FT3168");
 
         return ESP_OK;
     }
@@ -325,11 +331,6 @@ void app_main(void)
 
     // Initialize I2C
     i2c_master_bus_handle_t i2c_bus_handle = initialize_i2c_master();
-
-    // Initialize BNO085 sensor
-    // ESP_ERROR_CHECK(bno085_init(&bno085_dev, UART_NUM_0, GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_8));
-    ESP_ERROR_CHECK(bno085_init_i2c(&bno085_dev, i2c_bus_handle, BNO085_INT_PIN));
-    ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 10));
     
     // Initialize SPI touch screen and I2C display
     esp_lcd_panel_io_handle_t io_handle = NULL;
@@ -339,6 +340,10 @@ void app_main(void)
     ESP_ERROR_CHECK(initialize_display(&io_handle, &panel_handle, 100));
     ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, DISP_PANEL_H_GAP, DISP_PANEL_V_GAP));
     ESP_ERROR_CHECK(initialize_touch(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
+
+    // Initialize BNO085 sensor
+    ESP_ERROR_CHECK(bno085_init_i2c(&bno085_dev, i2c_bus_handle, BNO085_INT_PIN));
+    ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 10));
 
     // Initialize LVGL
     const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();

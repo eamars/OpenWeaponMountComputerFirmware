@@ -13,42 +13,45 @@ esp_err_t esp_lcd_touch_ft3168_read_data(esp_lcd_touch_handle_t ctx) {
 
     // Read touch data from the FT3168
     uint8_t write_cmd;
-    uint8_t read_buf[4];
+    uint8_t touch_points = 0;
 
     // Read the number of touch points (max 2)
     write_cmd = 0x02;
+
     ESP_RETURN_ON_ERROR(i2c_master_transmit_receive(
         (i2c_master_dev_handle_t) ctx->config.driver_data,
         &write_cmd, 1,
-        read_buf, 1,
-        100), TAG, "Failed to read touch points");
+        &touch_points, 1,
+        -1), TAG, "Failed to read touch points");
 
-    int points = read_buf[0];
-    if (points == 0) {
+    if (touch_points == 0) {
         return ESP_OK;
     }
-    
-    points = (points > 2 ? 2 : points);  // make sure we are not reading more than needed
+
+    touch_points = (touch_points > 2 ? 2 : touch_points);  // make sure we are not reading more than needed
 
     // Enter critical section to protect data
-    portENTER_CRITICAL(&ctx->data.lock);
-    ctx->data.points = points;
+    // portENTER_CRITICAL(&ctx->data.lock);
+    ctx->data.points = touch_points;
+
+    uint8_t read_buf[4];
 
     // Find all coordinates
-    for (int i = 0; i < points; i++) {
+    for (int i = 0; i < touch_points; i++) {
         // Read all coordinates
         write_cmd = 0x03 + i * 6;
+        
         ESP_RETURN_ON_ERROR(i2c_master_transmit_receive(
             (i2c_master_dev_handle_t) ctx->config.driver_data, 
             &write_cmd, 1,
             read_buf, 4,
-            100), TAG, "Failed to read touch coordinates %d", i);
+            -1), TAG, "Failed to read touch coordinates %d", i);
 
         // Write data to the handle
         ctx->data.coords[i].y = (((uint16_t)read_buf[0] & 0x0f)<<8) | (uint16_t)read_buf[1];
         ctx->data.coords[i].x = (((uint16_t)read_buf[2] & 0x0f)<<8) | (uint16_t)read_buf[3];
     }
-    portEXIT_CRITICAL(&ctx->data.lock);
+    // portEXIT_CRITICAL(&ctx->data.lock);
 
     return ESP_OK;
 }
@@ -95,11 +98,19 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
 
     // Initialize touch screen
     uint8_t write_buf[2] = {0x0, 0x0};  // write 0x0 to addr 0x0 to switch to working mode
-    ESP_RETURN_ON_ERROR(i2c_master_transmit(config->driver_data, write_buf, 2, 100), TAG, "Failed to initialize touch screen");
+    ESP_RETURN_ON_ERROR(i2c_master_transmit(config->driver_data, write_buf, 2, -1), TAG, "Failed to initialize touch screen");
+
+    ESP_LOGI(TAG, "FT3168 initialized successfully");
 
     // Assign callbacks
     touch_handle->read_data = esp_lcd_touch_ft3168_read_data;
     touch_handle->get_xy = esp_lcd_touch_ft3168_get_xy;
+
+    /* Mutex */
+    touch_handle->data.lock.owner = portMUX_FREE_VAL;
+
+    /* Save config */
+    memcpy(&touch_handle->config, config, sizeof(esp_lcd_touch_config_t));
 
     *out_touch = touch_handle;
 

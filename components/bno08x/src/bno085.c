@@ -277,7 +277,7 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = BNO085_I2C_ADDRESS,
-        .scl_speed_hz = 100000,
+        .scl_speed_hz = 400000,
     };
 
     // Send an probe command to verify if the device is available
