@@ -1,11 +1,13 @@
-#include "system_config_view.h"
+#include "config_view.h"
 
 #include "esp_err.h"
 #include "esp_log.h"
 
 #include "digital_level_view.h"
+#include "system_config.h"
 
-#define TAG "SystemConfigView"
+
+#define TAG "ConfigView"
 
 lv_obj_t * config_menu;
 
@@ -159,7 +161,18 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t default_colou
 }
 
 
-void create_system_config_view(lv_obj_t *parent) {
+lv_obj_t * create_dropdown_list(lv_obj_t * container, const char * options, lv_event_cb_t event_cb, void * event_cb_args) {
+    lv_obj_t * dropdown_list_option = lv_dropdown_create(container);
+    lv_obj_set_size(dropdown_list_option, lv_pct(100), lv_pct(100));
+    lv_obj_add_flag(dropdown_list_option, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+    lv_dropdown_set_options(dropdown_list_option, options);
+    lv_obj_add_event_cb(dropdown_list_option, event_cb, LV_EVENT_VALUE_CHANGED, event_cb_args);
+    return dropdown_list_option;
+}
+
+
+
+void create_config_view(lv_obj_t *parent) {
     config_menu = lv_menu_create(parent);
     lv_obj_set_size(config_menu, lv_pct(100), lv_pct(100));
     lv_obj_center(config_menu);
@@ -173,6 +186,7 @@ void create_system_config_view(lv_obj_t *parent) {
     /*Create a main page*/
     lv_obj_t * main_page = lv_menu_page_create(config_menu, "Settings");
 
+    create_system_config_view_config(config_menu, main_page);
     create_digital_level_view_config(config_menu, main_page);
 
     lv_menu_set_page(config_menu, main_page);

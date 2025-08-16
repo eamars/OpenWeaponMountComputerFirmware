@@ -27,22 +27,15 @@
 #include "main_tileview.h"
 #include "app_cfg.h"
 #include "bno085.h"
+#include "system_config.h"
 
 
 #define TAG "App"
 
 bno085_ctx_t bno085_dev;
-
-
-void print_memory_info(void) {
-
-}
-
-
+extern system_config_t system_config;
 
 void mem_monitor_task(void *pvParameters) {
-    lv_mem_monitor_t mon;
-
     while (1) {
         // Heap info
         size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
@@ -57,6 +50,7 @@ void mem_monitor_task(void *pvParameters) {
                 (unsigned)esp_get_free_internal_heap_size() / 1024);
 
 #if CONFIG_IDF_TARGET_ESP32C6
+        lv_mem_monitor_t mon;
         lv_mem_monitor(&mon); // Fill the monitor struct
 
         ESP_LOGI(TAG, "LVGL free: %u kbytes | LVGL total: %u kbytes",
@@ -328,6 +322,9 @@ void app_main(void)
 
     //Initialize NVS storage
     ESP_ERROR_CHECK(initialize_nvs_flash());
+
+    // Read system configurations
+    ESP_ERROR_CHECK(load_system_config());
 
     // Initialize I2C
     i2c_master_bus_handle_t i2c_bus_handle = initialize_i2c_master();

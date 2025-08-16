@@ -6,14 +6,17 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "nvs.h"
+#include "esp_crc.h"
+#include "esp_check.h"
 
 #include "digital_level_view.h"
 #include "app_cfg.h"
 #include "bno085.h"
 #include "esp_lvgl_port.h"
 #include "countdown_timer.h"
-#include "system_config_view.h"
+#include "config_view.h"
 #include "dope_config_view.h"
+#include "common.h"
 
 
 #define TAG "DigitalLevelView"
@@ -255,30 +258,8 @@ void create_digital_level_layout(lv_obj_t *parent)
 
 void create_digital_level_view(lv_obj_t *parent)
 {
-    esp_err_t err;
-
     // Read configuration from NVS
-    ESP_LOGI(TAG, "Read tilt_information_overlay_config");
-    nvs_handle_t handle;
-    err = nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle);
-    ESP_ERROR_CHECK(err);
-
-    size_t required_size = sizeof(digital_level_view_config);
-    err = nvs_get_blob(handle, "cfg", &digital_level_view_config, &required_size);
-    if (err == ESP_ERR_NVS_NOT_FOUND) {
-        ESP_LOGI(TAG, "Initialize digital_level_view_config with default values");
-
-        // Initialize with default values
-        memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
-
-        // Write to NVS
-        err = nvs_set_blob(handle, "cfg", &digital_level_view_config, required_size);
-        ESP_ERROR_CHECK(err);
-        err = nvs_commit(handle);
-        ESP_ERROR_CHECK(err);
-    } else {
-        ESP_ERROR_CHECK(err);
-    }
+    load_digital_level_view_config();
 
     // Create a canvas and initialize its palette
     digital_level_bg_canvas = lv_canvas_create(parent);
@@ -360,34 +341,34 @@ lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent
     lv_obj_t * config_item;
 
     // Create a sub page for digital_level_view
-    lv_obj_t * sub_page_digital_level_view = lv_menu_page_create(parent, NULL);
+    lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
     // Roll display gain
-    container = create_menu_container_with_text(sub_page_digital_level_view, NULL, "Roll Display Gain");
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Roll Display Gain");
     config_item = create_spin_box(container, 10, 20, 2, 1, (int32_t) (digital_level_view_config.roll_display_gain * 10), update_float_item_gain_10, &digital_level_view_config.roll_display_gain);
 
     // Pitch display gain
-    container = create_menu_container_with_text(sub_page_digital_level_view, NULL, "Pitch Display Gain");
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Pitch Display Gain");
     config_item = create_spin_box(container, 1, 10, 2, 1, (int32_t) (digital_level_view_config.pitch_display_gain * 10), update_float_item_gain_10, &digital_level_view_config.pitch_display_gain);
 
     // delta level threshold
-    container = create_menu_container_with_text(sub_page_digital_level_view, NULL, "Level Threshold (deg)");
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Level Threshold (deg)");
     config_item = create_spin_box(container, 5, 20, 2, 1, (int32_t) (digital_level_view_config.delta_level_threshold * 10), update_float_item_gain_10, &digital_level_view_config.delta_level_threshold);
 
     // Left tilt indicator colour
-    container = create_menu_container_with_text(sub_page_digital_level_view, LV_SYMBOL_EYE_OPEN, "Left Tilt Colour");
+    container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Left Tilt Colour");
     config_item = create_colour_picker(container, digital_level_view_config.colour_left_tilt_indicator, update_colour, &digital_level_view_config.colour_left_tilt_indicator);
 
     // Right tilt indicator colour
-    container = create_menu_container_with_text(sub_page_digital_level_view, LV_SYMBOL_EYE_OPEN, "Right Tilt Colour");
+    container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Right Tilt Colour");
     config_item = create_colour_picker(container, digital_level_view_config.colour_right_tilt_indicator, update_colour, &digital_level_view_config.colour_right_tilt_indicator);
 
     // Horizontal tilt indicator colour
-    container = create_menu_container_with_text(sub_page_digital_level_view, LV_SYMBOL_EYE_OPEN, "Leveled Colour");
+    container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Leveled Colour");
     config_item = create_colour_picker(container, digital_level_view_config.colour_horizontal_level_indicator, update_colour, &digital_level_view_config.colour_horizontal_level_indicator);
 
     // Horizontal tilt indicator colour
-    container = create_menu_container_with_text(sub_page_digital_level_view, LV_SYMBOL_EYE_OPEN, "Foreground Colour");
+    container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Foreground Colour");
     config_item = create_colour_picker(container, digital_level_view_config.colour_foreground, update_colour, &digital_level_view_config.colour_foreground);
 
 
@@ -396,12 +377,70 @@ lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent
     lv_obj_t * img = lv_image_create(cont);
     lv_obj_t * label = lv_label_create(cont);
 
-    lv_image_set_src(img, LV_SYMBOL_RIGHT);
-    lv_label_set_text(label, "Digital Level View");
+    lv_image_set_src(img, LV_SYMBOL_SETTINGS);
+    lv_label_set_text(label, "Digital Level");
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
     lv_obj_set_flex_grow(label, 1);
 
-    lv_menu_set_load_page_event(parent, cont, sub_page_digital_level_view);
+    lv_menu_set_load_page_event(parent, cont, sub_page_config_view);
 
-    return sub_page_digital_level_view;
+    return sub_page_config_view;
+}
+
+
+esp_err_t load_digital_level_view_config() {
+    esp_err_t err;
+
+    // Read configuration from NVS
+    nvs_handle_t handle;
+    ESP_RETURN_ON_ERROR(nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", DIGITAL_LEVEL_VIEW_NAMESPACE);
+
+    size_t required_size = sizeof(digital_level_view_config);
+    err = nvs_get_blob(handle, "cfg", &digital_level_view_config, &required_size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(TAG, "Initialize digital_level_view_config with default values");
+
+        // Initialize with default values
+        memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
+        // Calculate CRC
+        digital_level_view_config.crc32 = crc32_wrapper(&digital_level_view_config, sizeof(digital_level_view_config), sizeof(digital_level_view_config.crc32));
+
+        // Write to NVS
+        ESP_RETURN_ON_ERROR(nvs_set_blob(handle, "cfg", &digital_level_view_config, required_size), TAG, "Failed to write NVS blob");
+        ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
+    } else {
+        ESP_RETURN_ON_ERROR(err, TAG, "Failed to read NVS blob");
+    }
+
+    // Verify CRC
+    uint32_t crc32 = crc32_wrapper(&digital_level_view_config, sizeof(digital_level_view_config), sizeof(digital_level_view_config.crc32));
+
+    if (crc32 != digital_level_view_config.crc32) {
+        ESP_LOGW(TAG, "CRC32 mismatch, will use default settings. Expected %p, got %p", digital_level_view_config.crc32, crc32);
+        memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
+
+        save_digital_level_view_config();
+    }
+    else {
+        ESP_LOGI(TAG, "Digital level view configuration loaded successfully");
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t save_digital_level_view_config() {
+    size_t required_size = sizeof(digital_level_view_config);
+    nvs_handle_t handle;
+    ESP_RETURN_ON_ERROR(nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", DIGITAL_LEVEL_VIEW_NAMESPACE);
+
+    // Calculate CRC
+    digital_level_view_config.crc32 = crc32_wrapper(&digital_level_view_config, sizeof(digital_level_view_config), sizeof(digital_level_view_config.crc32));
+
+    // Write to NVS
+    ESP_RETURN_ON_ERROR(nvs_set_blob(handle, "cfg", &digital_level_view_config, required_size), TAG, "Failed to write NVS blob");
+    ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
+
+    ESP_LOGI(TAG, "Digital level view configuration saved successfully");
+
+    return ESP_OK;
 }

@@ -3,8 +3,11 @@
 
 
 #include <lvgl.h>
+#include "esp_err.h"
 
 typedef struct {
+    uint32_t crc32;
+    
     // Record the gain between the physical tilt angle and the displayed angle
     float roll_display_gain;
     float pitch_display_gain;
@@ -26,5 +29,8 @@ typedef struct {
 void create_digital_level_view(lv_obj_t *parent);
 void enable_digital_level_view(bool enable);
 lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page);
+
+esp_err_t load_digital_level_view_config();
+esp_err_t save_digital_level_view_config();
 
 #endif // DIGITAL_LEVEL_VIEW_H
