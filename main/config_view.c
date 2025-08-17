@@ -10,7 +10,8 @@
 #define TAG "ConfigView"
 
 lv_obj_t * config_menu;
-
+lv_obj_t * msg_box;
+lv_obj_t * msg_box_label;
 
 lv_obj_t * create_menu_container_with_text(lv_obj_t * parent, const char * icon, const char * text) {
     lv_obj_t * container = lv_menu_cont_create(parent);
@@ -75,10 +76,10 @@ lv_obj_t * create_spin_box(lv_obj_t * container,
     lv_obj_set_flex_grow(spinbox, 1);
 
     lv_obj_set_style_bg_image_src(minus_button, LV_SYMBOL_MINUS, 0);
-    lv_obj_add_event_cb(minus_button, lv_spinbox_decrement_event_cb, LV_EVENT_SINGLE_CLICKED, (void *) spinbox);
+    lv_obj_add_event_cb(minus_button, lv_spinbox_decrement_event_cb, LV_EVENT_SHORT_CLICKED, (void *) spinbox);
 
     lv_obj_set_style_bg_image_src(plus_button, LV_SYMBOL_PLUS, 0);
-    lv_obj_add_event_cb(plus_button, lv_spinbox_increment_event_cb, LV_EVENT_SINGLE_CLICKED, (void *) spinbox);
+    lv_obj_add_event_cb(plus_button, lv_spinbox_increment_event_cb, LV_EVENT_SHORT_CLICKED, (void *) spinbox);
     
     lv_obj_add_event_cb(spinbox, event_cb, LV_EVENT_VALUE_CHANGED, event_cb_args);
 
@@ -89,7 +90,7 @@ lv_obj_t * create_spin_box(lv_obj_t * container,
     lv_obj_set_height(plus_button, lv_obj_get_height(spinbox));
     lv_obj_set_width(plus_button, lv_pct(30));
 
-    return container;
+    return spinbox;
 }
 
 
@@ -144,12 +145,12 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t default_colou
     lv_obj_set_style_bg_image_src(left_button, LV_SYMBOL_LEFT, 0);
     lv_obj_set_height(left_button, 36);  // TODO: Find a better way to read the height from other widgets
     lv_obj_set_width(left_button, lv_pct(30));
-    lv_obj_add_event_cb(left_button, lv_colour_picker_left_event_cb, LV_EVENT_SINGLE_CLICKED, (void *) colour_indicator);
+    lv_obj_add_event_cb(left_button, lv_colour_picker_left_event_cb, LV_EVENT_SHORT_CLICKED, (void *) colour_indicator);
 
     lv_obj_set_style_bg_image_src(right_button, LV_SYMBOL_RIGHT, 0);
     lv_obj_set_height(right_button, 36);
     lv_obj_set_width(right_button, lv_pct(30));
-    lv_obj_add_event_cb(right_button, lv_colour_picker_right_event_cb, LV_EVENT_SINGLE_CLICKED, (void *) colour_indicator);
+    lv_obj_add_event_cb(right_button, lv_colour_picker_right_event_cb, LV_EVENT_SHORT_CLICKED, (void *) colour_indicator);
 
 
     // set style
@@ -157,7 +158,7 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t default_colou
     lv_obj_align(colour_indicator, LV_ALIGN_CENTER, 0, 0);
     lv_obj_align(right_button, LV_ALIGN_RIGHT_MID, 0, 0);
 
-    return container;
+    return colour_indicator;
 }
 
 
@@ -171,6 +172,30 @@ lv_obj_t * create_dropdown_list(lv_obj_t * container, const char * options, lv_e
 }
 
 
+static void on_msg_box_ok_button_clicked(lv_event_t *e) {
+    // hide
+    lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
+}
+
+
+void create_info_msg_box(lv_obj_t *parent) {
+    // Create a message box to be called by its content
+    msg_box = lv_msgbox_create(parent);
+    lv_obj_set_size(msg_box, lv_pct(100), lv_pct(40));
+    msg_box_label = lv_msgbox_add_text(msg_box, "This is a message box");
+    lv_obj_t * btn = lv_msgbox_add_footer_button(msg_box, "OK");
+    lv_obj_add_event_cb(btn, on_msg_box_ok_button_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_align(msg_box, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    // Set hidden
+    lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
+}
+
+void update_info_msg_box(const char * text) {
+    lv_label_set_text(msg_box_label, text);
+
+    lv_obj_clear_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
+}
 
 void create_config_view(lv_obj_t *parent) {
     config_menu = lv_menu_create(parent);
@@ -182,6 +207,8 @@ void create_config_view(lv_obj_t *parent) {
     lv_obj_t * back_button_label = lv_label_create(back_button);
     lv_label_set_text(back_button_label, "Back");
 
+    // Create a messagebox for displaying information
+    create_info_msg_box(parent);
 
     /*Create a main page*/
     lv_obj_t * main_page = lv_menu_page_create(config_menu, "Settings");

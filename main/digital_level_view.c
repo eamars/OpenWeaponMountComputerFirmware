@@ -52,6 +52,11 @@ uint8_t *lv_canvas_draw_buffer;
 static float roll, pitch;
 
 
+// Forward declaration
+esp_err_t load_digital_level_view_config();
+esp_err_t save_digital_level_view_config();
+
+
 void tilt_angle_button_short_press_cb(lv_event_t * e) {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_SHORT_CLICKED) {
@@ -335,6 +340,38 @@ static void update_colour(lv_event_t *e) {
     ESP_LOGI(TAG, "Target colour updated to %d", *target_colour_idx);
 }
 
+static void update_roll_offset(lv_event_t *e) {
+    lv_obj_t * spinbox = lv_event_get_target_obj(e);
+    float * target_ptr = lv_event_get_user_data(e);
+    int32_t value = lv_spinbox_get_value(spinbox);
+    
+    ESP_LOGI(TAG, "Roll offset updated to %d", value);
+}
+
+
+static void on_save_button_pressed(lv_event_t * e) {
+    save_digital_level_view_config();
+
+    update_info_msg_box("Configuration Saved");
+}
+
+static void on_reload_button_pressed(lv_event_t * e) {
+    load_digital_level_view_config();
+
+    update_info_msg_box("Previous Configuration Reloaded");
+
+    // TODO: Update current displayed values
+}
+
+static void on_reset_button_pressed(lv_event_t * e) {
+    // Initialize with default values
+    memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
+
+    update_info_msg_box("Configuration reset to default. Use reload button to undo the action");
+
+    // TODO: Update current display values
+}
+
 
 lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
     lv_obj_t * container;
@@ -371,6 +408,28 @@ lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Foreground Colour");
     config_item = create_colour_picker(container, digital_level_view_config.colour_foreground, update_colour, &digital_level_view_config.colour_foreground);
 
+    // Save Reload
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
+    lv_obj_t * save_button = lv_btn_create(container);
+    lv_obj_t * reload_button = lv_btn_create(container);
+    lv_obj_t * reset_button = lv_btn_create(container);
+
+    // Save/reload Styling
+    lv_obj_add_flag(save_button, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+    lv_obj_set_style_bg_image_src(save_button, LV_SYMBOL_SAVE, 0);
+    lv_obj_set_height(save_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_width(save_button, lv_pct(30));
+    lv_obj_add_event_cb(save_button, on_save_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_set_style_bg_image_src(reload_button, LV_SYMBOL_UPLOAD, 0);
+    lv_obj_set_height(reload_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_width(reload_button, lv_pct(30));
+    lv_obj_add_event_cb(reload_button, on_reload_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_set_style_bg_image_src(reset_button, LV_SYMBOL_WARNING, 0);
+    lv_obj_set_height(reset_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_width(reset_button, lv_pct(30));
+    lv_obj_add_event_cb(reset_button, on_reset_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);

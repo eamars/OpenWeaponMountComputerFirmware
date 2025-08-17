@@ -19,4 +19,7 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t default_colou
 
 lv_obj_t * create_dropdown_list(lv_obj_t * container, const char * options, lv_event_cb_t event_cb, void * event_cb_args);
 
+
+void update_info_msg_box(const char * text);
+
 #endif  // CONFIG_VIEW_H_
