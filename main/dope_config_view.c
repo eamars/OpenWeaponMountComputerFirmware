@@ -1,6 +1,7 @@
 #include "dope_config_view.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
+#include "esp_check.h"
 
 #define TAG "DopeConfigView"
 
@@ -21,7 +22,8 @@ typedef struct {
     bool enable;
 } dope_data_t;
 
-dope_data_t all_dope_data[DOPE_CONFIG_MAX_DOPE_ITEM] = {0};
+// dope_data_t all_dope_data[DOPE_CONFIG_MAX_DOPE_ITEM] = {0};
+dope_data_t * all_dope_data = NULL;
 lv_obj_t * dope_item_settings = NULL;
 lv_obj_t * dope_item_settings_major_roller = NULL;
 lv_obj_t * dope_item_settings_minor_roller = NULL;
@@ -31,9 +33,45 @@ int current_selected_dope_item = 0;
 // View to be created showing enabled dope item
 lv_obj_t * dope_card_list = NULL;
 
+// Message box to show the confirm of saved data
+static lv_obj_t * msg_box;
+static lv_obj_t * msg_box_label;
 
 // Forward declaration
 lv_obj_t * create_dope_card(lv_obj_t *parent, dope_data_t *dope_data);
+
+
+static void on_msg_box_ok_button_clicked(lv_event_t *e) {
+    // hide
+    lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
+}
+
+
+static void create_info_msg_box(lv_obj_t *parent) {
+    // Create a message box to be called by its content
+    msg_box = lv_msgbox_create(parent);
+    lv_obj_set_size(msg_box, lv_pct(100), lv_pct(40));
+    msg_box_label = lv_msgbox_add_text(msg_box, "This is a message box");
+    lv_obj_t * btn = lv_msgbox_add_footer_button(msg_box, "OK");
+    lv_obj_add_event_cb(btn, on_msg_box_ok_button_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_align(msg_box, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    // Set hidden
+    lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void update_info_msg_box(const char * text) {
+    lv_label_set_text(msg_box_label, text);
+
+    lv_obj_clear_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void on_save_button_pressed(lv_event_t * e) {
+    // TODO: Save the list to FLASH
+
+    // Display the message box
+    update_info_msg_box("DOPE Saved");
+}
 
 
 void set_dope_item_settings_visibility(bool is_visible) {
@@ -61,7 +99,6 @@ void set_dope_item_settings(dope_data_t *data) {
         lv_label_set_text(all_dope_data[data->idx].dope_item_icon, LV_SYMBOL_EYE_CLOSE);
     }
 }
-
 
 
 static void apply_dope_item_settings(lv_event_t * e) {
@@ -129,10 +166,16 @@ static void close_edit_window(lv_event_t * e) {
 }
 
 void create_dope_config_view(lv_obj_t * parent) {
-    lv_obj_t * dope_list = lv_list_create(parent);
-    memset(all_dope_data, 0, sizeof(all_dope_data));
-    current_selected_dope_item = 0;
+    // Allocate memory for dope data
+    all_dope_data = heap_caps_calloc(DOPE_CONFIG_MAX_DOPE_ITEM, sizeof(dope_data_t), MALLOC_CAP_DEFAULT);
+    if (!all_dope_data) {
+        ESP_LOGE(TAG, "Failed to allocate memory for dope data");
+        ESP_ERROR_CHECK(ESP_FAIL);
+    }
 
+    lv_obj_t * dope_list = lv_list_create(parent);
+    current_selected_dope_item = 0;
+    
     // Set styling
     lv_obj_set_size(dope_list, lv_pct(100), lv_pct(100));
     lv_obj_center(dope_list);
@@ -183,6 +226,18 @@ void create_dope_config_view(lv_obj_t * parent) {
         lv_obj_add_event_cb(all_dope_data[i].dope_item, open_edit_window, LV_EVENT_CLICKED, NULL);
         lv_obj_set_user_data(all_dope_data[i].dope_item, &all_dope_data[i]);
     }
+
+    // Append a button to the end of list to save to FLASH
+    lv_obj_t * save_button = lv_btn_create(dope_list);
+    lv_obj_t * label = lv_label_create(save_button);
+    lv_obj_center(label);
+    lv_label_set_text(label, LV_SYMBOL_SAVE " Save");
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+    lv_obj_set_size(save_button, lv_pct(100), lv_pct(30));
+    lv_obj_add_event_cb(save_button, on_save_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    // Create a message box to display information and set to hidden by default
+    create_info_msg_box(parent);
 
     // Create per item settings
     dope_item_settings = lv_msgbox_create(parent);

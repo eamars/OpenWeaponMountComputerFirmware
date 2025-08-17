@@ -10,8 +10,8 @@
 #define TAG "ConfigView"
 
 lv_obj_t * config_menu;
-lv_obj_t * msg_box;
-lv_obj_t * msg_box_label;
+static lv_obj_t * msg_box;
+static lv_obj_t * msg_box_label;
 
 lv_obj_t * create_menu_container_with_text(lv_obj_t * parent, const char * icon, const char * text) {
     lv_obj_t * container = lv_menu_cont_create(parent);
