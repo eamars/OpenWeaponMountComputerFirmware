@@ -12,7 +12,7 @@
 
 system_config_t system_config;
 const system_config_t system_config_default = {
-    .rotation = ROTATION_0,
+    .rotation = LV_DISPLAY_ROTATION_0,  // LV_DISPLAY_ROTATION_0, LV_DISPLAY_ROTATION_90, LV_DISPLAY_ROTATION_180, LV_DISPLAY_ROTATION_270
 };
 
 
@@ -80,9 +80,14 @@ esp_err_t save_system_config() {
 void update_rotation_event_cb(lv_event_t *e) {
     lv_obj_t * dropdown = lv_event_get_target(e);
     int32_t selected = lv_dropdown_get_selected(dropdown);
-    system_config.rotation = (rotation_t) selected;
-
-    ESP_LOGI(TAG, "Rotation updated to %d", system_config.rotation);
+    
+    if (selected != system_config.rotation) {
+        system_config.rotation = (lv_display_rotation_t) selected;
+        ESP_LOGI(TAG, "Rotation updated to %d", system_config.rotation);
+    }
+    else {
+        ESP_LOGI(TAG, "Rotation not changed");
+    }
 }
 
 lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
@@ -92,7 +97,7 @@ lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_
     lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
     // Rotation
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Rotation");
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Screen Rotation");
     config_item = create_dropdown_list(container, rotation_options, update_rotation_event_cb, NULL);
 
     // Add to the menu

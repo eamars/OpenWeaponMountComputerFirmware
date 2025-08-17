@@ -368,6 +368,7 @@ void app_main(void)
         .flags = {
             .buff_dma = true,
             .swap_bytes = true,
+            .sw_rotate = true,
 #if CONFIG_IDF_TARGET_ESP32S3
             .buff_spiram = true,
 #endif  // CONFIG_TARGET_ESP32S3
@@ -388,6 +389,7 @@ void app_main(void)
     // Create LVGL application
     if (lvgl_port_lock(0)) {
         create_main_tileview(lv_screen_active());
+        lv_disp_set_rotation(lvgl_disp, system_config.rotation);
         lvgl_port_unlock();
     }
 }

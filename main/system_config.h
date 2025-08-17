@@ -6,17 +6,10 @@
 
 #include "lvgl.h"
 
-typedef enum {
-    ROTATION_0 = 0,
-    ROTATION_90,
-    ROTATION_180,
-    ROTATION_270
-} rotation_t;
 
 typedef struct {
     uint32_t crc32;
-
-    rotation_t rotation;
+    lv_display_rotation_t rotation;
 
 } system_config_t;
 

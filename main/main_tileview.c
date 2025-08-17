@@ -100,6 +100,6 @@ void create_main_tileview(lv_obj_t *parent)
     // Switch to the default view
     // lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);
     // lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
-    lv_tileview_set_tile(main_tileview, tile_config_view, LV_ANIM_OFF);
+    lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 }
