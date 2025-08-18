@@ -49,11 +49,13 @@ esp_err_t load_system_config() {
         ESP_LOGW(TAG, "CRC32 mismatch, will use default settings. Expected %p, got %p", system_config.crc32, crc32);
         memcpy(&system_config, &system_config_default, sizeof(system_config));
 
-        save_system_config();
+        ESP_ERROR_CHECK(save_system_config());
     }
     else {
         ESP_LOGI(TAG, "Digital level view configuration loaded successfully");
     }
+
+    nvs_close(handle);
 
     return ESP_OK;
 }
@@ -72,6 +74,8 @@ esp_err_t save_system_config() {
     ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
 
     ESP_LOGI(TAG, "System configuration saved successfully");
+
+    nvs_close(handle);
 
     return ESP_OK;
 }

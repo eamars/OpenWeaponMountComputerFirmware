@@ -264,7 +264,7 @@ void create_digital_level_layout(lv_obj_t *parent)
 void create_digital_level_view(lv_obj_t *parent)
 {
     // Read configuration from NVS
-    load_digital_level_view_config();
+    ESP_ERROR_CHECK(load_digital_level_view_config());
 
     // Create a canvas and initialize its palette
     digital_level_bg_canvas = lv_canvas_create(parent);
@@ -350,13 +350,13 @@ static void update_roll_offset(lv_event_t *e) {
 
 
 static void on_save_button_pressed(lv_event_t * e) {
-    save_digital_level_view_config();
+    ESP_ERROR_CHECK(save_digital_level_view_config());
 
     update_info_msg_box("Configuration Saved");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    load_digital_level_view_config();
+    ESP_ERROR_CHECK(load_digital_level_view_config());
 
     update_info_msg_box("Previous Configuration Reloaded");
 
@@ -478,12 +478,13 @@ esp_err_t load_digital_level_view_config() {
         ESP_LOGW(TAG, "CRC32 mismatch, will use default settings. Expected %p, got %p", digital_level_view_config.crc32, crc32);
         memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
 
-        save_digital_level_view_config();
+        ESP_ERROR_CHECK(save_digital_level_view_config());
     }
     else {
         ESP_LOGI(TAG, "Digital level view configuration loaded successfully");
     }
 
+    nvs_close(handle);
     return ESP_OK;
 }
 
@@ -500,6 +501,8 @@ esp_err_t save_digital_level_view_config() {
     ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
 
     ESP_LOGI(TAG, "Digital level view configuration saved successfully");
+
+    nvs_close(handle);
 
     return ESP_OK;
 }

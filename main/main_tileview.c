@@ -84,7 +84,7 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_set_user_data(tile_digital_level_view, enable_digital_level_view);  // store the callback
     create_digital_level_view(tile_digital_level_view);
 
-    // Tile 1, 2: Dope config view
+    // Tile 1, 2: Dope config view (it has to be created after the digital level view)
     lv_obj_t * tile_dope_config_view = lv_tileview_add_tile(main_tileview, 1, 2, LV_DIR_TOP);
     create_dope_config_view(tile_dope_config_view);
 
