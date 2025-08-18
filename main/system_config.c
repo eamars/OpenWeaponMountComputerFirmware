@@ -88,6 +88,7 @@ void update_rotation_event_cb(lv_event_t *e) {
     if (selected != system_config.rotation) {
         system_config.rotation = (lv_display_rotation_t) selected;
         ESP_LOGI(TAG, "Rotation updated to %d", system_config.rotation);
+        lv_display_set_rotation(lv_display_get_default(), system_config.rotation);
     }
     else {
         ESP_LOGI(TAG, "Rotation not changed");

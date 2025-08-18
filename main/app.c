@@ -389,7 +389,7 @@ void app_main(void)
     // Create LVGL application
     if (lvgl_port_lock(0)) {
         create_main_tileview(lv_screen_active());
-        lv_disp_set_rotation(lvgl_disp, system_config.rotation);
+        lv_display_set_rotation(lvgl_disp, system_config.rotation);
         lvgl_port_unlock();
     }
 }

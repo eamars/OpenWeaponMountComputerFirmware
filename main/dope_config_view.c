@@ -3,7 +3,7 @@
 #include "esp_lvgl_port.h"
 #include "esp_check.h"
 #include "nvs.h"
-
+#include "system_config.h"
 #include "common.h"
 
 #define TAG "DopeConfigView"
@@ -13,6 +13,10 @@
 const char * major_roller_options = "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30";
 // Minor roller from 0 to 9
 const char * minor_roller_options = ".0\n.1\n.2\n.3\n.4\n.5\n.6\n.7\n.8\n.9";
+
+extern system_config_t system_config;
+
+
 
 // Data structure used to store and read dope information
 typedef struct {
@@ -471,20 +475,26 @@ lv_obj_t * create_dope_card(lv_obj_t *parent, dope_data_t *dope_data) {
 }
 
 
+void set_rotation_dope_card_list(lv_display_rotation_t rotation) {
+    // Strangely, no need to rotate 
+    lv_obj_set_flex_flow(dope_card_list, LV_FLEX_FLOW_ROW);
+    lv_obj_set_size(dope_card_list, lv_pct(100), 80);  // a fixed height object
+    lv_obj_set_scroll_dir(dope_card_list, LV_DIR_HOR);  // only horizontal scroll
+    lv_obj_set_flex_align(dope_card_list,
+            LV_FLEX_FLOW_ROW,  // main axis (row) center
+            LV_FLEX_ALIGN_CENTER,  // cross axis center
+            LV_FLEX_ALIGN_CENTER); // track cross axis center
+    lv_obj_align(dope_card_list, LV_ALIGN_BOTTOM_MID, 0, 0);
+}
+
+
 lv_obj_t * create_dope_card_list_widget(lv_obj_t * parent) {
     if (!dope_card_list) {
         dope_card_list = lv_obj_create(parent);
     }
-    
-    lv_obj_set_size(dope_card_list, lv_pct(100), 80);  // a fixed height object
-    lv_obj_set_flex_flow(dope_card_list, LV_FLEX_FLOW_ROW);
-    lv_obj_set_scroll_dir(dope_card_list, LV_DIR_HOR);  // only horizontal scroll
-    lv_obj_set_flex_align(dope_card_list,
-                    LV_FLEX_FLOW_ROW,  // main axis (row) center
-                    LV_FLEX_ALIGN_CENTER,  // cross axis center
-                    LV_FLEX_ALIGN_CENTER); // track cross axis center
 
-    lv_obj_align(dope_card_list, LV_ALIGN_CENTER, 0, 120);
+    set_rotation_dope_card_list(system_config.rotation);
+
     lv_obj_update_snap(dope_card_list, LV_ANIM_ON);
     lv_obj_set_scroll_snap_x(dope_card_list, LV_SCROLL_SNAP_CENTER); // optional snap
     lv_obj_set_scrollbar_mode(dope_card_list, LV_SCROLLBAR_MODE_OFF);  // hide scrollbar

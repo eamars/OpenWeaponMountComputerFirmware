@@ -60,6 +60,7 @@ void tile_change_callback(lv_event_t * e) {
     }
 }
 
+
 void create_main_tileview(lv_obj_t *parent)
 {
     main_tileview = lv_tileview_create(parent);
@@ -83,6 +84,7 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_t * tile_digital_level_view = lv_tileview_add_tile(main_tileview, 1, 1, LV_DIR_ALL);
     lv_obj_set_user_data(tile_digital_level_view, enable_digital_level_view);  // store the callback
     create_digital_level_view(tile_digital_level_view);
+    lv_obj_add_event_cb(tile_digital_level_view, digital_level_review_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
     // Tile 1, 2: Dope config view (it has to be created after the digital level view)
     lv_obj_t * tile_dope_config_view = lv_tileview_add_tile(main_tileview, 1, 2, LV_DIR_TOP);
@@ -93,9 +95,9 @@ void create_main_tileview(lv_obj_t *parent)
     create_config_view(tile_config_view);
 
     // Tile 3, 1
-    lv_obj_t * tile_acceleration_analysis_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
-    lv_obj_set_user_data(tile_acceleration_analysis_view, enable_acceleration_analysis_view);
-    create_acceleration_analysis_view(tile_acceleration_analysis_view);
+    // lv_obj_t * tile_acceleration_analysis_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
+    // lv_obj_set_user_data(tile_acceleration_analysis_view, enable_acceleration_analysis_view);
+    // create_acceleration_analysis_view(tile_acceleration_analysis_view);
 
     // Switch to the default view
     // lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);

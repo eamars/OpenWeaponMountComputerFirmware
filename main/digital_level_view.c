@@ -17,6 +17,7 @@
 #include "config_view.h"
 #include "dope_config_view.h"
 #include "common.h"
+#include "system_config.h"
 
 
 #define TAG "DigitalLevelView"
@@ -40,11 +41,12 @@ lv_obj_t * tilt_angle_label = NULL;
 lv_obj_t * horizontal_indicator_line_left = NULL;
 lv_obj_t * horizontal_indicator_line_right = NULL;
 lv_obj_t * digital_level_bg_canvas = NULL;
-lv_obj_t * dope_bar = NULL;
+lv_obj_t * tilt_angle_button = NULL;
 
 static TaskHandle_t sensor_event_poller_task_handle;
 static SemaphoreHandle_t sensor_event_poller_task_control;
 extern bno085_ctx_t bno085_dev;
+extern system_config_t system_config;
 countdown_timer_t countdown_timer;
 uint8_t *lv_canvas_draw_buffer;
 
@@ -58,36 +60,42 @@ esp_err_t save_digital_level_view_config();
 
 
 void tilt_angle_button_short_press_cb(lv_event_t * e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_SHORT_CLICKED) {
+    // Take a snapshot of current roll and use that as offset
+    digital_level_view_config.user_roll_rad_offset = roll;
+    digital_level_view_config.user_roll_rad_offset = -digital_level_view_config.user_roll_rad_offset;  // take negative
 
-        // Take a snapshot of current roll and use that as offset
-        digital_level_view_config.user_roll_rad_offset = roll;
-        digital_level_view_config.user_roll_rad_offset = -digital_level_view_config.user_roll_rad_offset;  // take negative
+    ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
 
-        ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
+    // // Write to NVS
+    // memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
+    // nvs_handle_t handle;
+    // esp_err_t err;
+    // err = nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle);
+    // ESP_ERROR_CHECK(err);
+    // err = nvs_set_blob(handle, "cfg", &digital_level_view_config, sizeof(digital_level_view_config));
 
-        // // Write to NVS
-        // memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
-        // nvs_handle_t handle;
-        // esp_err_t err;
-        // err = nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle);
-        // ESP_ERROR_CHECK(err);
-        // err = nvs_set_blob(handle, "cfg", &digital_level_view_config, sizeof(digital_level_view_config));
-
-        // ESP_LOGI(TAG, "Write to NVS");
-    }
+    // ESP_LOGI(TAG, "Write to NVS");
 }
 
 
 void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
-    float max_delta_vertical_shift = DISP_V_RES_PIXEL/ 4.0;  // maximum vertical shift for the indicator lines
-    float max_delta_vertical_vertex = DISP_V_RES_PIXEL / 2.0f - 20;  // Maximum vertical verticies for the triangle
+    int32_t disp_width, disp_height;
+    if (system_config.rotation == LV_DISPLAY_ROTATION_0 || system_config.rotation == LV_DISPLAY_ROTATION_180) {
+        disp_width = DISP_H_RES_PIXEL;
+        disp_height = DISP_V_RES_PIXEL;
+    }
+    else {
+        disp_width = DISP_V_RES_PIXEL;
+        disp_height = DISP_H_RES_PIXEL;
+    }
+
+    float max_delta_vertical_shift = disp_height/ 4.0;  // maximum vertical shift for the indicator lines
+    float max_delta_vertical_vertex = disp_height / 2.0f - 20;  // Maximum vertical verticies for the triangle
 
     // -------------------------
     // Update line location based on pitch
     // -------------------------
-    float delta_vertical_shift = -tanf(pitch_rad) * (DISP_V_RES_PIXEL / 2);
+    float delta_vertical_shift = -tanf(pitch_rad) * (disp_height / 2);
     
     // Apply gain to the pitch
     delta_vertical_shift *= digital_level_view_config.pitch_display_gain;
@@ -102,7 +110,7 @@ void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
 
 
     // Calculate vertical location for the polygon (drawn as triangle)
-    float vertical_base_position = DISP_V_RES_PIXEL / 2 + delta_vertical_shift;
+    float vertical_base_position = disp_height / 2 + delta_vertical_shift;
 
     // -------------------------
     // Update background canvas
@@ -129,12 +137,12 @@ void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
         lv_draw_rect_dsc_t rect_dsc;
         lv_draw_rect_dsc_init(&rect_dsc);
         rect_dsc.bg_color = lv_palette_main(digital_level_view_config.colour_horizontal_level_indicator);
-        lv_area_t coords = {0, DISP_V_RES_PIXEL/ 2, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL};
+        lv_area_t coords = {0, disp_height / 2, disp_width, disp_height};
         lv_draw_rect(&layer, &rect_dsc, &coords);
     }
     else {
         // Calculate verticies for the triangle
-        float dy = fabsf(tanf(roll_rad) * (DISP_H_RES_PIXEL / 2));
+        float dy = fabsf(tanf(roll_rad) * (disp_width / 2));
 
         // Apply gain
         dy *= digital_level_view_config.roll_display_gain;
@@ -153,10 +161,10 @@ void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
             tri_dsc.p[0].y = vertical_base_position - dy;
         }
         else {
-            tri_dsc.p[0].x = DISP_H_RES_PIXEL;
+            tri_dsc.p[0].x = disp_width;
             tri_dsc.p[0].y = vertical_base_position - dy;
         }
-        tri_dsc.p[1].x = DISP_H_RES_PIXEL;
+        tri_dsc.p[1].x = disp_width;
         tri_dsc.p[1].y = vertical_base_position + dy;
         tri_dsc.p[2].x = 0;
         tri_dsc.p[2].y = vertical_base_position + dy;
@@ -166,7 +174,7 @@ void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
         lv_draw_rect_dsc_t rect_dsc;
         lv_draw_rect_dsc_init(&rect_dsc);
         rect_dsc.bg_color = lv_palette_main(digital_level_view_config.colour_foreground);
-        lv_area_t coords = {0, vertical_base_position + dy, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL};
+        lv_area_t coords = {0, vertical_base_position + dy, disp_width, disp_height};
         lv_draw_rect(&layer, &rect_dsc, &coords);
     }
     lv_canvas_finish_layer(digital_level_bg_canvas, &layer);
@@ -178,6 +186,15 @@ void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
 }
 
 
+void set_rotation_roll_deg_indicator(lv_display_rotation_t display_rotation)
+{
+    if (display_rotation == LV_DISPLAY_ROTATION_0 || display_rotation == LV_DISPLAY_ROTATION_180) {
+        lv_obj_align(tilt_angle_button, LV_ALIGN_TOP_MID, 0, 20);
+    }
+    else {
+        lv_obj_align(tilt_angle_button, LV_ALIGN_LEFT_MID, 20, -20);
+    }
+}
 
  void update_digital_level_view(float roll_rad, float pitch_rad)
  {
@@ -220,12 +237,13 @@ void create_roll_deg_indicator(lv_obj_t * parent) {
     lv_style_set_border_color(&btn_style, lv_color_white());
     lv_style_set_shadow_width(&btn_style, 0);
 
-    lv_obj_t * tilt_angle_button = lv_btn_create(parent);
+    tilt_angle_button = lv_btn_create(parent);
     lv_obj_add_style(tilt_angle_button, &btn_style, LV_PART_MAIN);
     lv_obj_set_width(tilt_angle_button, 80);
-    lv_obj_add_event_cb(tilt_angle_button, tilt_angle_button_short_press_cb, LV_EVENT_SHORT_CLICKED, NULL);
-    lv_obj_align(tilt_angle_button, LV_ALIGN_CENTER, 0, -120);
-    lv_obj_remove_flag(tilt_angle_button, LV_OBJ_FLAG_PRESS_LOCK);
+    lv_obj_add_event_cb(tilt_angle_button, tilt_angle_button_short_press_cb, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    // TODO: Place in a function
+    set_rotation_roll_deg_indicator(system_config.rotation);
 
     // Create label on the button
     tilt_angle_label = lv_label_create(tilt_angle_button);
@@ -261,6 +279,22 @@ void create_digital_level_layout(lv_obj_t *parent)
     lv_obj_align(horizontal_indicator_line_right, LV_ALIGN_RIGHT_MID, -5, 0);
 }
 
+
+void set_rotation_canvas(lv_display_rotation_t rotation)
+{
+    int32_t width, height;
+    if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
+        width = DISP_H_RES_PIXEL;
+        height = DISP_V_RES_PIXEL;
+    }
+    else {
+        width = DISP_V_RES_PIXEL;
+        height = DISP_H_RES_PIXEL;
+    }
+
+    lv_canvas_set_buffer(digital_level_bg_canvas, (void *) lv_canvas_draw_buffer, width, height, LV_COLOR_FORMAT_RGB565);
+}
+
 void create_digital_level_view(lv_obj_t *parent)
 {
     // Read configuration from NVS
@@ -280,7 +314,7 @@ void create_digital_level_view(lv_obj_t *parent)
         ESP_LOGE(TAG, "Failed to allocate memory for canvas draw buffer");
         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
     }
-    lv_canvas_set_buffer(digital_level_bg_canvas, (void *) lv_canvas_draw_buffer, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, LV_COLOR_FORMAT_RGB565);
+    set_rotation_canvas(system_config.rotation);
     lv_canvas_fill_bg(digital_level_bg_canvas, lv_palette_main(digital_level_view_config.colour_horizontal_level_indicator), LV_OPA_COVER);
     lv_obj_center(digital_level_bg_canvas);
 
@@ -370,6 +404,12 @@ static void on_reset_button_pressed(lv_event_t * e) {
     update_info_msg_box("Configuration reset to default. Use reload button to undo the action");
 
     // TODO: Update current display values
+}
+
+
+void digital_level_review_rotation_event_callback(lv_event_t * e) {
+    set_rotation_roll_deg_indicator(system_config.rotation);
+    set_rotation_canvas(system_config.rotation);
 }
 
 
