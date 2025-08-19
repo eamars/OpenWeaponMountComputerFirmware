@@ -52,5 +52,6 @@ void countdown_timer_update_time(countdown_timer_t *ctx, int new_time_ms);
 
 lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * countdown_timer);
 void enable_countdown_timer_widget(bool enable);
+void set_rotation_countdown_timer_widget(lv_display_rotation_t rotation);
 
 #endif  // COUNTDOWN_TIMER_H_

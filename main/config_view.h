@@ -15,9 +15,9 @@ lv_obj_t * create_spin_box(lv_obj_t * container,
                            int32_t range_min, int32_t range_max, int32_t digit_count, int32_t sep_pos, int32_t default_value,
                            lv_event_cb_t event_cb, void *event_cb_args);
 
-lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t default_colour, lv_event_cb_t event_cb, void *event_cb_args);
+lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, lv_event_cb_t event_cb, void *event_cb_args);
 
-lv_obj_t * create_dropdown_list(lv_obj_t * container, const char * options, lv_event_cb_t event_cb, void * event_cb_args);
+lv_obj_t * create_dropdown_list(lv_obj_t * container, const char * options, int32_t current_selection, lv_event_cb_t event_cb, void * event_cb_args);
 
 
 void update_info_msg_box(const char * text);

@@ -122,13 +122,19 @@ void i2c_close(sh2_Hal_t *self) {
 
 int i2c_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us) {
     // ESP_LOGI(TAG, "i2c_read() called with len: %d", len);
+    esp_err_t err;
 
     // Cast self back to the context object
     bno085_ctx_t * ctx = (bno085_ctx_t *) self;
 
     // Read header (4 bytes)
     uint8_t headers[4];
-    ESP_ERROR_CHECK_WITHOUT_ABORT(i2c_master_receive(ctx->dev_handle, headers, 4, BNO085_I2C_WRITE_TIMEOUT_MS));
+    err = i2c_master_receive(ctx->dev_handle, headers, 4, BNO085_I2C_WRITE_TIMEOUT_MS);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read headers: %s", esp_err_to_name(err));
+        return 0;
+    }
+
     uint16_t packet_size = ((uint16_t)headers[0] + ((uint16_t)headers[1] << 8)) & ~0x8000;
 
     // Check the buffer size
@@ -137,14 +143,11 @@ int i2c_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us) {
     }
     else if (packet_size > 0) {
         // Read remaining packet
-        ESP_ERROR_CHECK_WITHOUT_ABORT(i2c_master_receive(ctx->dev_handle, pBuffer, packet_size, BNO085_I2C_WRITE_TIMEOUT_MS));
-
-        // ESP_LOGI(TAG, "i2c_read() %d bytes", packet_size);
-
-        // for (int i = 0; i < packet_size; i++) {
-        //     printf("%x ", pBuffer[i]);
-        // }
-        // printf("\n");
+        err = i2c_master_receive(ctx->dev_handle, pBuffer, packet_size, BNO085_I2C_WRITE_TIMEOUT_MS);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to read packet: %s", esp_err_to_name(err));
+            return 0;
+        }
     }
     else {
         // ESP_LOGW(TAG, "No data");
@@ -156,18 +159,23 @@ int i2c_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us) {
 
 
 int i2c_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
+    esp_err_t err;
     // ESP_LOGI(TAG, "i2c_write() called");
 
     // Cast self back to the context object
     bno085_ctx_t * ctx = (bno085_ctx_t *) self;
 
-    ESP_ERROR_CHECK_WITHOUT_ABORT(i2c_master_transmit(ctx->dev_handle, pBuffer, len, BNO085_I2C_WRITE_TIMEOUT_MS));
-
-    ESP_LOGI(TAG, "i2c_write() write %d bytes", len);
-    for (int i = 0; i < len; i++) {
-        printf("%02x ", pBuffer[i]);
+    err = i2c_master_transmit(ctx->dev_handle, pBuffer, len, BNO085_I2C_WRITE_TIMEOUT_MS);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write data: %s", esp_err_to_name(err));
+        return 0;
     }
-    printf("\n");
+
+    // ESP_LOGI(TAG, "i2c_write() write %d bytes", len);
+    // for (int i = 0; i < len; i++) {
+    //     printf("%02x ", pBuffer[i]);
+    // }
+    // printf("\n");
 
     return len;
 }

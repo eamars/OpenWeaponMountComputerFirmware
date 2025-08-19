@@ -26,37 +26,55 @@ void tile_change_callback(lv_event_t * e) {
     // Record the previous active view
     static lv_obj_t * previous_tile = NULL;
 
-    lv_event_code_t event_code = lv_event_get_code(e);
-    if (event_code == LV_EVENT_VALUE_CHANGED) {
-        // Get active tile
-        lv_obj_t * tileview = lv_event_get_target(e);
-        lv_obj_t * active_tile = lv_tileview_get_tile_active(tileview);
+    // Get active tile
+    lv_obj_t * tileview = lv_event_get_target(e);
+    lv_obj_t * active_tile = lv_tileview_get_tile_active(tileview);
 
-        ESP_LOGI(TAG, "Active: %p", active_tile);
+    ESP_LOGI(TAG, "Active: %p", active_tile);
 
-        if (active_tile != previous_tile) {
-            // Disable the callback of the previous view
-            if (previous_tile != NULL) {
-                tile_update_enable_cb_t tile_update_enable_cb = lv_obj_get_user_data(previous_tile);
-                if (tile_update_enable_cb != NULL) {
-                    tile_update_enable_cb(false);
-                }
-            }
-            
-            ESP_LOGI(TAG, "Active tile: %p", active_tile);
-
-            // Record
-            previous_tile = active_tile;
-
-            // Run the callback to enable the current view
-            tile_update_enable_cb_t tile_update_enable_cb = lv_obj_get_user_data(active_tile);
-            if (tile_update_enable_cb) {
-                tile_update_enable_cb(true);
-            }
-            else {
-                ESP_LOGW(TAG, "No enable callback associated with tile %p", active_tile);
+    if (active_tile != previous_tile) {
+        // Disable the callback of the previous view
+        if (previous_tile != NULL) {
+            tile_update_enable_cb_t tile_update_enable_cb = lv_obj_get_user_data(previous_tile);
+            if (tile_update_enable_cb != NULL) {
+                tile_update_enable_cb(false);
             }
         }
+        
+        ESP_LOGI(TAG, "Active tile: %p", active_tile);
+
+        // Record
+        previous_tile = active_tile;
+
+        // Run the callback to enable the current view
+        tile_update_enable_cb_t tile_update_enable_cb = lv_obj_get_user_data(active_tile);
+        if (tile_update_enable_cb) {
+            tile_update_enable_cb(true);
+        }
+        else {
+            ESP_LOGW(TAG, "No enable callback associated with tile %p", active_tile);
+        }
+    }
+
+}
+
+
+void force_update_tile(lv_timer_t * timer) {
+    lv_obj_t * active_tile = lv_tileview_get_tile_active(main_tileview);
+    lv_tileview_set_tile(main_tileview, active_tile, LV_ANIM_OFF);
+
+    lv_timer_del(timer);
+}
+
+static void main_tile_view_rotation_event_callback(lv_event_t * e) {
+    lv_obj_t * tileview = lv_event_get_target(e);
+    // Remember current active tile
+    lv_obj_t * active_tile = lv_tileview_get_tile_active(tileview);
+
+    // Force reset to the current tile
+    if (active_tile) {
+        // Some workaround to force the tile to update after the redraw
+        lv_timer_create(force_update_tile, 1, NULL);
     }
 }
 
@@ -75,10 +93,12 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_t * tile_send_it_level_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_RIGHT);  // send it view can only be swiped right
     lv_obj_set_user_data(tile_send_it_level_view, enable_send_it_view);
     create_send_it_view(tile_send_it_level_view);
+    lv_obj_add_event_cb(tile_send_it_level_view, send_it_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
     // Tile 0, 0: Timer config view
     lv_obj_t * tile_countdown_timer_config_view = lv_tileview_add_tile(main_tileview, 1, 0, LV_DIR_BOTTOM);
     create_countdown_timer_config_view(tile_countdown_timer_config_view);
+    lv_obj_add_event_cb(tile_countdown_timer_config_view, countdown_timer_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
     // Tile 0, 1: Digital Level Tile
     lv_obj_t * tile_digital_level_view = lv_tileview_add_tile(main_tileview, 1, 1, LV_DIR_ALL);
@@ -104,4 +124,6 @@ void create_main_tileview(lv_obj_t *parent)
     // lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
     lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+
+    lv_obj_add_event_cb(main_tileview, main_tile_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 }

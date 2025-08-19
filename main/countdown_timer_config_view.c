@@ -1,6 +1,7 @@
 #include "countdown_timer_config_view.h"
 #include "countdown_timer.h"
 #include "esp_log.h"
+#include "system_config.h"
 
 #define TAG "CountdownTimerConfigView"
 
@@ -24,7 +25,11 @@ preset_t presets[2];
 preset_t * selected_preset = NULL;
 lv_obj_t * minute_roller = NULL;
 lv_obj_t * second_roller = NULL;
+lv_obj_t * parent_container = NULL;
+lv_obj_t * top_container;
+lv_obj_t * bottom_container;
 extern countdown_timer_t countdown_timer;
+extern system_config_t system_config;
 
 
 static void update_label_with_timer_config(lv_obj_t * label, timer_config_t * config) {
@@ -45,11 +50,16 @@ static void enable_roller(lv_obj_t *roller, bool enabled) {
 static void preset_button_pressed_cb(lv_event_t * e) {
     lv_obj_t * preset_button = lv_event_get_target(e);
     preset_t * preset = lv_event_get_user_data(e);
-    lv_state_t state = lv_obj_get_state(preset_button);
     int total_presets = sizeof(presets) / sizeof(presets[0]);
 
-    
-    if (state & LV_STATE_CHECKED) {
+    // Manually toggle the checked state to prevent other type of clicks other than the registered action
+    if (lv_obj_has_state(preset_button, LV_STATE_CHECKED)) {
+        // If the button is checked, then uncheck
+        lv_obj_clear_state(preset_button, LV_STATE_CHECKED);
+    }
+    else {
+        lv_obj_add_state(preset_button, LV_STATE_CHECKED);
+
         // If the current button is checked, then uncheck other buttons
         for (int i = 0; i < total_presets; i++) {
             if (i != preset->idx) {
@@ -118,17 +128,38 @@ static void roller_update_event_cb(lv_event_t * e) {
 }
 
 
+void set_rotation_countdown_timer_config_view(lv_display_rotation_t display_rotation) {
+    if (display_rotation == LV_DISPLAY_ROTATION_0 || display_rotation == LV_DISPLAY_ROTATION_180) {
+        lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_size(top_container, lv_pct(100), lv_pct(38));
+        lv_obj_set_size(bottom_container, lv_pct(100), lv_pct(60));
+    }
+    else {
+        lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_ROW);
+        lv_obj_set_size(top_container, lv_pct(50), lv_pct(100));
+        lv_obj_set_size(bottom_container, lv_pct(48), lv_pct(100));
+    }
+}
+
 
 void create_countdown_timer_config_view(lv_obj_t * parent) {
     memset(presets, 0, sizeof(presets));
-    lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_scroll_dir(parent, LV_DIR_NONE);  // no scroll
 
-    lv_obj_t * top_container = lv_obj_create(parent);
-    lv_obj_t * bottom_container = lv_obj_create(parent);
+    // Create parent container to house everything
+    parent_container = lv_obj_create(parent);
 
-    lv_obj_set_width(top_container, lv_pct(100));
-    lv_obj_set_style_pad_all(top_container, 1, 0);  // remove all paddings for container
+    lv_obj_set_style_border_width(parent_container, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(parent_container, 2, 0);
+    lv_obj_set_size(parent_container, lv_pct(100), lv_pct(100));
+
+    lv_obj_set_scroll_dir(parent_container, LV_DIR_NONE);  // no scroll
+
+    // Create two container to house each
+    top_container = lv_obj_create(parent_container);
+    bottom_container = lv_obj_create(parent_container);
+
+    lv_obj_set_style_pad_all(top_container, 1, 0);
+    lv_obj_set_style_border_width(top_container, 0, LV_PART_MAIN);
 
     // lv_obj_set_style_bg_color(top_container, lv_palette_main(LV_PALETTE_YELLOW), 0);
     lv_obj_set_style_bg_opa(top_container, LV_OPA_COVER, LV_PART_MAIN);
@@ -138,8 +169,8 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
                       LV_FLEX_ALIGN_CENTER,  // cross axis center
                       LV_FLEX_ALIGN_CENTER); // track cross axis center
 
-    lv_obj_set_size(bottom_container, lv_pct(100), lv_pct(60));
-    lv_obj_set_style_pad_all(bottom_container, 1, 0);  // remove all paddings for container
+    lv_obj_set_style_pad_all(bottom_container, 1, 0);
+    lv_obj_set_style_border_width(bottom_container, 0, LV_PART_MAIN);
 
     // lv_obj_set_style_bg_color(bottom_container, lv_palette_main(LV_PALETTE_LIGHT_BLUE), 0);
     lv_obj_set_style_bg_opa(bottom_container, LV_OPA_COVER, LV_PART_MAIN);
@@ -148,6 +179,8 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
                       LV_FLEX_ALIGN_CENTER,  // main axis (row) center
                       LV_FLEX_ALIGN_CENTER,  // cross axis center
                       LV_FLEX_ALIGN_CENTER); // track cross axis center
+
+    set_rotation_countdown_timer_config_view(system_config.rotation);
 
     // Add roller to the top half for both minute and second
     minute_roller = lv_roller_create(top_container);
@@ -172,7 +205,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     presets[0].preset_button = lv_btn_create(bottom_container);
     lv_obj_set_size(presets[0].preset_button, lv_pct(100), lv_pct(48));
     // lv_obj_set_style_bg_color(presets[0].preset_button, lv_palette_main(LV_PALETTE_LIGHT_BLUE), 0);
-    lv_obj_add_flag(presets[0].preset_button, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_remove_flag(presets[0].preset_button, LV_OBJ_FLAG_CHECKABLE);  // manual check
     lv_obj_add_event_cb(presets[0].preset_button, preset_button_pressed_cb, LV_EVENT_SHORT_CLICKED, &presets[0]);
     // Specify the colour for checked and unchecked
     lv_obj_set_style_bg_color(presets[0].preset_button, lv_palette_main(LV_PALETTE_LIGHT_BLUE), LV_PART_MAIN | LV_STATE_CHECKED);
@@ -190,7 +223,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     presets[1].preset_button = lv_btn_create(bottom_container);
     lv_obj_set_size(presets[1].preset_button, lv_pct(100), lv_pct(48));
     // lv_obj_set_style_bg_color(presets[1].preset_button, lv_palette_main(LV_PALETTE_LIME), 0);
-    lv_obj_add_flag(presets[1].preset_button, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_remove_flag(presets[1].preset_button, LV_OBJ_FLAG_CHECKABLE);  // manual check
     lv_obj_add_event_cb(presets[1].preset_button, preset_button_pressed_cb, LV_EVENT_SHORT_CLICKED, &presets[1]);
     // Specify the colour for checked and unchecked
     lv_obj_set_style_bg_color(presets[1].preset_button, lv_palette_main(LV_PALETTE_LIGHT_BLUE), LV_PART_MAIN | LV_STATE_CHECKED);
@@ -201,4 +234,12 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     update_label_with_timer_config(presets[1].preset_label, &presets[1].timer_config);
     lv_obj_center(presets[1].preset_label);
     lv_obj_set_style_text_font(presets[1].preset_label, &lv_font_montserrat_32, LV_PART_MAIN);
+
+    // Set tile layout based on the screen rotation
+    set_rotation_countdown_timer_config_view(system_config.rotation);
+}
+
+
+void countdown_timer_rotation_event_callback(lv_event_t * e) {
+    set_rotation_countdown_timer_config_view(system_config.rotation);
 }

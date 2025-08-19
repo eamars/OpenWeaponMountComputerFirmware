@@ -9,6 +9,7 @@
 
 #include "esp_lvgl_port.h"
 
+#include "system_config.h"
 #include "countdown_timer.h"
 
 #define TAG "CountdownTimer"
@@ -17,7 +18,7 @@
 lv_obj_t * countdown_timer_arc = NULL;
 lv_obj_t * countdown_timer_label = NULL;
 lv_obj_t * countdown_timer_button = NULL;
-
+extern system_config_t system_config;
 
 countdown_timer_state_t get_countdown_timer_state(countdown_timer_t * ctx) {
     countdown_timer_state_t current_state = COUNTDOWN_TIMER_READY;
@@ -218,6 +219,16 @@ void enable_countdown_timer_widget(bool enable) {
 }
 
 
+void set_rotation_countdown_timer_widget(lv_display_rotation_t rotation) {
+    if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
+        lv_obj_align(countdown_timer_button, LV_ALIGN_CENTER, 0, 0);
+    }
+    else {
+        lv_obj_align(countdown_timer_button, LV_ALIGN_TOP_MID, -20, 0);
+    }
+}
+
+
 lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * countdown_timer) {
     countdown_timer->timer_update_cb = update_timer_cb;
     countdown_timer->timer_update_cb_args = countdown_timer;
@@ -233,7 +244,6 @@ lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * 
     lv_obj_set_style_border_color(countdown_timer_button, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_shadow_width(countdown_timer_button, 0, LV_PART_MAIN);
     lv_obj_set_size(countdown_timer_button, 130, 130);
-    lv_obj_center(countdown_timer_button);
 
     lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_short_press_event_cb, LV_EVENT_SHORT_CLICKED, (void *) countdown_timer);
     lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_long_press_event_cb, LV_EVENT_LONG_PRESSED, (void *) countdown_timer);
@@ -242,15 +252,14 @@ lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * 
     lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
     // lv_obj_set_style_arc_color(countdown_timer, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_arc_opa(countdown_timer_arc, LV_OPA_TRANSP, LV_PART_MAIN);
-
-    // lv_obj_set_size(countdown_timer, 130, 130);
     lv_obj_set_style_arc_width(countdown_timer_arc, 10, 0);
+
     lv_arc_set_rotation(countdown_timer_arc, 270);
     lv_arc_set_bg_angles(countdown_timer_arc, 0, 360);
     lv_obj_remove_style(countdown_timer_arc, NULL, LV_PART_KNOB);   /*Be sure the knob is not displayed*/
     lv_obj_remove_flag(countdown_timer_arc, LV_OBJ_FLAG_CLICKABLE);  /*To not allow adjusting by click*/
     lv_arc_set_range(countdown_timer_arc, 0, 100);  // 100 divisions for the full arc
-    lv_obj_center(countdown_timer_arc);
+    lv_obj_align(countdown_timer_arc, LV_ALIGN_CENTER, 0, 0);
 
     countdown_timer_label = lv_label_create(countdown_timer_button);
 
@@ -258,6 +267,9 @@ lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * 
     lv_obj_set_style_text_color(countdown_timer_label, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_text_font(countdown_timer_label, &lv_font_montserrat_32, LV_PART_MAIN);
     lv_obj_align(countdown_timer_label, LV_ALIGN_CENTER, 0, 0);
+
+    // Set layout based on the rotation
+    set_rotation_countdown_timer_widget(system_config.rotation);
 
     // By default don't show the timer
     enable_countdown_timer_widget(false);

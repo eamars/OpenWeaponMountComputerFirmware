@@ -9,6 +9,7 @@
 #include "app_cfg.h"
 #include "bno085.h"
 #include "digital_level_view.h"
+#include "system_config.h"
 
 #define TAG "SendItView"
 
@@ -20,6 +21,7 @@ static TaskHandle_t sensor_event_poller_task_handle;
 static SemaphoreHandle_t sensor_event_poller_task_control;
 extern bno085_ctx_t bno085_dev;
 extern digital_level_view_config_t digital_level_view_config;
+extern system_config_t system_config;
 
 
 void update_send_it_view(float roll_rad) {
@@ -85,23 +87,36 @@ void update_send_it_view(float roll_rad) {
     }
 }
 
+
+void set_rotation_send_it_view(lv_disp_rotation_t rotation) {
+    if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
+        lv_obj_align(left_tilt_led, LV_ALIGN_CENTER, 0, 100);
+        lv_obj_align(center_tilt_led, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_align(right_tilt_led, LV_ALIGN_CENTER, 0, -100);
+    }
+    else {
+        lv_obj_align(left_tilt_led, LV_ALIGN_CENTER, -100, 0);
+        lv_obj_align(center_tilt_led, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_align(right_tilt_led, LV_ALIGN_CENTER, 100, 0);
+    }
+}
+
 void create_send_it_view(lv_obj_t *parent) {
     lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
-
     left_tilt_led = lv_led_create(parent);
-    lv_obj_align(left_tilt_led, LV_ALIGN_CENTER, 0, 100);
+    
     lv_led_set_color(left_tilt_led, lv_palette_main(LV_PALETTE_LIGHT_BLUE));
     lv_led_off(left_tilt_led);
-
     center_tilt_led = lv_led_create(parent);
-    lv_obj_align(center_tilt_led, LV_ALIGN_CENTER, 0, 0);
+    
     lv_led_set_color(center_tilt_led, lv_palette_main(LV_PALETTE_LIGHT_GREEN));
-
     lv_led_off(center_tilt_led);
-
     right_tilt_led = lv_led_create(parent);
-    lv_obj_align(right_tilt_led, LV_ALIGN_CENTER, 0, -100);
+
+    // Build layout based on screen rotation
+    set_rotation_send_it_view(system_config.rotation);
+    
     lv_led_set_color(right_tilt_led, lv_palette_main(LV_PALETTE_RED));
 
     lv_led_off(right_tilt_led);
@@ -133,4 +148,9 @@ void enable_send_it_view(bool enable) {
     else {
         xSemaphoreTake(sensor_event_poller_task_control, portMAX_DELAY);
     }
+}
+
+
+void send_it_view_rotation_event_callback(lv_event_t * e) {
+    set_rotation_send_it_view(system_config.rotation);
 }

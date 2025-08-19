@@ -95,6 +95,31 @@ void update_rotation_event_cb(lv_event_t *e) {
     }
 }
 
+
+static void on_save_button_pressed(lv_event_t * e) {
+    ESP_ERROR_CHECK(save_system_config());
+
+    update_info_msg_box("Configuration Saved");
+}
+
+static void on_reload_button_pressed(lv_event_t * e) {
+    ESP_ERROR_CHECK(load_system_config());
+
+    update_info_msg_box("Previous Configuration Reloaded");
+
+    // TODO: Update current displayed values
+}
+
+static void on_reset_button_pressed(lv_event_t * e) {
+    // Initialize with default values
+    memcpy(&system_config, &system_config_default, sizeof(system_config));
+
+    update_info_msg_box("Configuration reset to default. Use reload button to undo the action");
+
+    // TODO: Update current display values
+}
+
+
 lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
     lv_obj_t * container;
     lv_obj_t * config_item;
@@ -103,7 +128,30 @@ lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_
 
     // Rotation
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Screen Rotation");
-    config_item = create_dropdown_list(container, rotation_options, update_rotation_event_cb, NULL);
+    config_item = create_dropdown_list(container, rotation_options, system_config.rotation, update_rotation_event_cb, NULL);
+
+    // Save Reload
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
+    lv_obj_t * save_button = lv_btn_create(container);
+    lv_obj_t * reload_button = lv_btn_create(container);
+    lv_obj_t * reset_button = lv_btn_create(container);
+
+    // Save/reload Styling
+    lv_obj_add_flag(save_button, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+    lv_obj_set_style_bg_image_src(save_button, LV_SYMBOL_SAVE, 0);
+    lv_obj_set_height(save_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_width(save_button, lv_pct(30));
+    lv_obj_add_event_cb(save_button, on_save_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_set_style_bg_image_src(reload_button, LV_SYMBOL_UPLOAD, 0);
+    lv_obj_set_height(reload_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_width(reload_button, lv_pct(30));
+    lv_obj_add_event_cb(reload_button, on_reload_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_set_style_bg_image_src(reset_button, LV_SYMBOL_WARNING, 0);
+    lv_obj_set_height(reset_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_width(reset_button, lv_pct(30));
+    lv_obj_add_event_cb(reset_button, on_reset_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);

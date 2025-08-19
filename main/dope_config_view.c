@@ -476,15 +476,36 @@ lv_obj_t * create_dope_card(lv_obj_t *parent, dope_data_t *dope_data) {
 
 
 void set_rotation_dope_card_list(lv_display_rotation_t rotation) {
-    // Strangely, no need to rotate 
-    lv_obj_set_flex_flow(dope_card_list, LV_FLEX_FLOW_ROW);
-    lv_obj_set_size(dope_card_list, lv_pct(100), 80);  // a fixed height object
-    lv_obj_set_scroll_dir(dope_card_list, LV_DIR_HOR);  // only horizontal scroll
-    lv_obj_set_flex_align(dope_card_list,
-            LV_FLEX_FLOW_ROW,  // main axis (row) center
-            LV_FLEX_ALIGN_CENTER,  // cross axis center
-            LV_FLEX_ALIGN_CENTER); // track cross axis center
-    lv_obj_align(dope_card_list, LV_ALIGN_BOTTOM_MID, 0, 0);
+    if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
+        // For 0 and 180 degrees, use the default layout
+        lv_obj_set_flex_flow(dope_card_list, LV_FLEX_FLOW_ROW);
+        lv_obj_set_size(dope_card_list, lv_pct(100), 80);  // a fixed height object
+        lv_obj_set_scroll_dir(dope_card_list, LV_DIR_HOR);  // only horizontal scroll
+        lv_obj_set_flex_align(dope_card_list,
+                LV_FLEX_ALIGN_START,  // main axis (row) center
+                LV_FLEX_ALIGN_CENTER,  // cross axis center
+                LV_FLEX_ALIGN_CENTER); // track cross axis center
+        lv_obj_align(dope_card_list, LV_ALIGN_BOTTOM_MID, 0, 0);
+    } else {
+        // // For 90 and 270 degrees, switch to column layout
+        // lv_obj_set_flex_flow(dope_card_list, LV_FLEX_FLOW_COLUMN);
+        // lv_obj_set_size(dope_card_list, 80, lv_pct(100));  // a fixed width object
+        // lv_obj_set_scroll_dir(dope_card_list, LV_DIR_VER);  // only vertical scroll
+        // lv_obj_set_flex_align(dope_card_list,
+        //         LV_FLEX_ALIGN_START,  // main axis (column) center
+        //         LV_FLEX_ALIGN_CENTER,  // cross axis center
+        //         LV_FLEX_ALIGN_CENTER); // track cross axis center
+        // lv_obj_align(dope_card_list, LV_ALIGN_RIGHT_MID, 0, 0);
+
+        lv_obj_set_flex_flow(dope_card_list, LV_FLEX_FLOW_ROW);
+        lv_obj_set_size(dope_card_list, lv_pct(100), 80);  // a fixed height object
+        lv_obj_set_scroll_dir(dope_card_list, LV_DIR_HOR);  // only horizontal scroll
+        lv_obj_set_flex_align(dope_card_list,
+                LV_FLEX_ALIGN_START,  // main axis (row) center
+                LV_FLEX_ALIGN_CENTER,  // cross axis center
+                LV_FLEX_ALIGN_CENTER); // track cross axis center
+        lv_obj_align(dope_card_list, LV_ALIGN_BOTTOM_MID, 0, 0);
+    }
 }
 
 

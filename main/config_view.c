@@ -102,6 +102,8 @@ static void lv_colour_picker_left_event_cb(lv_event_t *e) {
     if (*colour_idx > 0) {
         *colour_idx -= 1;
     }
+    // ESP_LOGI(TAG, "Current colour %d, current colour addr %p", *colour_idx, colour_idx);
+
 
     // Apply the colour
     lv_led_set_color(colour_indicator, lv_palette_main(*colour_idx));
@@ -118,26 +120,23 @@ static void lv_colour_picker_right_event_cb(lv_event_t *e) {
     if (*colour_idx < (MAX_NUM_COLOURS - 1)) {
         *colour_idx += 1;
     }
+    // ESP_LOGI(TAG, "Current colour %d, current colour addr %p", *colour_idx, colour_idx);
 
     // Apply the colour
     lv_led_set_color(colour_indicator, lv_palette_main(*colour_idx));
 
     // Apply callback
     lv_obj_send_event(colour_indicator, LV_EVENT_VALUE_CHANGED, NULL);
-    ESP_LOGI(TAG, "Current colour %d", *colour_idx);
 }
 
 
-lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t default_colour, lv_event_cb_t event_cb, void *event_cb_args) {
+lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, lv_event_cb_t event_cb, void *event_cb_args) {
     lv_obj_t * left_button = lv_button_create(container);
     lv_obj_t * colour_indicator = lv_led_create(container);
     lv_obj_t * right_button = lv_button_create(container);
 
-    lv_palette_t * colour_idx = malloc(sizeof(lv_palette_t)); 
-    *colour_idx = default_colour;
-
-    lv_obj_set_user_data(colour_indicator, colour_idx);
-    lv_led_set_color(colour_indicator, lv_palette_main(*colour_idx));  // set default colour
+    lv_obj_set_user_data(colour_indicator, colour);
+    lv_led_set_color(colour_indicator, lv_palette_main(*colour));  // set default colour
 
     // FIXME: The LED object won't emit value change event therefore the callback needed to be called manually
     lv_obj_add_event_cb(colour_indicator, event_cb, LV_EVENT_VALUE_CHANGED, event_cb_args);
@@ -162,12 +161,15 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t default_colou
 }
 
 
-lv_obj_t * create_dropdown_list(lv_obj_t * container, const char * options, lv_event_cb_t event_cb, void * event_cb_args) {
+lv_obj_t * create_dropdown_list(lv_obj_t * container, const char * options, int32_t current_selection, lv_event_cb_t event_cb, void * event_cb_args) {
     lv_obj_t * dropdown_list_option = lv_dropdown_create(container);
     lv_obj_set_size(dropdown_list_option, lv_pct(100), lv_pct(100));
     lv_obj_add_flag(dropdown_list_option, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
     lv_dropdown_set_options(dropdown_list_option, options);
+    lv_dropdown_set_selected(dropdown_list_option, current_selection);
+    
     lv_obj_add_event_cb(dropdown_list_option, event_cb, LV_EVENT_VALUE_CHANGED, event_cb_args);
+    
     return dropdown_list_option;
 }
 

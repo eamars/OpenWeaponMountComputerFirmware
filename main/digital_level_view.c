@@ -186,13 +186,12 @@ void update_tilt_canvas_draw(float roll_rad, float pitch_rad){
 }
 
 
-void set_rotation_roll_deg_indicator(lv_display_rotation_t display_rotation)
-{
+void set_rotation_roll_deg_indicator(lv_display_rotation_t display_rotation){
     if (display_rotation == LV_DISPLAY_ROTATION_0 || display_rotation == LV_DISPLAY_ROTATION_180) {
         lv_obj_align(tilt_angle_button, LV_ALIGN_TOP_MID, 0, 20);
     }
     else {
-        lv_obj_align(tilt_angle_button, LV_ALIGN_LEFT_MID, 20, -20);
+        lv_obj_align(tilt_angle_button, LV_ALIGN_RIGHT_MID, -20, -20);
     }
 }
 
@@ -410,6 +409,7 @@ static void on_reset_button_pressed(lv_event_t * e) {
 void digital_level_review_rotation_event_callback(lv_event_t * e) {
     set_rotation_roll_deg_indicator(system_config.rotation);
     set_rotation_canvas(system_config.rotation);
+    set_rotation_countdown_timer_widget(system_config.rotation);
 }
 
 
@@ -434,19 +434,19 @@ lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent
 
     // Left tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Left Tilt Colour");
-    config_item = create_colour_picker(container, digital_level_view_config.colour_left_tilt_indicator, update_colour, &digital_level_view_config.colour_left_tilt_indicator);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_left_tilt_indicator, update_colour, &digital_level_view_config.colour_left_tilt_indicator);
 
     // Right tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Right Tilt Colour");
-    config_item = create_colour_picker(container, digital_level_view_config.colour_right_tilt_indicator, update_colour, &digital_level_view_config.colour_right_tilt_indicator);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_right_tilt_indicator, update_colour, &digital_level_view_config.colour_right_tilt_indicator);
 
     // Horizontal tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Leveled Colour");
-    config_item = create_colour_picker(container, digital_level_view_config.colour_horizontal_level_indicator, update_colour, &digital_level_view_config.colour_horizontal_level_indicator);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_horizontal_level_indicator, update_colour, &digital_level_view_config.colour_horizontal_level_indicator);
 
     // Horizontal tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Foreground Colour");
-    config_item = create_colour_picker(container, digital_level_view_config.colour_foreground, update_colour, &digital_level_view_config.colour_foreground);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_foreground, update_colour, &digital_level_view_config.colour_foreground);
 
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
