@@ -109,6 +109,7 @@ void create_main_tileview(lv_obj_t *parent)
     // Tile 1, 2: Dope config view (it has to be created after the digital level view)
     lv_obj_t * tile_dope_config_view = lv_tileview_add_tile(main_tileview, 1, 2, LV_DIR_TOP);
     create_dope_config_view(tile_dope_config_view);
+    lv_obj_add_event_cb(tile_dope_config_view, dope_config_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
     // Tile 2, 1
     lv_obj_t * tile_config_view = lv_tileview_add_tile(main_tileview, 2, 1, LV_DIR_HOR);

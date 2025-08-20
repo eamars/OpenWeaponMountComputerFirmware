@@ -151,7 +151,6 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, lv_
     lv_obj_set_width(right_button, lv_pct(30));
     lv_obj_add_event_cb(right_button, lv_colour_picker_right_event_cb, LV_EVENT_SHORT_CLICKED, (void *) colour_indicator);
 
-
     // set style
     lv_obj_add_flag(left_button, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);    // add a new line before the widget
     lv_obj_align(colour_indicator, LV_ALIGN_CENTER, 0, 0);

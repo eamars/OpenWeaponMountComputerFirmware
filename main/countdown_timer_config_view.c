@@ -26,8 +26,8 @@ preset_t * selected_preset = NULL;
 lv_obj_t * minute_roller = NULL;
 lv_obj_t * second_roller = NULL;
 lv_obj_t * parent_container = NULL;
-lv_obj_t * top_container;
-lv_obj_t * bottom_container;
+static lv_obj_t * top_container;
+static lv_obj_t * bottom_container;
 extern countdown_timer_t countdown_timer;
 extern system_config_t system_config;
 
@@ -162,7 +162,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     lv_obj_set_style_border_width(top_container, 0, LV_PART_MAIN);
 
     // lv_obj_set_style_bg_color(top_container, lv_palette_main(LV_PALETTE_YELLOW), 0);
-    lv_obj_set_style_bg_opa(top_container, LV_OPA_COVER, LV_PART_MAIN);
+    // lv_obj_set_style_bg_opa(top_container, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_flex_flow(top_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(top_container,
                       LV_FLEX_ALIGN_CENTER,  // main axis (row) center
@@ -173,7 +173,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     lv_obj_set_style_border_width(bottom_container, 0, LV_PART_MAIN);
 
     // lv_obj_set_style_bg_color(bottom_container, lv_palette_main(LV_PALETTE_LIGHT_BLUE), 0);
-    lv_obj_set_style_bg_opa(bottom_container, LV_OPA_COVER, LV_PART_MAIN);
+    // lv_obj_set_style_bg_opa(bottom_container, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_flex_flow(bottom_container, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(bottom_container,
                       LV_FLEX_ALIGN_CENTER,  // main axis (row) center

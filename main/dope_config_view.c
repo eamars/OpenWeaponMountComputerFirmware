@@ -48,6 +48,12 @@ int current_selected_dope_item = 0;
 // View to be created showing enabled dope item
 lv_obj_t * dope_card_list = NULL;
 
+// Dope settings
+static lv_obj_t * parent_container = NULL;
+static lv_obj_t * top_container = NULL;
+static lv_obj_t * bottom_container = NULL;
+static lv_obj_t * nested_button_container = NULL;
+
 // Message box to show the confirm of saved data
 static lv_obj_t * msg_box;
 static lv_obj_t * msg_box_label;
@@ -78,6 +84,7 @@ static void create_info_msg_box(lv_obj_t *parent) {
     lv_obj_t * btn = lv_msgbox_add_footer_button(msg_box, "OK");
     lv_obj_add_event_cb(btn, on_msg_box_ok_button_clicked, LV_EVENT_CLICKED, NULL);
     lv_obj_align(msg_box, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_pad_all(msg_box, 1, 0);
 
     // Set hidden
     lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
@@ -278,6 +285,140 @@ esp_err_t save_dope_config() {
 }
 
 
+void set_rotation_dope_card_config_view(lv_display_rotation_t rotation) {
+    if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
+        lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_size(top_container, lv_pct(100), lv_pct(50));
+        lv_obj_set_size(bottom_container, lv_pct(100), lv_pct(45));
+    }
+    else {
+        lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_ROW);
+        lv_obj_set_size(top_container, lv_pct(50), lv_pct(100));
+        lv_obj_set_size(bottom_container, lv_pct(50), lv_pct(100));
+    }
+}
+
+
+void create_dope_config_msgbox(lv_obj_t * parent) {
+    
+    // Create per item settings
+    dope_item_settings = lv_msgbox_create(parent);
+    lv_obj_t * close_button = lv_msgbox_add_close_button(dope_item_settings);
+
+    // Remove the old event
+    lv_obj_remove_event(close_button, 0);
+    // Add the new event
+    lv_obj_add_event_cb(close_button, close_edit_window, LV_EVENT_CLICKED, NULL);
+
+
+    // Add placheolder for title
+    lv_msgbox_add_title(dope_item_settings, NULL);
+
+    // Set styling
+    lv_obj_set_size(dope_item_settings, lv_pct(100), lv_pct(100));
+    lv_obj_center(dope_item_settings);
+    lv_obj_set_scroll_dir(dope_item_settings, LV_DIR_NONE);  // no scroll
+
+    // Fill the full msg box
+    parent_container = lv_obj_create(dope_item_settings);
+    lv_obj_set_size(parent_container, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_pad_all(parent_container, 2, LV_PART_MAIN);
+    lv_obj_center(parent_container);
+
+    // lv_obj_set_style_bg_opa(parent_container, LV_OPA_COVER, LV_PART_MAIN);
+    // lv_obj_set_style_bg_color(parent_container, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN);
+
+    lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(parent_container,
+                      LV_FLEX_ALIGN_START,  // main axis (row) center
+                      LV_FLEX_ALIGN_CENTER,  // cross axis center
+                      LV_FLEX_ALIGN_CENTER); // track cross axis center
+
+    // Set styling
+    lv_obj_set_scroll_dir(parent_container, LV_DIR_NONE);  // no scroll
+
+
+    // A container for the rollers
+    top_container = lv_obj_create(parent_container);
+
+    lv_obj_set_style_pad_all(top_container, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_width(top_container, 0, LV_PART_MAIN);
+    // lv_obj_set_style_bg_opa(top_container, LV_OPA_COVER, LV_PART_MAIN);
+    // lv_obj_set_style_bg_color(top_container, lv_palette_main(LV_PALETTE_LIGHT_BLUE), 0);
+
+    // Object within will grow horizontally
+    lv_obj_set_flex_flow(top_container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(top_container,
+                      LV_FLEX_ALIGN_CENTER,  // main axis (row) center
+                      LV_FLEX_ALIGN_CENTER,  // cross axis center
+                      LV_FLEX_ALIGN_CENTER); // track cross axis center
+
+    // A container for the enable label and apply/cancel buttons
+    bottom_container = lv_obj_create(parent_container);
+
+    lv_obj_set_style_pad_all(bottom_container, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(bottom_container, 0, LV_PART_MAIN);
+    // lv_obj_set_style_bg_opa(bottom_container, LV_OPA_COVER, LV_PART_MAIN);
+    // lv_obj_set_style_bg_color(bottom_container, lv_palette_main(LV_PALETTE_YELLOW), 0);
+
+    // Object within will grow vertically
+    lv_obj_set_flex_flow(bottom_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(bottom_container,
+                      LV_FLEX_ALIGN_START,  // main axis (column) center
+                      LV_FLEX_ALIGN_CENTER,  // cross axis center
+                      LV_FLEX_ALIGN_CENTER); // track cross axis center
+
+    
+    // Add objects to top container
+    dope_item_settings_major_roller = lv_roller_create(top_container);
+    lv_roller_set_options(dope_item_settings_major_roller, major_roller_options, LV_ROLLER_MODE_INFINITE);
+    lv_obj_set_size(dope_item_settings_major_roller, lv_pct(45), lv_pct(100));
+    lv_obj_set_style_text_font(dope_item_settings_major_roller, &lv_font_montserrat_32, 0);
+
+    dope_item_settings_minor_roller = lv_roller_create(top_container);
+    lv_roller_set_options(dope_item_settings_minor_roller, minor_roller_options, LV_ROLLER_MODE_INFINITE);
+    lv_obj_set_size(dope_item_settings_minor_roller, lv_pct(45), lv_pct(100));
+    lv_obj_set_style_text_font(dope_item_settings_minor_roller, &lv_font_montserrat_32, 0);
+    
+    // A container for top widget group including a label and a switch
+    lv_obj_t * enable_option_container = lv_obj_create(bottom_container);
+    // lv_obj_set_align(enable_option_container, LV_ALIGN_TOP_MID);
+    lv_obj_set_size(enable_option_container, lv_pct(100), lv_pct(30));
+    lv_obj_set_flex_flow(enable_option_container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(enable_option_container,
+                      LV_FLEX_ALIGN_SPACE_BETWEEN,  // main axis (row) center
+                      LV_FLEX_ALIGN_CENTER,  // cross axis center
+                      LV_FLEX_ALIGN_CENTER); // track cross axis center
+
+    lv_obj_set_style_pad_all(enable_option_container, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(enable_option_container, 0, LV_PART_MAIN);
+
+    lv_obj_t * enable_label = lv_label_create(enable_option_container);
+    lv_label_set_text_static(enable_label, "Enable");
+    lv_obj_set_style_text_font(enable_label, &lv_font_montserrat_20, 0);
+
+    dope_item_settings_enable_switch = lv_switch_create(enable_option_container);
+    lv_obj_set_width(dope_item_settings_enable_switch, lv_pct(40));
+    lv_switch_set_orientation(dope_item_settings_enable_switch, LV_SWITCH_ORIENTATION_HORIZONTAL);
+
+
+    // Add Save and cancel button to the bottom container
+    lv_obj_t * dope_item_settings_apply_button = lv_button_create(bottom_container);
+    lv_obj_t * apply_label = lv_label_create(dope_item_settings_apply_button);
+    lv_obj_set_style_text_font(apply_label, &lv_font_montserrat_20, 0);
+    lv_label_set_text(apply_label, "Apply");
+
+    // Set rotation for the dope card config view
+    set_rotation_dope_card_config_view(system_config.rotation);
+
+    // Set callback to the apply button
+    lv_obj_add_event_cb(dope_item_settings_apply_button, apply_dope_item_settings, LV_EVENT_CLICKED, NULL);
+
+    // Set hide by default
+    set_dope_item_settings_visibility(false);
+}
+
+
 void create_dope_config_view(lv_obj_t * parent) {
     // Allocate memory for dope data
     all_dope_data = heap_caps_calloc(DOPE_CONFIG_MAX_DOPE_ITEM, sizeof(dope_data_t), MALLOC_CAP_DEFAULT);
@@ -363,74 +504,8 @@ void create_dope_config_view(lv_obj_t * parent) {
     // Create a message box to display information and set to hidden by default
     create_info_msg_box(parent);
 
-    // Create per item settings
-    dope_item_settings = lv_msgbox_create(parent);
-
-    // Set styling
-    lv_obj_set_size(dope_item_settings, lv_pct(100), lv_pct(100));
-    lv_obj_center(dope_item_settings);
-
-    // Add placheolder for title
-    lv_msgbox_add_title(dope_item_settings, NULL);
-
-    // main container
-    // lv_obj_t * container = lv_obj_create(dope_item_settings);
-    // lv_obj_set_size(container, lv_pct(100), lv_pct(85));
-    // lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
-    // lv_obj_set_flex_align(container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    // // Remove left and right padding
-    // lv_obj_set_style_pad_left(container, 0, 0);
-    // lv_obj_set_style_pad_right(container, 0, 0);
-
-    // A container for the rollers
-    lv_obj_t * top_container = lv_obj_create(dope_item_settings);
-    lv_obj_set_size(top_container, lv_pct(100), lv_pct(50));
-    // lv_obj_set_style_bg_color(top_container, lv_palette_main(LV_PALETTE_BLUE), 0);
-    lv_obj_align(top_container, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_pad_all(top_container, 0, 0);  // remove all paddings for container
-
-    dope_item_settings_major_roller = lv_roller_create(top_container);
-    lv_roller_set_options(dope_item_settings_major_roller, major_roller_options, LV_ROLLER_MODE_INFINITE);
-    lv_obj_set_size(dope_item_settings_major_roller, lv_pct(45), lv_pct(100));
-    lv_obj_set_style_text_font(dope_item_settings_major_roller, &lv_font_montserrat_32, 0);
-    lv_obj_align(dope_item_settings_major_roller, LV_ALIGN_LEFT_MID, 0, 0);
-
-    dope_item_settings_minor_roller = lv_roller_create(top_container);
-    lv_roller_set_options(dope_item_settings_minor_roller, minor_roller_options, LV_ROLLER_MODE_INFINITE);
-    lv_obj_set_size(dope_item_settings_minor_roller, lv_pct(45), lv_pct(100));
-    lv_obj_set_style_text_font(dope_item_settings_minor_roller, &lv_font_montserrat_32, 0);
-    lv_obj_align(dope_item_settings_minor_roller, LV_ALIGN_RIGHT_MID, 0, 0);
-
-    
-    // A container for top widget group including a label and a switch
-    lv_obj_t * mid_container = lv_obj_create(dope_item_settings);
-    lv_obj_set_size(mid_container, lv_pct(100), lv_pct(20));
-    // lv_obj_set_style_bg_color(mid_container, lv_palette_main(LV_PALETTE_YELLOW), 0);
-    lv_obj_align(mid_container, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_pad_all(mid_container, 0, 0);  // remove all paddings for container
-
-    lv_obj_t * enable_label = lv_label_create(mid_container);
-    lv_label_set_text_static(enable_label, "Enable");
-    lv_obj_set_style_text_font(enable_label, &lv_font_montserrat_20, 0);
-    lv_obj_align(enable_label, LV_ALIGN_LEFT_MID, 0, 0);
-
-    dope_item_settings_enable_switch = lv_switch_create(mid_container);
-    lv_obj_set_size(dope_item_settings_enable_switch, lv_pct(40), lv_pct(60));
-    lv_obj_align(dope_item_settings_enable_switch, LV_ALIGN_RIGHT_MID, 0, 0);
-
-    // Add Save and cancel button to the bottom container
-    lv_obj_t * dope_item_settings_apply_button = lv_msgbox_add_footer_button(dope_item_settings, "Apply");
-    lv_obj_set_flex_grow(dope_item_settings_apply_button, 1);
-
-    lv_obj_t * dope_item_settings_cancel_button = lv_msgbox_add_footer_button(dope_item_settings, "Cancel");
-    lv_obj_add_event_cb(dope_item_settings_cancel_button, close_edit_window, LV_EVENT_CLICKED, NULL);
-    lv_obj_set_flex_grow(dope_item_settings_cancel_button, 1);
-
-    // Set callback to the apply button
-    lv_obj_add_event_cb(dope_item_settings_apply_button, apply_dope_item_settings, LV_EVENT_CLICKED, NULL);
-
-    // Set hide by default
-    set_dope_item_settings_visibility(false);
+    // Create dope configuration dialog
+    create_dope_config_msgbox(parent);
 }
 
 
@@ -532,4 +607,9 @@ lv_obj_t * create_dope_card_list_widget(lv_obj_t * parent) {
 
 
     return dope_card_list;
+}
+
+
+void dope_config_view_rotation_event_callback(lv_event_t * e) {
+    set_rotation_dope_card_config_view(system_config.rotation);
 }
