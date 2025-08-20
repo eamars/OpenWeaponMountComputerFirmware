@@ -224,7 +224,7 @@ void set_rotation_countdown_timer_widget(lv_display_rotation_t rotation) {
         lv_obj_align(countdown_timer_button, LV_ALIGN_CENTER, 0, 0);
     }
     else {
-        lv_obj_align(countdown_timer_button, LV_ALIGN_TOP_MID, -20, 0);
+        lv_obj_align(countdown_timer_button, LV_ALIGN_LEFT_MID, 20, 0);
     }
 }
 
@@ -265,7 +265,7 @@ lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * 
 
     lv_label_set_text(countdown_timer_label, "0:00");
     lv_obj_set_style_text_color(countdown_timer_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(countdown_timer_label, &lv_font_montserrat_32, LV_PART_MAIN);
+    lv_obj_set_style_text_font(countdown_timer_label, &lv_font_montserrat_40, LV_PART_MAIN);
     lv_obj_align(countdown_timer_label, LV_ALIGN_CENTER, 0, 0);
 
     // Set layout based on the rotation

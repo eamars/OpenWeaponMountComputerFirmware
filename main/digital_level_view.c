@@ -217,7 +217,8 @@ void set_rotation_roll_deg_indicator(lv_display_rotation_t display_rotation){
 
         // Redraw the screen
         if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
-            update_digital_level_view(roll + digital_level_view_config.user_roll_rad_offset, pitch);
+            float display_roll = wrap_angle(roll + digital_level_view_config.user_roll_rad_offset);
+            update_digital_level_view(display_roll, pitch);
             lvgl_port_unlock();
         }
 

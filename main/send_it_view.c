@@ -10,6 +10,7 @@
 #include "bno085.h"
 #include "digital_level_view.h"
 #include "system_config.h"
+#include "common.h"
 
 #define TAG "SendItView"
 
@@ -77,7 +78,7 @@ void update_send_it_view(float roll_rad) {
 
         // Redraw the screen
         if (lvgl_port_lock(5)) {  // prevent a deadlock if the LVGL event wants to continue
-            update_send_it_view(roll + digital_level_view_config.user_roll_rad_offset);
+            update_send_it_view(wrap_angle(roll + digital_level_view_config.user_roll_rad_offset));
             lvgl_port_unlock();
         }
 
