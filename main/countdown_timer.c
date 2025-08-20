@@ -60,7 +60,7 @@ void countdown_timer_task(void *p) {
                 last_poll_tick = xTaskGetTickCount();  // update tick status
                 break;
             }
-            case COUNTODWN_TIMER_RUN: {
+            case COUNTDOWN_TIMER_RUN: {
                 // Calculate time left
                 time_left_ms -= ctx->update_period_ms;
                 if (time_left_ms < 0) {
@@ -134,7 +134,7 @@ void countdown_timer_pause(countdown_timer_t *ctx) {
 
 
 void countdown_timer_continue(countdown_timer_t *ctx) {
-    set_countdown_timer_state(ctx, COUNTODWN_TIMER_RUN);
+    set_countdown_timer_state(ctx, COUNTDOWN_TIMER_RUN);
     xTaskNotifyGive(ctx->countdown_timer_task_handle);
 }
 
@@ -158,10 +158,12 @@ void countdown_timer_button_short_press_event_cb(lv_event_t *e) {
             break;
         case COUNTDOWN_TIMER_PAUSE:
             countdown_timer_continue(countdown_timer);
+            lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
             break;
 
-        case COUNTODWN_TIMER_RUN:
+        case COUNTDOWN_TIMER_RUN:
             countdown_timer_pause(countdown_timer);
+            lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_GREY), LV_PART_INDICATOR);
             break;
         default:
             break;
@@ -238,12 +240,12 @@ lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * 
     For arc, the main is the background, indicator is the foreground
     */
     countdown_timer_button = lv_btn_create(parent);
-    // lv_obj_set_style_radius(countdown_timer_button, LV_RADIUS_CIRCLE, 0); // Make it fully round
+    lv_obj_set_style_radius(countdown_timer_button, LV_RADIUS_CIRCLE, LV_PART_MAIN); // Make it fully round
     lv_obj_set_style_bg_opa(countdown_timer_button, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(countdown_timer_button, 0, LV_PART_MAIN);
     lv_obj_set_style_border_color(countdown_timer_button, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_shadow_width(countdown_timer_button, 0, LV_PART_MAIN);
-    lv_obj_set_size(countdown_timer_button, 130, 130);
+    lv_obj_set_size(countdown_timer_button, 150, 150);
 
     lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_short_press_event_cb, LV_EVENT_SHORT_CLICKED, (void *) countdown_timer);
     lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_long_press_event_cb, LV_EVENT_LONG_PRESSED, (void *) countdown_timer);
@@ -252,7 +254,7 @@ lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * 
     lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
     // lv_obj_set_style_arc_color(countdown_timer, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_arc_opa(countdown_timer_arc, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(countdown_timer_arc, 10, 0);
+    // lv_obj_set_style_arc_width(countdown_timer_arc, 5, 0);
 
     lv_arc_set_rotation(countdown_timer_arc, 270);
     lv_arc_set_bg_angles(countdown_timer_arc, 0, 360);

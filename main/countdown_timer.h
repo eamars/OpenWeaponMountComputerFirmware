@@ -21,7 +21,7 @@
 
 typedef enum {
     COUNTDOWN_TIMER_READY,
-    COUNTODWN_TIMER_RUN,
+    COUNTDOWN_TIMER_RUN,
     COUNTDOWN_TIMER_PAUSE,
     COUNTDOWN_TIMER_EXPIRED,
 } countdown_timer_state_t;
