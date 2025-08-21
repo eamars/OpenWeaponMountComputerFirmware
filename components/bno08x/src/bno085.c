@@ -83,12 +83,8 @@ void bno085_hard_reset(bno085_ctx_t *ctx) {
 }
 
 
-int i2c_open(sh2_Hal_t *self) {
-    // ESP_LOGI(TAG, "i2c_open() called");
-
-    // Cast self back to the context object
-    bno085_ctx_t * ctx = (bno085_ctx_t *) self;
-
+int bno085_soft_reset(bno085_ctx_t *ctx) {
+    ESP_LOGI(TAG, "Sending soft reset to BNO085");
     // Send softreset packet
     uint8_t softreset_pkt[] = {5, 0, 1, 0, 1};
     int attempts = 5;
@@ -104,8 +100,25 @@ int i2c_open(sh2_Hal_t *self) {
         return -1;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    ESP_LOGI(TAG, "Soft reset sent successfully, waiting for device to reset");
 
+    vTaskDelay(pdMS_TO_TICKS(SOFT_RESET_DELAY_MS));
+    return 0;
+}
+
+
+int i2c_open(sh2_Hal_t *self) {
+    // ESP_LOGI(TAG, "i2c_open() called");
+
+    // Cast self back to the context object
+    bno085_ctx_t * ctx = (bno085_ctx_t *) self;
+
+    // Send softreset packet
+    int ret = bno085_soft_reset(ctx);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Failed to send soft reset");
+        return ret;
+    }
 
     ESP_LOGI(TAG, "i2c_open() complete");
 
@@ -132,6 +145,9 @@ int i2c_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us) {
     err = i2c_master_receive(ctx->dev_handle, headers, 4, BNO085_I2C_WRITE_TIMEOUT_MS);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read headers: %s", esp_err_to_name(err));
+        
+        // Send a soft reset
+        bno085_soft_reset(ctx);
         return 0;
     }
 
@@ -146,6 +162,9 @@ int i2c_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us) {
         err = i2c_master_receive(ctx->dev_handle, pBuffer, packet_size, BNO085_I2C_WRITE_TIMEOUT_MS);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to read packet: %s", esp_err_to_name(err));
+        
+            // Send a soft reset
+            bno085_soft_reset(ctx); 
             return 0;
         }
     }
