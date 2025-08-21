@@ -4,9 +4,19 @@
 #include <stdint.h>
 #include "lvgl.h"
 
+
+typedef enum {
+    TRIGGER_RISING_EDGE,
+    TRIGGER_FALLING_EDGE,
+} trigger_edge_t;
+
+
 typedef struct {
     uint32_t crc32;
     uint32_t recoil_acceleration_trigger_level;
+    trigger_edge_t trigger_edge;
+    bool enable_game_rotation_vector_report;
+    bool enable_linear_acceleration_report;
 } sensor_config_t;
 
 

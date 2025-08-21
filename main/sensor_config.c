@@ -4,7 +4,8 @@
 #include "nvs.h"
 #include "esp_check.h"
 #include "lvgl.h"
-
+#include "bno085.h"
+#include "app_cfg.h"
 #include "config_view.h"
 #include "common.h"
 
@@ -14,8 +15,13 @@
 sensor_config_t sensor_config;
 const sensor_config_t sensor_config_default = {
     .recoil_acceleration_trigger_level = 20,
+    .trigger_edge = TRIGGER_RISING_EDGE,
+    .enable_game_rotation_vector_report = true,
+    .enable_linear_acceleration_report = true
 };
 
+
+extern bno085_ctx_t bno085_dev;
 
 esp_err_t save_sensor_config() {
     esp_err_t err;
@@ -112,6 +118,21 @@ static void update_uint32_item(lv_event_t *e) {
 }
 
 
+static void toggle_linear_acceleration_report(lv_event_t *e) {
+    lv_obj_t * sw = lv_event_get_target_obj(e);
+    bool * state = lv_event_get_user_data(e);
+    *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    ESP_LOGI(TAG, "Linear Acceleration Report toggled: %s", *state ? "Enabled" : "Disabled");
+
+    if (*state) {
+        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
+    }
+    else {
+        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, 0));
+    }
+}
+
+
 lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
     lv_obj_t * container;
     lv_obj_t * config_item;
@@ -121,6 +142,9 @@ lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent
     // Recoil acceleration trigger level
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Recoil Trigger Level (m/s^2)");
     config_item = create_spin_box(container, 10, 5000, 10, 4, 0, sensor_config.recoil_acceleration_trigger_level, update_uint32_item, &sensor_config.recoil_acceleration_trigger_level);
+
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Enable Linear Accel Report");
+    config_item = create_switch(container, &sensor_config.enable_linear_acceleration_report, toggle_linear_acceleration_report);
 
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");

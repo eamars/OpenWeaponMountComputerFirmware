@@ -11,6 +11,8 @@
 #include "bno085.h"
 #include "system_config.h"
 #include "common.h"
+#include "sensor_config.h"
+#include "countdown_timer.h"
 
 #define TAG "DigitalLevelViewController"
 
@@ -25,7 +27,8 @@ float sensor_x_acceleration_thread_unsafe, sensor_y_acceleration_thread_unsafe, 
 extern bno085_ctx_t bno085_dev;
 extern system_config_t system_config;
 extern digital_level_view_config_t digital_level_view_config;
-
+extern sensor_config_t sensor_config;
+extern countdown_timer_t countdown_timer;
 
 
 static void sensor_rotation_vector_poller_task(void *p) {
@@ -55,6 +58,8 @@ static void sensor_rotation_vector_poller_task(void *p) {
 static void sensor_acceleration_poller_task(void *p) {
     TickType_t last_poll_tick = xTaskGetTickCount();
 
+    float last_value = 0;
+
     while (1) {
         // Block wait for the task is allowed to run
         xSemaphoreTake(sensor_acceleration_poller_task_control, portMAX_DELAY);
@@ -63,6 +68,29 @@ static void sensor_acceleration_poller_task(void *p) {
         bno085_wait_for_linear_acceleration_report(&bno085_dev, 
             &sensor_x_acceleration_thread_unsafe, &sensor_y_acceleration_thread_unsafe, &sensor_z_acceleration_thread_unsafe, 
             true);
+
+        float x_abs = fabsf(sensor_x_acceleration_thread_unsafe);
+        last_value = sensor_x_acceleration_thread_unsafe;
+
+        if (last_value < sensor_config.recoil_acceleration_trigger_level && 
+            x_abs >= sensor_config.recoil_acceleration_trigger_level && 
+            sensor_config.trigger_edge == TRIGGER_RISING_EDGE
+        ) {
+
+            // ESP_LOGI(TAG, "Recoil detected, auto_start_countdown_timer_on_recoil: %d, get_countdown_timer_widget_enabled: %d, get_countdown_timer_state: %d",
+            //          digital_level_view_config.auto_start_countdown_timer_on_recoil,
+            //          get_countdown_timer_widget_enabled(),
+            //          get_countdown_timer_state(&countdown_timer));
+            // Shot has fired, start the timer if not started already
+            if (digital_level_view_config.auto_start_countdown_timer_on_recoil &&     // recoil detected
+                get_countdown_timer_widget_enabled() &&                               // widget is enabled
+                (get_countdown_timer_state(&countdown_timer) == COUNTDOWN_TIMER_PAUSE)  // timer is ready
+            ) {
+                countdown_timer_continue(&countdown_timer);
+                ESP_LOGI(TAG, "Countdown timer started due to recoil");
+            }
+ 
+        }
 
         xSemaphoreGive(sensor_acceleration_poller_task_control);  // allow the task to run
 
@@ -75,9 +103,9 @@ void enable_digital_level_view_controller(bool enable) {
     if (enable) {
         xSemaphoreGive(sensor_rotation_vector_poller_task_control);
         xSemaphoreGive(sensor_acceleration_poller_task_control);
-    } else {;
-        xSemaphoreTake(sensor_rotation_vector_poller_task_control, portMAX_DELAY);
-        xSemaphoreTake(sensor_acceleration_poller_task_control, portMAX_DELAY);
+    } else {
+        xSemaphoreTake(sensor_rotation_vector_poller_task_control, 0);
+        xSemaphoreTake(sensor_acceleration_poller_task_control, 0);
     }
 }
 

@@ -141,16 +141,22 @@ static void void_lv_colour_picker_update(lv_event_t * e) {
 }
 
 
-lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, void *event_cb_args) {
+lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, lv_event_cb_t event_cb) {
     lv_obj_t * left_button = lv_button_create(container);
     lv_obj_t * colour_indicator = lv_led_create(container);
     lv_obj_t * right_button = lv_button_create(container);
 
-    lv_obj_set_user_data(colour_indicator, colour);
+    lv_obj_set_user_data(colour_indicator, colour);  // There is no way to get colour from led thus we have to retrieve it via user data
     lv_led_set_color(colour_indicator, lv_palette_main(*colour));  // set default colour
 
     // FIXME: The LED object won't emit value change event therefore the callback needed to be called manually
-    lv_obj_add_event_cb(colour_indicator, void_lv_colour_picker_update, LV_EVENT_VALUE_CHANGED, event_cb_args);
+    if (event_cb == NULL) {
+        lv_obj_add_event_cb(colour_indicator, void_lv_colour_picker_update, LV_EVENT_VALUE_CHANGED, (void *) colour);
+    }
+    else {
+        lv_obj_add_event_cb(colour_indicator, event_cb, LV_EVENT_VALUE_CHANGED, (void *) colour);
+    }
+    
 
     lv_obj_set_style_bg_image_src(left_button, LV_SYMBOL_LEFT, 0);
     lv_obj_set_height(left_button, 36);  // TODO: Find a better way to read the height from other widgets
@@ -207,6 +213,35 @@ lv_obj_t * create_save_reload_reset_buttons(lv_obj_t * container, lv_event_cb_t 
     lv_obj_add_event_cb(reset_button, reset_event_cb, LV_EVENT_SINGLE_CLICKED, NULL);
 
     return container;
+}
+
+
+static void on_switch_value_changed(lv_event_t *e) {
+    lv_obj_t *sw = lv_event_get_target(e);
+    bool *state = lv_event_get_user_data(e);
+    *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
+}
+
+
+lv_obj_t * create_switch(lv_obj_t * container, bool * state, lv_event_cb_t event_cb) {
+    lv_obj_t * enable_switch = lv_switch_create(container);
+    lv_obj_set_width(enable_switch, lv_pct(40));
+    lv_switch_set_orientation(enable_switch, LV_SWITCH_ORIENTATION_HORIZONTAL);
+
+    // Set initial state
+    if (*state) {
+        lv_obj_add_state(enable_switch, LV_STATE_CHECKED);
+    } else {
+        lv_obj_remove_state(enable_switch, LV_STATE_CHECKED);
+    }
+    
+    if (event_cb == NULL) {
+        lv_obj_add_event_cb(enable_switch, on_switch_value_changed, LV_EVENT_VALUE_CHANGED, (void *) state);
+    } else {
+        lv_obj_add_event_cb(enable_switch, event_cb, LV_EVENT_VALUE_CHANGED, (void *) state);
+    }
+    
+    return enable_switch;
 }
 
 

@@ -32,10 +32,12 @@ const digital_level_view_config_t digital_level_view_config_default = {
     .pitch_display_gain = 0.1f, // Default gain of 1/10
     .delta_level_threshold = 1.0f, // Default level threshold
     .user_roll_rad_offset = 0.0,       // Default to no offset
-    .colour_left_tilt_indicator = LV_PALETTE_LIGHT_BLUE,              // Light blue
-    .colour_right_tilt_indicator = LV_PALETTE_AMBER,                    // Amber
-    .colour_horizontal_level_indicator = LV_PALETTE_LIGHT_GREEN,       // Light green
-    .colour_foreground = LV_PALETTE_BLACK                               // Black
+    .colour_left_tilt_indicator = LV_PALETTE_LIGHT_BLUE,
+    .colour_right_tilt_indicator = LV_PALETTE_AMBER,
+    .colour_horizontal_level_indicator = LV_PALETTE_LIGHT_GREEN,
+    .colour_foreground = LV_PALETTE_BLACK,
+    .auto_start_countdown_timer_on_recoil = true,
+    .auto_move_dope_card_on_recoil = true
 };
 
 lv_obj_t * tilt_angle_label = NULL;
@@ -368,21 +370,29 @@ lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Level Threshold (deg)");
     config_item = create_spin_box(container, 5, 20, 1, 2, 1, (int32_t) (digital_level_view_config.delta_level_threshold * 10), update_float_item_gain_10, &digital_level_view_config.delta_level_threshold);
 
+    // auto_start_countdown_timer_on_recoil
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Auto Start Countdown Timer on Recoil");
+    config_item = create_switch(container, &digital_level_view_config.auto_start_countdown_timer_on_recoil, NULL);
+
+    // auto_move_dope_card_on_recoil
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Auto Move Dope Card on Recoil");
+    config_item = create_switch(container, &digital_level_view_config.auto_move_dope_card_on_recoil, NULL);
+
     // Left tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Left Tilt Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_left_tilt_indicator, &digital_level_view_config.colour_left_tilt_indicator);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_left_tilt_indicator, NULL);
 
     // Right tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Right Tilt Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_right_tilt_indicator, &digital_level_view_config.colour_right_tilt_indicator);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_right_tilt_indicator, NULL);
 
     // Horizontal tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Leveled Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_horizontal_level_indicator, &digital_level_view_config.colour_horizontal_level_indicator);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_horizontal_level_indicator, NULL);
 
     // Horizontal tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Foreground Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_foreground, &digital_level_view_config.colour_foreground);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_foreground, NULL);
 
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");

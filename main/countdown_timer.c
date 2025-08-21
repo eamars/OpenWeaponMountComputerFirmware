@@ -125,17 +125,32 @@ esp_err_t countdown_timer_init(countdown_timer_t *ctx) {
 void countdown_timer_start(countdown_timer_t *ctx) {
     set_countdown_timer_state(ctx, COUNTDOWN_TIMER_READY);
     xTaskNotifyGive(ctx->countdown_timer_task_handle);
+
+    if (lvgl_port_lock(0)) {
+        lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_GREY), LV_PART_INDICATOR);
+        lvgl_port_unlock();
+    }
 }
 
 
 void countdown_timer_pause(countdown_timer_t *ctx) {
     set_countdown_timer_state(ctx, COUNTDOWN_TIMER_PAUSE);
+
+    if (lvgl_port_lock(0)) {
+        lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_GREY), LV_PART_INDICATOR);
+        lvgl_port_unlock();
+    }
 }
 
 
 void countdown_timer_continue(countdown_timer_t *ctx) {
     set_countdown_timer_state(ctx, COUNTDOWN_TIMER_RUN);
     xTaskNotifyGive(ctx->countdown_timer_task_handle);
+
+    if (lvgl_port_lock(0)) {
+        lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
+        lvgl_port_unlock();
+    }
 }
 
 /*------------------------------------
@@ -158,12 +173,12 @@ void countdown_timer_button_short_press_event_cb(lv_event_t *e) {
             break;
         case COUNTDOWN_TIMER_PAUSE:
             countdown_timer_continue(countdown_timer);
-            lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
+            
             break;
 
         case COUNTDOWN_TIMER_RUN:
             countdown_timer_pause(countdown_timer);
-            lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_GREY), LV_PART_INDICATOR);
+            
             break;
         default:
             break;
@@ -220,6 +235,16 @@ void enable_countdown_timer_widget(bool enable) {
     }
 }
 
+
+bool get_countdown_timer_widget_enabled(void) {
+    bool enabled = false;
+    if (lvgl_port_lock(0)) {
+        enabled = !lv_obj_has_flag(countdown_timer_button, LV_OBJ_FLAG_HIDDEN);
+        lvgl_port_unlock();
+    }
+
+    return enabled;
+}
 
 void set_rotation_countdown_timer_widget(lv_display_rotation_t rotation) {
     if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {

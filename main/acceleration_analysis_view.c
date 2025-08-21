@@ -16,11 +16,6 @@
 #define BUFFER_LENGTH 100
 
 
-typedef enum {
-    TRIGGER_RISING_EDGE,
-    TRIGGER_FALLING_EDGE,
-} trigger_edge_t;
-
 static circular_buffer_t *accel_buffer = NULL;
 
 extern sensor_config_t sensor_config;
@@ -36,7 +31,6 @@ static void acceleration_event_poller_task(void *p) {
     TickType_t last_poll_tick = xTaskGetTickCount();
     float last_value = 0;
     float highest_value = 0;
-    trigger_edge_t trigger_edge = TRIGGER_RISING_EDGE;
 
     while (1) {
         // Block until allowed 
@@ -57,7 +51,9 @@ static void acceleration_event_poller_task(void *p) {
         circular_buffer_push(accel_buffer, x_abs);
 
         // Look for rising edge
-        if (last_value < sensor_config.recoil_acceleration_trigger_level && x_abs >= sensor_config.recoil_acceleration_trigger_level && trigger_edge == TRIGGER_RISING_EDGE) {
+        if (last_value < sensor_config.recoil_acceleration_trigger_level && 
+            x_abs >= sensor_config.recoil_acceleration_trigger_level && 
+            sensor_config.trigger_edge == TRIGGER_RISING_EDGE) {
             // Align the offset to align the trigger to the center
             circular_buffer_set_read_offset(accel_buffer, -1 * (BUFFER_LENGTH / 2)); 
 
@@ -136,6 +132,6 @@ void enable_acceleration_analysis_view(bool enable) {
 
     } else {
         // Disable the poller
-        xSemaphoreTake(acceleration_event_poller_task_control, portMAX_DELAY);
+        xSemaphoreTake(acceleration_event_poller_task_control, 0);
     }
 }

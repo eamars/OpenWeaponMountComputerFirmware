@@ -23,6 +23,10 @@ typedef struct {
     lv_palette_t colour_right_tilt_indicator;
     lv_palette_t colour_horizontal_level_indicator;
     lv_palette_t colour_foreground;
+
+    // Other widget control
+    bool auto_start_countdown_timer_on_recoil;
+    bool auto_move_dope_card_on_recoil;
 } digital_level_view_config_t;
 
 

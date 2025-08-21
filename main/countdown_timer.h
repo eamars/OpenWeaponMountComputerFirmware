@@ -47,11 +47,12 @@ void countdown_timer_pause(countdown_timer_t *ctx);
 void countdown_timer_continue(countdown_timer_t *ctx);
 void countdown_timer_update_time(countdown_timer_t *ctx, int new_time_ms);
 
-// countdown_timer_state_t get_countdown_timer_state(countdown_timer_t *ctx);
+countdown_timer_state_t get_countdown_timer_state(countdown_timer_t *ctx);
 // void set_countdown_timer_state(countdown_timer_t *ctx, countdown_timer_state_t new_state);
 
 lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * countdown_timer);
 void enable_countdown_timer_widget(bool enable);
+bool get_countdown_timer_widget_enabled(void);
 void set_rotation_countdown_timer_widget(lv_display_rotation_t rotation);
 
 #endif  // COUNTDOWN_TIMER_H_
