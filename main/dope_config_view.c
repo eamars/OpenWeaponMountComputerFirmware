@@ -383,7 +383,7 @@ void create_dope_config_msgbox(lv_obj_t * parent) {
     // A container for top widget group including a label and a switch
     lv_obj_t * enable_option_container = lv_obj_create(bottom_container);
     // lv_obj_set_align(enable_option_container, LV_ALIGN_TOP_MID);
-    lv_obj_set_size(enable_option_container, lv_pct(100), lv_pct(30));
+    lv_obj_set_size(enable_option_container, lv_pct(100), lv_pct(40));
     lv_obj_set_flex_flow(enable_option_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(enable_option_container,
                       LV_FLEX_ALIGN_SPACE_BETWEEN,  // main axis (row) center
@@ -398,13 +398,15 @@ void create_dope_config_msgbox(lv_obj_t * parent) {
     lv_obj_set_style_text_font(enable_label, &lv_font_montserrat_20, 0);
 
     dope_item_settings_enable_switch = lv_switch_create(enable_option_container);
-    lv_obj_set_width(dope_item_settings_enable_switch, lv_pct(40));
+    lv_obj_set_size(dope_item_settings_enable_switch, lv_pct(50), lv_pct(80));
     lv_switch_set_orientation(dope_item_settings_enable_switch, LV_SWITCH_ORIENTATION_HORIZONTAL);
 
 
     // Add Save and cancel button to the bottom container
     lv_obj_t * dope_item_settings_apply_button = lv_button_create(bottom_container);
+    lv_obj_set_size(dope_item_settings_apply_button, lv_pct(80), lv_pct(30));
     lv_obj_t * apply_label = lv_label_create(dope_item_settings_apply_button);
+    lv_obj_align(apply_label, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_text_font(apply_label, &lv_font_montserrat_20, 0);
     lv_label_set_text(apply_label, "Apply");
 

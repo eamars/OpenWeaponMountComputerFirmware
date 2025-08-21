@@ -423,7 +423,7 @@ esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, flo
 
     // Wait for the queue from the corresponding report
     if (xQueueReceive(ctx->enabled_sensor_report_list[SH2_GAME_ROTATION_VECTOR].sensor_value_queue, &sensor_value, wait_ticks) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to receive game rotation vector report");
+        // ESP_LOGE(TAG, "Failed to receive game rotation vector report");
         return ESP_FAIL;
     }
 
@@ -455,7 +455,7 @@ esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x
 
     // Wait for the queue from the corresponding report
     if (xQueueReceive(ctx->enabled_sensor_report_list[SH2_LINEAR_ACCELERATION].sensor_value_queue, &sensor_value, wait_ticks) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to receive linear acceleration report");
+        // ESP_LOGE(TAG, "Failed to receive linear acceleration report");
         return ESP_FAIL;
     }
 

@@ -38,49 +38,51 @@ static void acceleration_event_poller_task(void *p) {
 
         // Block waiting for BNO085 acceleration event
         float x, y, z;
-        bno085_wait_for_linear_acceleration_report(&bno085_dev, &x, &y, &z, true);
+        esp_err_t err = bno085_wait_for_linear_acceleration_report(&bno085_dev, &x, &y, &z, true);
 
-        // ESP_LOGI(TAG, "Acceleration: x=%.2f, y=%.2f, z=%.2f", x, y, z);
+        if (err == ESP_OK) {
+            // ESP_LOGI(TAG, "Acceleration Analysis: x=%.2f, y=%.2f, z=%.2f", x, y, z);
 
-        // Oscilloscope processing
-        float x_abs = fabsf(x);
-        if (x_abs > highest_value) {
-            highest_value = x_abs;
-        }
-        // push to buffer
-        circular_buffer_push(accel_buffer, x_abs);
-
-        // Look for rising edge
-        if (last_value < sensor_config.recoil_acceleration_trigger_level && 
-            x_abs >= sensor_config.recoil_acceleration_trigger_level && 
-            sensor_config.trigger_edge == TRIGGER_RISING_EDGE) {
-            // Align the offset to align the trigger to the center
-            circular_buffer_set_read_offset(accel_buffer, -1 * (BUFFER_LENGTH / 2)); 
-
-            // Populate all data to the chart
-            if (lvgl_port_lock(0)) {
-                // Update scale
-                lv_chart_set_axis_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, (int32_t) (highest_value * 1100));
-                for (int i = 0; i < BUFFER_LENGTH; i++) {
-                    float value = circular_buffer_read_next(accel_buffer);
-                    lv_chart_set_next_value(chart, x_accel_series, (int32_t) value * 1000);
-                }
-                lv_chart_refresh(chart);
-
-                // Update information label
-                lv_label_set_text_fmt(info_label, "TRIG: %ld mm/s^2\nX_ACCEL: %ld mm/s^2\nPEAK: %ld mm/s^2", 
-                    sensor_config.recoil_acceleration_trigger_level * 1000, (int32_t) x * 1000, (int32_t) highest_value * 1000);
-
-                lvgl_port_unlock();
+            // Oscilloscope processing
+            float x_abs = fabsf(x);
+            if (x_abs > highest_value) {
+                highest_value = x_abs;
             }
-        }
+            // push to buffer
+            circular_buffer_push(accel_buffer, x_abs);
 
-        last_value = x;
+            // Look for rising edge
+            if (last_value < sensor_config.recoil_acceleration_trigger_level && 
+                x_abs >= sensor_config.recoil_acceleration_trigger_level && 
+                sensor_config.trigger_edge == TRIGGER_RISING_EDGE) {
+                // Align the offset to align the trigger to the center
+                circular_buffer_set_read_offset(accel_buffer, -1 * (BUFFER_LENGTH / 2)); 
+
+                // Populate all data to the chart
+                if (lvgl_port_lock(0)) {
+                    // Update scale
+                    lv_chart_set_axis_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, (int32_t) (highest_value * 1100));
+                    for (int i = 0; i < BUFFER_LENGTH; i++) {
+                        float value = circular_buffer_read_next(accel_buffer);
+                        lv_chart_set_next_value(chart, x_accel_series, (int32_t) value * 1000);
+                    }
+                    lv_chart_refresh(chart);
+
+                    // Update information label
+                    lv_label_set_text_fmt(info_label, "TRIG: %ld mm/s^2\nX_ACCEL: %ld mm/s^2\nPEAK: %ld mm/s^2", 
+                        sensor_config.recoil_acceleration_trigger_level * 1000, (int32_t) x * 1000, (int32_t) highest_value * 1000);
+
+                    lvgl_port_unlock();
+                }
+            }
+
+            last_value = x;
+        }
 
         // Allow the task to run
         xSemaphoreGive(acceleration_event_poller_task_control);  // allow the task to run
 
-        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(10));
+        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(20));
     }
 }
 
@@ -132,6 +134,6 @@ void enable_acceleration_analysis_view(bool enable) {
 
     } else {
         // Disable the poller
-        xSemaphoreTake(acceleration_event_poller_task_control, 0);
+        xSemaphoreTake(acceleration_event_poller_task_control, portMAX_DELAY);
     }
 }
