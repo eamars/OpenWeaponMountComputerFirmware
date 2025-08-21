@@ -18,6 +18,7 @@
 #include "dope_config_view.h"
 #include "common.h"
 #include "system_config.h"
+#include "digital_level_view_controller.h"
 
 
 #define TAG "DigitalLevelView"
@@ -43,15 +44,13 @@ lv_obj_t * horizontal_indicator_line_right = NULL;
 lv_obj_t * digital_level_bg_canvas = NULL;
 lv_obj_t * tilt_angle_button = NULL;
 
-static TaskHandle_t sensor_event_poller_task_handle;
-static SemaphoreHandle_t sensor_event_poller_task_control;
-extern bno085_ctx_t bno085_dev;
 extern system_config_t system_config;
 countdown_timer_t countdown_timer;
 uint8_t *lv_canvas_draw_buffer;
 
 // NOT threadsafe copy of roll and pitch to be shared within the module
-static float roll, pitch;
+extern float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
+extern float sensor_x_acceleration_thread_unsafe;
 
 
 // Forward declaration
@@ -61,20 +60,10 @@ esp_err_t save_digital_level_view_config();
 
 void tilt_angle_button_short_press_cb(lv_event_t * e) {
     // Take a snapshot of current roll and use that as offset
-    digital_level_view_config.user_roll_rad_offset = roll;
+    digital_level_view_config.user_roll_rad_offset = sensor_roll_thread_unsafe;
     digital_level_view_config.user_roll_rad_offset = -digital_level_view_config.user_roll_rad_offset;  // take negative
 
     ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
-
-    // // Write to NVS
-    // memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
-    // nvs_handle_t handle;
-    // esp_err_t err;
-    // err = nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle);
-    // ESP_ERROR_CHECK(err);
-    // err = nvs_set_blob(handle, "cfg", &digital_level_view_config, sizeof(digital_level_view_config));
-
-    // ESP_LOGI(TAG, "Write to NVS");
 }
 
 
@@ -195,7 +184,7 @@ void set_rotation_roll_deg_indicator(lv_display_rotation_t display_rotation){
     }
 }
 
- void update_digital_level_view(float roll_rad, float pitch_rad)
+void update_digital_level_view(float roll_rad, float pitch_rad)
  {
     // Update the tilt angle label
     update_roll_deg_indicator(roll_rad);
@@ -204,29 +193,6 @@ void set_rotation_roll_deg_indicator(lv_display_rotation_t display_rotation){
     update_tilt_canvas_draw(roll_rad, pitch_rad);
  }
 
-
- static void sensor_event_poller_task(void *p) {
-    TickType_t last_poll_tick = xTaskGetTickCount();
-
-    while (1) {
-        // Block wait for the task is allowed to run
-        xSemaphoreTake(sensor_event_poller_task_control, portMAX_DELAY);
-
-        // Wait for data
-        bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &roll, &pitch, true);
-
-        // Redraw the screen
-        if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
-            float display_roll = wrap_angle(roll + digital_level_view_config.user_roll_rad_offset);
-            update_digital_level_view(display_roll, pitch);
-            lvgl_port_unlock();
-        }
-
-        xSemaphoreGive(sensor_event_poller_task_control);  // allow the task to run
-
-        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(20));
-    }
-}
 
 void create_roll_deg_indicator(lv_obj_t * parent) {
     // Create button
@@ -324,31 +290,8 @@ void create_digital_level_view(lv_obj_t *parent)
     // Set initial value
     update_digital_level_view(DEG_TO_RAD(0), DEG_TO_RAD(0));
 
-    // Create event poller task 
-    sensor_event_poller_task_control = xSemaphoreCreateBinary();
-    BaseType_t rtos_return = xTaskCreate(
-        sensor_event_poller_task, 
-        "dlv_poller", 
-        SENSOR_EVENT_POLLER_TASK_STACK,
-        NULL,
-        SENSOR_EVENT_POLLER_TASK_PRIORITY,
-        &sensor_event_poller_task_handle
-    );
-    if (rtos_return != pdPASS) {
-        ESP_LOGE(TAG, "Failed to allocate memory for sensor_poller");
-        ESP_ERROR_CHECK(ESP_FAIL);
-    }
-}
-
-
-void enable_digital_level_view(bool enable) {
-    ESP_LOGI(TAG, "Digital Level View %d", enable);
-    if (enable) {
-        xSemaphoreGive(sensor_event_poller_task_control);
-    }
-    else {
-        xSemaphoreTake(sensor_event_poller_task_control, portMAX_DELAY);
-    }
+    // Initialize the digital level view controller tasks
+    ESP_ERROR_CHECK(digital_level_view_controller_init());
 }
 
 
@@ -365,14 +308,6 @@ static void update_float_item_gain_10(lv_event_t *e) {
     *target_ptr = value / 10.0;
 }
 
-
-static void update_colour(lv_event_t *e) {
-    lv_obj_t * colour_indicator = lv_event_get_target_obj(e);
-    lv_palette_t * colour_idx = lv_obj_get_user_data(colour_indicator);
-    lv_palette_t * target_colour_idx = lv_event_get_user_data(e);
-    *target_colour_idx = *colour_idx;
-    ESP_LOGI(TAG, "Target colour updated to %d", *target_colour_idx);
-}
 
 static void update_roll_offset(lv_event_t *e) {
     lv_obj_t * spinbox = lv_event_get_target_obj(e);
@@ -407,7 +342,7 @@ static void on_reset_button_pressed(lv_event_t * e) {
 }
 
 
-void digital_level_review_rotation_event_callback(lv_event_t * e) {
+void digital_level_view_rotation_event_callback(lv_event_t * e) {
     set_rotation_roll_deg_indicator(system_config.rotation);
     set_rotation_canvas(system_config.rotation);
     set_rotation_countdown_timer_widget(system_config.rotation);
@@ -423,54 +358,35 @@ lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent
 
     // Roll display gain
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Roll Display Gain");
-    config_item = create_spin_box(container, 10, 20, 2, 1, (int32_t) (digital_level_view_config.roll_display_gain * 10), update_float_item_gain_10, &digital_level_view_config.roll_display_gain);
+    config_item = create_spin_box(container, 10, 20, 1, 2, 1, (int32_t) (digital_level_view_config.roll_display_gain * 10), update_float_item_gain_10, &digital_level_view_config.roll_display_gain);
 
     // Pitch display gain
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Pitch Display Gain");
-    config_item = create_spin_box(container, 1, 10, 2, 1, (int32_t) (digital_level_view_config.pitch_display_gain * 10), update_float_item_gain_10, &digital_level_view_config.pitch_display_gain);
+    config_item = create_spin_box(container, 1, 10, 1, 2, 1, (int32_t) (digital_level_view_config.pitch_display_gain * 10), update_float_item_gain_10, &digital_level_view_config.pitch_display_gain);
 
     // delta level threshold
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Level Threshold (deg)");
-    config_item = create_spin_box(container, 5, 20, 2, 1, (int32_t) (digital_level_view_config.delta_level_threshold * 10), update_float_item_gain_10, &digital_level_view_config.delta_level_threshold);
+    config_item = create_spin_box(container, 5, 20, 1, 2, 1, (int32_t) (digital_level_view_config.delta_level_threshold * 10), update_float_item_gain_10, &digital_level_view_config.delta_level_threshold);
 
     // Left tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Left Tilt Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_left_tilt_indicator, update_colour, &digital_level_view_config.colour_left_tilt_indicator);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_left_tilt_indicator, &digital_level_view_config.colour_left_tilt_indicator);
 
     // Right tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Right Tilt Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_right_tilt_indicator, update_colour, &digital_level_view_config.colour_right_tilt_indicator);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_right_tilt_indicator, &digital_level_view_config.colour_right_tilt_indicator);
 
     // Horizontal tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Leveled Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_horizontal_level_indicator, update_colour, &digital_level_view_config.colour_horizontal_level_indicator);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_horizontal_level_indicator, &digital_level_view_config.colour_horizontal_level_indicator);
 
     // Horizontal tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Foreground Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_foreground, update_colour, &digital_level_view_config.colour_foreground);
+    config_item = create_colour_picker(container, &digital_level_view_config.colour_foreground, &digital_level_view_config.colour_foreground);
 
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
-    lv_obj_t * save_button = lv_btn_create(container);
-    lv_obj_t * reload_button = lv_btn_create(container);
-    lv_obj_t * reset_button = lv_btn_create(container);
-
-    // Save/reload Styling
-    lv_obj_add_flag(save_button, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-    lv_obj_set_style_bg_image_src(save_button, LV_SYMBOL_SAVE, 0);
-    lv_obj_set_height(save_button, 36);  // TODO: Find a better way to read the height from other widgets
-    lv_obj_set_width(save_button, lv_pct(30));
-    lv_obj_add_event_cb(save_button, on_save_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
-
-    lv_obj_set_style_bg_image_src(reload_button, LV_SYMBOL_UPLOAD, 0);
-    lv_obj_set_height(reload_button, 36);  // TODO: Find a better way to read the height from other widgets
-    lv_obj_set_width(reload_button, lv_pct(30));
-    lv_obj_add_event_cb(reload_button, on_reload_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
-
-    lv_obj_set_style_bg_image_src(reset_button, LV_SYMBOL_WARNING, 0);
-    lv_obj_set_height(reset_button, 36);  // TODO: Find a better way to read the height from other widgets
-    lv_obj_set_width(reset_button, lv_pct(30));
-    lv_obj_add_event_cb(reset_button, on_reset_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+    config_item = create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);

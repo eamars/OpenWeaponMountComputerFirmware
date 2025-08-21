@@ -132,27 +132,8 @@ lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_
 
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
-    lv_obj_t * save_button = lv_btn_create(container);
-    lv_obj_t * reload_button = lv_btn_create(container);
-    lv_obj_t * reset_button = lv_btn_create(container);
-
-    // Save/reload Styling
-    lv_obj_add_flag(save_button, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-    lv_obj_set_style_bg_image_src(save_button, LV_SYMBOL_SAVE, 0);
-    lv_obj_set_height(save_button, 36);  // TODO: Find a better way to read the height from other widgets
-    lv_obj_set_width(save_button, lv_pct(30));
-    lv_obj_add_event_cb(save_button, on_save_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
-
-    lv_obj_set_style_bg_image_src(reload_button, LV_SYMBOL_UPLOAD, 0);
-    lv_obj_set_height(reload_button, 36);  // TODO: Find a better way to read the height from other widgets
-    lv_obj_set_width(reload_button, lv_pct(30));
-    lv_obj_add_event_cb(reload_button, on_reload_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
-
-    lv_obj_set_style_bg_image_src(reset_button, LV_SYMBOL_WARNING, 0);
-    lv_obj_set_height(reset_button, 36);  // TODO: Find a better way to read the height from other widgets
-    lv_obj_set_width(reset_button, lv_pct(30));
-    lv_obj_add_event_cb(reset_button, on_reset_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
-
+    create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
+    
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
     lv_obj_t * img = lv_image_create(cont);

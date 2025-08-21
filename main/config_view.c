@@ -5,6 +5,7 @@
 
 #include "digital_level_view.h"
 #include "system_config.h"
+#include "sensor_config.h"
 
 
 #define TAG "ConfigView"
@@ -60,7 +61,7 @@ static void lv_spinbox_decrement_event_cb(lv_event_t *e) {
 }
 
 lv_obj_t * create_spin_box(lv_obj_t * container, 
-                           int32_t range_min, int32_t range_max, int32_t digit_count, int32_t sep_pos, int32_t default_value,
+                           int32_t range_min, int32_t range_max, uint32_t step_size, int32_t digit_count, int32_t sep_pos, int32_t default_value,
                            lv_event_cb_t event_cb, void *event_cb_args) {
     // Add buttons
     lv_obj_t * minus_button = lv_button_create(container);
@@ -72,8 +73,9 @@ lv_obj_t * create_spin_box(lv_obj_t * container,
     // configure spinbox    
     lv_spinbox_set_range(spinbox, range_min, range_max);
     lv_spinbox_set_digit_format(spinbox, digit_count, sep_pos);
-    lv_spinbox_set_step(spinbox, 1);
+    lv_spinbox_set_step(spinbox, step_size);
     lv_obj_set_flex_grow(spinbox, 1);
+    lv_obj_set_style_text_font(spinbox, &lv_font_montserrat_20, LV_PART_MAIN);
 
     lv_obj_set_style_bg_image_src(minus_button, LV_SYMBOL_MINUS, 0);
     lv_obj_add_event_cb(minus_button, lv_spinbox_decrement_event_cb, LV_EVENT_SHORT_CLICKED, (void *) spinbox);
@@ -130,7 +132,16 @@ static void lv_colour_picker_right_event_cb(lv_event_t *e) {
 }
 
 
-lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, lv_event_cb_t event_cb, void *event_cb_args) {
+static void void_lv_colour_picker_update(lv_event_t * e) {
+    lv_obj_t * colour_indicator = lv_event_get_target_obj(e);
+    lv_palette_t * colour_idx = lv_obj_get_user_data(colour_indicator);
+    lv_palette_t * target_colour_idx = lv_event_get_user_data(e);
+    *target_colour_idx = *colour_idx;
+    ESP_LOGI(TAG, "Target colour updated to %d", *target_colour_idx);
+}
+
+
+lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, void *event_cb_args) {
     lv_obj_t * left_button = lv_button_create(container);
     lv_obj_t * colour_indicator = lv_led_create(container);
     lv_obj_t * right_button = lv_button_create(container);
@@ -139,7 +150,7 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, lv_
     lv_led_set_color(colour_indicator, lv_palette_main(*colour));  // set default colour
 
     // FIXME: The LED object won't emit value change event therefore the callback needed to be called manually
-    lv_obj_add_event_cb(colour_indicator, event_cb, LV_EVENT_VALUE_CHANGED, event_cb_args);
+    lv_obj_add_event_cb(colour_indicator, void_lv_colour_picker_update, LV_EVENT_VALUE_CHANGED, event_cb_args);
 
     lv_obj_set_style_bg_image_src(left_button, LV_SYMBOL_LEFT, 0);
     lv_obj_set_height(left_button, 36);  // TODO: Find a better way to read the height from other widgets
@@ -170,6 +181,32 @@ lv_obj_t * create_dropdown_list(lv_obj_t * container, const char * options, int3
     lv_obj_add_event_cb(dropdown_list_option, event_cb, LV_EVENT_VALUE_CHANGED, event_cb_args);
     
     return dropdown_list_option;
+}
+
+
+lv_obj_t * create_save_reload_reset_buttons(lv_obj_t * container, lv_event_cb_t save_event_cb, lv_event_cb_t reload_event_cb, lv_event_cb_t reset_event_cb) {
+    lv_obj_t * save_button = lv_btn_create(container);
+    lv_obj_t * reload_button = lv_btn_create(container);
+    lv_obj_t * reset_button = lv_btn_create(container);
+
+    // Save/reload Styling
+    lv_obj_add_flag(save_button, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+    lv_obj_set_style_bg_image_src(save_button, LV_SYMBOL_SAVE, 0);
+    lv_obj_set_height(save_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_width(save_button, lv_pct(30));
+    lv_obj_add_event_cb(save_button, save_event_cb, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_set_style_bg_image_src(reload_button, LV_SYMBOL_UPLOAD, 0);
+    lv_obj_set_height(reload_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_width(reload_button, lv_pct(30));
+    lv_obj_add_event_cb(reload_button, reload_event_cb, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_set_style_bg_image_src(reset_button, LV_SYMBOL_WARNING, 0);
+    lv_obj_set_height(reset_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_width(reset_button, lv_pct(30));
+    lv_obj_add_event_cb(reset_button, reset_event_cb, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    return container;
 }
 
 
@@ -216,6 +253,7 @@ void create_config_view(lv_obj_t *parent) {
 
     create_system_config_view_config(config_menu, main_page);
     create_digital_level_view_config(config_menu, main_page);
+    create_sensor_config_view_config(config_menu, main_page);
 
     lv_menu_set_page(config_menu, main_page);
 }

@@ -25,13 +25,13 @@ typedef struct {
     sh2_SensorId_t sensor_id;
     uint32_t interval_ms;
     QueueHandle_t sensor_value_queue;
-} sensor_config_t;
+} sensor_report_config_t;
 
 
 typedef struct {
     sh2_Hal_t _HAL; // SH2 HAL interface -> Align the memory with the context structure allowing better type casting
     TaskHandle_t sensor_poller_task_handle;
-    sensor_config_t enabled_sensor_report_list[SH2_MAX_SENSOR_EVENT_LEN];
+    sensor_report_config_t enabled_sensor_report_list[SH2_MAX_SENSOR_EVENT_LEN];
 
     // Implement specific atributes
     i2c_master_dev_handle_t dev_handle;

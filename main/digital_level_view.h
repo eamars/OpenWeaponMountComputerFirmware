@@ -27,12 +27,13 @@ typedef struct {
 
 
 void create_digital_level_view(lv_obj_t *parent);
-void enable_digital_level_view(bool enable);
 lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page);
 
 esp_err_t load_digital_level_view_config();
 esp_err_t save_digital_level_view_config();
 
-void digital_level_review_rotation_event_callback(lv_event_t * e);
+void update_digital_level_view(float roll_rad, float pitch_rad);
+
+void digital_level_view_rotation_event_callback(lv_event_t * e);
 
 #endif // DIGITAL_LEVEL_VIEW_H

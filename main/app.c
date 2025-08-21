@@ -28,6 +28,7 @@
 #include "app_cfg.h"
 #include "bno085.h"
 #include "system_config.h"
+#include "sensor_config.h"
 
 
 #define TAG "App"
@@ -325,6 +326,7 @@ void app_main(void)
 
     // Read system configurations
     ESP_ERROR_CHECK(load_system_config());
+    ESP_ERROR_CHECK(load_sensor_config());
 
     // Initialize I2C
     i2c_master_bus_handle_t i2c_bus_handle = initialize_i2c_master();
@@ -340,7 +342,9 @@ void app_main(void)
 
     // Initialize BNO085 sensor
     ESP_ERROR_CHECK(bno085_init_i2c(&bno085_dev, i2c_bus_handle, BNO085_INT_PIN));
-    ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 10));
+
+    ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 20));
+    ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, 20));
 
     // Initialize LVGL
     const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();

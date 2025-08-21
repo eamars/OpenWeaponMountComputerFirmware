@@ -55,7 +55,7 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     }
 
     // Read sensor type and send it to the corresponding 
-    sensor_config_t * target_report_config = &ctx->enabled_sensor_report_list[sensor_value.sensorId];
+    sensor_report_config_t * target_report_config = &ctx->enabled_sensor_report_list[sensor_value.sensorId];
     if (target_report_config->sensor_value_queue == NULL) {
         ESP_LOGE(TAG, "Sensor value queue is not initialized for sensor ID %d", sensor_value.sensorId);
         return;
@@ -358,10 +358,10 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
 
 esp_err_t bno085_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t interval_ms) {
     // look for a slot to save the config
-    sensor_config_t * target_report_config = &ctx->enabled_sensor_report_list[sensor_id];
+    sensor_report_config_t * target_report_config = &ctx->enabled_sensor_report_list[sensor_id];
 
     // enable report
-    ESP_LOGI(TAG, "Enabling Report 0x%x with interval %dms. Stored at index %d", sensor_id, interval_ms);
+    ESP_LOGI(TAG, "Enabling Report 0x%x with interval %dms", sensor_id, interval_ms);
 
     // Create queue if not created already
     if (target_report_config->sensor_value_queue == NULL) {
