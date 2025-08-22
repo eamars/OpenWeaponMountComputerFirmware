@@ -108,8 +108,8 @@ void enable_digital_level_view_controller(bool enable) {
         xSemaphoreGive(sensor_rotation_vector_poller_task_control);
         xSemaphoreGive(sensor_acceleration_poller_task_control);
     } else {
-        xSemaphoreTake(sensor_rotation_vector_poller_task_control, portMAX_DELAY);
-        xSemaphoreTake(sensor_acceleration_poller_task_control, portMAX_DELAY);
+        xSemaphoreTake(sensor_rotation_vector_poller_task_control, pdMS_TO_TICKS(200));
+        xSemaphoreTake(sensor_acceleration_poller_task_control, pdMS_TO_TICKS(200));
     }
 }
 

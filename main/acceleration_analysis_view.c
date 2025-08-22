@@ -134,6 +134,6 @@ void enable_acceleration_analysis_view(bool enable) {
 
     } else {
         // Disable the poller
-        xSemaphoreTake(acceleration_event_poller_task_control, portMAX_DELAY);
+        xSemaphoreTake(acceleration_event_poller_task_control, pdMS_TO_TICKS(200));
     }
 }

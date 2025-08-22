@@ -147,7 +147,7 @@ void enable_send_it_view(bool enable) {
         xSemaphoreGive(sensor_event_poller_task_control);
     }
     else {
-        xSemaphoreTake(sensor_event_poller_task_control, 0);
+        xSemaphoreTake(sensor_event_poller_task_control, pdMS_TO_TICKS(200));
     }
 }
 
