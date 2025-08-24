@@ -61,9 +61,8 @@ esp_err_t save_digital_level_view_config();
 
 
 void tilt_angle_button_short_press_cb(lv_event_t * e) {
-    // Take a snapshot of current roll and use that as offset
-    digital_level_view_config.user_roll_rad_offset = sensor_roll_thread_unsafe;
-    digital_level_view_config.user_roll_rad_offset = -digital_level_view_config.user_roll_rad_offset;  // take negative
+    // Take a snapshot of current roll and use that as offset (take account of the screen rotation)
+    digital_level_view_config.user_roll_rad_offset = -1 * (sensor_roll_thread_unsafe - system_config.rotation * M_PI_2);
 
     ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
 }

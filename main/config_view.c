@@ -132,7 +132,7 @@ static void lv_colour_picker_right_event_cb(lv_event_t *e) {
 }
 
 
-static void void_lv_colour_picker_update(lv_event_t * e) {
+static void update_lv_palette_item(lv_event_t * e) {
     lv_obj_t * colour_indicator = lv_event_get_target_obj(e);
     lv_palette_t * colour_idx = lv_obj_get_user_data(colour_indicator);
     lv_palette_t * target_colour_idx = lv_event_get_user_data(e);
@@ -151,7 +151,7 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, lv_
 
     // FIXME: The LED object won't emit value change event therefore the callback needed to be called manually
     if (event_cb == NULL) {
-        lv_obj_add_event_cb(colour_indicator, void_lv_colour_picker_update, LV_EVENT_VALUE_CHANGED, (void *) colour);
+        lv_obj_add_event_cb(colour_indicator, update_lv_palette_item, LV_EVENT_VALUE_CHANGED, (void *) colour);
     }
     else {
         lv_obj_add_event_cb(colour_indicator, event_cb, LV_EVENT_VALUE_CHANGED, (void *) colour);

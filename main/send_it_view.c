@@ -8,7 +8,7 @@
 
 #include "app_cfg.h"
 #include "bno085.h"
-#include "digital_level_view.h"
+#include "digital_level_view_controller.h"
 #include "system_config.h"
 #include "common.h"
 
@@ -21,7 +21,6 @@ lv_obj_t * right_tilt_led;
 static TaskHandle_t sensor_event_poller_task_handle;
 static SemaphoreHandle_t sensor_event_poller_task_control;
 extern bno085_ctx_t bno085_dev;
-extern digital_level_view_config_t digital_level_view_config;
 extern system_config_t system_config;
 
 
@@ -76,15 +75,17 @@ void update_send_it_view(float roll_rad) {
         float roll, pitch;
         bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &roll, &pitch, true);
 
+        float display_roll = get_relative_roll_angle_rad_thread_unsafe();
+
         // Redraw the screen
-        if (lvgl_port_lock(5)) {  // prevent a deadlock if the LVGL event wants to continue
-            update_send_it_view(wrap_angle(roll + digital_level_view_config.user_roll_rad_offset));
+        if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
+            update_send_it_view(display_roll);
             lvgl_port_unlock();
         }
 
         xSemaphoreGive(sensor_event_poller_task_control);  // allow the task to run
 
-        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(20));
+        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(DIGITAL_LEVEL_VIEW_DISPLAY_UPDATE_PERIOD_MS));
     }
 }
 

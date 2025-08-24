@@ -31,6 +31,11 @@ extern sensor_config_t sensor_config;
 extern countdown_timer_t countdown_timer;
 
 
+float get_relative_roll_angle_rad_thread_unsafe() {
+    float raw_roll = sensor_roll_thread_unsafe - system_config.rotation * M_PI_2 + digital_level_view_config.user_roll_rad_offset;
+    return wrap_angle(raw_roll);
+}
+
 static void sensor_rotation_vector_poller_task(void *p) {
     TickType_t last_poll_tick = xTaskGetTickCount();
 
@@ -42,9 +47,11 @@ static void sensor_rotation_vector_poller_task(void *p) {
         esp_err_t err = bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, true);
 
         if (err == ESP_OK) {
+            // Roll is calculated based on the base measurement - screen rotation offset + user roll offset
+            float display_roll = get_relative_roll_angle_rad_thread_unsafe();
+
             // Redraw the screen
             if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
-                float display_roll = wrap_angle(sensor_roll_thread_unsafe + digital_level_view_config.user_roll_rad_offset);
                 update_digital_level_view(display_roll, sensor_pitch_thread_unsafe);
                 lvgl_port_unlock();
             }
@@ -52,7 +59,7 @@ static void sensor_rotation_vector_poller_task(void *p) {
 
         xSemaphoreGive(sensor_rotation_vector_poller_task_control);  // allow the task to run
 
-        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(20));
+        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(DIGITAL_LEVEL_VIEW_DISPLAY_UPDATE_PERIOD_MS));
     }
 }
 

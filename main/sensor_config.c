@@ -14,7 +14,7 @@
 
 sensor_config_t sensor_config;
 const sensor_config_t sensor_config_default = {
-    .recoil_acceleration_trigger_level = 20,
+    .recoil_acceleration_trigger_level = 10,
     .trigger_edge = TRIGGER_RISING_EDGE,
     .enable_game_rotation_vector_report = true,
     .enable_linear_acceleration_report = true
@@ -114,7 +114,6 @@ static void update_uint32_item(lv_event_t *e) {
     *target_ptr = value;
 
     ESP_LOGI(TAG, "Value updated to %ld", *target_ptr);
-    ESP_LOGI(TAG, "Sensor config updated: recoil_acceleration_trigger_level = %ld", sensor_config.recoil_acceleration_trigger_level);
 }
 
 
@@ -141,7 +140,7 @@ lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent
 
     // Recoil acceleration trigger level
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Recoil Trigger Level (m/s^2)");
-    config_item = create_spin_box(container, 10, 5000, 10, 4, 0, sensor_config.recoil_acceleration_trigger_level, update_uint32_item, &sensor_config.recoil_acceleration_trigger_level);
+    config_item = create_spin_box(container, 10, 100, 10, 3, 0, sensor_config.recoil_acceleration_trigger_level, update_uint32_item, &sensor_config.recoil_acceleration_trigger_level);
 
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Enable Linear Accel Report");
     config_item = create_switch(container, &sensor_config.enable_linear_acceleration_report, toggle_linear_acceleration_report);

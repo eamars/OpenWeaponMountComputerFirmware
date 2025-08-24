@@ -9,5 +9,7 @@
 esp_err_t digital_level_view_controller_init();
 
 void enable_digital_level_view_controller(bool enable);
+float get_relative_roll_angle_rad_thread_unsafe();
+
 
 #endif // DIGITAL_LEVEL_VIEW_CONTROLLER_H
