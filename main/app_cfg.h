@@ -9,15 +9,8 @@
 
 
 #if CONFIG_IDF_TARGET_ESP32C6
-    // Display module
-    #include "esp_lcd_jd9853.h"
-    #include "esp_lcd_panel_io.h"
-    #include "esp_lcd_panel_vendor.h"
-    #include "esp_lcd_panel_ops.h"
-    #include "driver/ledc.h"
-
-    // Touch layer
-    #include "esp_lcd_touch_axs5106.h"
+    #define USE_LCD_JD9853 1  // Use JD9853 LCD module https://www.waveshare.com/product/displays/lcd-oled/lcd-oled-3/1.47inch-touch-lcd.htm
+    #define USE_TOUCH_AXS5106 1 // Use AXS5106 touch controller
 
 
     // Define SPI ports
@@ -56,9 +49,6 @@
     #define BNO085_INT_PIN (GPIO_NUM_9)
 
 #elif CONFIG_IDF_TARGET_ESP32S3
-    // Display module
-    #include "esp_lcd_co5300.h"
-    #include "esp_lcd_touch_ft3168.h"
 
     // Define SPI ports
     #define SPI_HOST (SPI2_HOST)

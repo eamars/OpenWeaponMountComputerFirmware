@@ -22,7 +22,7 @@ static TaskHandle_t sensor_event_poller_task_handle;
 static SemaphoreHandle_t sensor_event_poller_task_control;
 extern bno085_ctx_t bno085_dev;
 extern system_config_t system_config;
-
+extern float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
 
 void update_send_it_view(float roll_rad) {
     float roll_deg = RAD_TO_DEG(roll_rad);
@@ -72,15 +72,16 @@ void update_send_it_view(float roll_rad) {
         xSemaphoreTake(sensor_event_poller_task_control, portMAX_DELAY);
 
         // Wait for data
-        float roll, pitch;
-        bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &roll, &pitch, true);
+        esp_err_t err = bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, true);
 
-        float display_roll = get_relative_roll_angle_rad_thread_unsafe();
+        if (err == ESP_OK) {
+            float display_roll = get_relative_roll_angle_rad_thread_unsafe();
 
-        // Redraw the screen
-        if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
-            update_send_it_view(display_roll);
-            lvgl_port_unlock();
+            // Redraw the screen
+            if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
+                update_send_it_view(display_roll);
+                lvgl_port_unlock();
+            }
         }
 
         xSemaphoreGive(sensor_event_poller_task_control);  // allow the task to run
