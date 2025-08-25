@@ -1,12 +1,16 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "low_power_mode.h"
-#include "system_config.h"
+
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
+#include "esp_check.h"
+
+#include "low_power_mode.h"
 #include "system_config.h"
 #include "app_cfg.h"
 #include "bsp.h"
+#include "sensor_config.h"
+#include "bno085.h"
 
 #define TAG "LowPowerMode"
 
@@ -16,9 +20,12 @@ extern lv_obj_t * main_tileview;
 extern lv_obj_t * last_tile;
 extern esp_lcd_panel_io_handle_t io_handle;
 extern lv_indev_t * lvgl_touch_handle;
+extern sensor_config_t sensor_config;
+extern bno085_ctx_t bno085_dev;
 
 lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
 TaskHandle_t low_power_monitor_task_handle;
+TaskHandle_t sensor_stability_classifier_poller_task_handle;
 TickType_t last_activity_tick = 0;
 bool in_low_power_mode = false;
 
@@ -52,28 +59,60 @@ void on_low_power_mode_view_touched_callback(lv_event_t * e) {
 
 
 void low_power_monitor_task(void *p) {
+    TickType_t last_poll_tick = xTaskGetTickCount();
+
     while (1) {
-        TickType_t current_tick = xTaskGetTickCount();
-        if (system_config.idle_timeout != IDLE_TIMEOUT_NEVER && !in_low_power_mode) {
-            uint32_t idle_timeout_secs = idle_timeout_to_secs(system_config.idle_timeout);
-            if (current_tick - last_activity_tick > pdMS_TO_TICKS(idle_timeout_secs * 1000)) {
-                if (main_tileview && tile_low_power_mode_view) {
-                    if (lvgl_port_lock(0)) {
-                        
-                        lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
-                        lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
-                        lvgl_port_unlock();
-                    }
-                    ESP_LOGI(TAG, "Entering low power mode due to inactivity");
+        if (system_config.idle_timeout != IDLE_TIMEOUT_NEVER && 
+            !in_low_power_mode && 
+            main_tileview && tile_low_power_mode_view) {
+            uint32_t idle_timeout_secs_ms = idle_timeout_to_secs(system_config.idle_timeout) * 1000;
+            TickType_t current_tick = xTaskGetTickCount();
+            uint32_t idle_duration_ms = pdTICKS_TO_MS(current_tick - last_activity_tick);
+            ESP_LOGI(TAG, "Idle duration: %d ms, threshold: %d ms", idle_duration_ms, idle_timeout_secs_ms);
+
+            if (idle_duration_ms > idle_timeout_secs_ms) {
+                if (lvgl_port_lock(0)) {
+                    
+                    lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
+                    lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+                    lvgl_port_unlock();
                 }
+                ESP_LOGI(TAG, "Entering low power mode due to inactivity");
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(1000));
     }
 }
 
 
+void sensor_stability_classifier_poller_task(void *p) {
+    while (1) {
+        uint8_t stability_classification = STABILITY_CLASSIFIER_UNKNOWN;
+        esp_err_t err = bno085_wait_for_stability_classification_report(&bno085_dev, &stability_classification, true);
+
+        if (err == ESP_OK) {
+            
+            if (stability_classification == STABILITY_CLASSIFIER_MOTION) {
+                // If the sensor is moving in sleep move then wake up the system
+                if (in_low_power_mode) {
+                    if (main_tileview && last_tile) {
+                        if (lvgl_port_lock(0)) {
+                            lv_tileview_set_tile(main_tileview, last_tile, LV_ANIM_OFF);
+                            lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+                            lvgl_port_unlock();
+                        }
+                        ESP_LOGI(TAG, "Exiting low power mode due to sensor activity");
+                    }
+                }
+                // If the sensor is moving then update the last activity tick to prevent the system from entering the sleep state
+                else {
+                    last_activity_tick = xTaskGetTickCount();
+                }
+            }
+        }
+    }
+}
 
 void create_low_power_mode_view(lv_obj_t * parent) {
     // Set background to save power on AMOLED screen
@@ -86,6 +125,10 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     lv_obj_set_style_text_color(label, lv_color_white(), LV_PART_MAIN);
     lv_obj_center(label);
 
+    // Enable sensor stability classification report
+    ESP_ERROR_CHECK(bno085_enable_stability_classification_report(&bno085_dev, SENSOR_STABILITY_CLASSIFIER_REPORT_PERIOD_MS));
+
+    // Create user event poller task
     BaseType_t rtos_return = xTaskCreate(
         low_power_monitor_task,
         "LPMON",
@@ -96,6 +139,20 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for sensor_poller");
+        ESP_ERROR_CHECK(ESP_FAIL);
+    }
+
+    // Create sensor stability classifier task
+    rtos_return = xTaskCreate(
+        sensor_stability_classifier_poller_task,
+        "STABILITY",
+        SENSOR_STABILITY_CLASSIFIER_TASK_STACK,
+        NULL,
+        SENSOR_STABILITY_CLASSIFIER_TASK_PRIORITY,
+        &sensor_stability_classifier_poller_task_handle
+    );
+    if (rtos_return != pdPASS) {
+        ESP_LOGE(TAG, "Failed to allocate memory for sensor_stability_classifier_poller");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 
@@ -121,10 +178,30 @@ void enable_low_power_mode(bool enable) {
             set_display_brightness(&io_handle, 1);
         }
 
+        // Lower the report period
+        if (sensor_config.enable_game_rotation_vector_report) {
+            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS * 100));
+        }
+        if (sensor_config.enable_linear_acceleration_report) {
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS * 100));
+        }
+
         lvgl_port_stop();
 
-    } else {
+    } 
+    else {
         in_low_power_mode = false;
+
+        // Update the last activity tick in making sure the count is updated before any other event
+        last_activity_tick = xTaskGetTickCount();
+
+        // Enable sensor report
+        if (sensor_config.enable_game_rotation_vector_report) {
+            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
+        }
+        if (sensor_config.enable_linear_acceleration_report) {
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
+        }
 
         // Additional actions to take when disabling low power mode
         if (io_handle) {

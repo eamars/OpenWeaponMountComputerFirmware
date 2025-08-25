@@ -474,7 +474,7 @@ esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x
 }
 
 
-esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, sh2_stability_classifier_t * classification, bool block_wait) {
+esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, uint8_t * classification, bool block_wait) {
     TickType_t wait_ticks;
     if (block_wait) {
         wait_ticks = portMAX_DELAY;
@@ -493,7 +493,7 @@ esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, sh2
 
     // Decode sensor event
     if (sensor_value.sensorId == SH2_STABILITY_CLASSIFIER) {
-        *classification = (sh2_stability_classifier_t)sensor_value.un.stabilityDetector.stability;
+        *classification = sensor_value.un.stabilityClassifier.classification;
     }
 
     return ESP_OK;

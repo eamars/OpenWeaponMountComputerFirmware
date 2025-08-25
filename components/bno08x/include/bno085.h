@@ -41,14 +41,6 @@ typedef struct {
 } bno085_ctx_t;
 
 
-typedef enum {
-    SH2_STABILITY_CLASSIFIER_UNKNOWN = 0,
-    SH2_STABILITY_CLASSIFIER_ON_TABLE = 1,  // The hub is at rest on a stable surface with very little vibration.
-    SH2_STABILITY_CLASSIFIER_STATIONARY = 2,  // The hub’s motion is below the stable threshold but the stable duration requirement has not been met.
-    SH2_STABILITY_CLASSIFIER_STABLE = 3,  //  The hub’s motion has met the stable threshold and duration requirements.
-    SH2_STABILITY_CLASSIFIER_MOTION = 4   // The hub is moving
-} sh2_stability_classifier_t;
-
 
 /**
  * @brief Initialize the BNO085 sensor.
@@ -116,7 +108,7 @@ esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x
  * @param interval_ms Interval in milliseconds for the report.
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
-esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, sh2_stability_classifier_t * classification, bool block_wait);
+esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, uint8_t * classification, bool block_wait);
 
 
 #endif // BNO085_H
