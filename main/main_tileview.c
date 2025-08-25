@@ -12,20 +12,27 @@
 #include "acceleration_analysis_view.h"
 #include "bno085.h"
 #include "system_config.h"
+#include "low_power_mode.h"
 
 
-#define TAG "main_tileview"
+#define TAG "MainTileView"
 
 
 typedef void (*tile_update_enable_cb_t) (bool);
 
 
 lv_obj_t * main_tileview = NULL;
+lv_obj_t * tile_low_power_mode_view = NULL;
+
+lv_obj_t * last_tile = NULL;
 
 
+lv_obj_t * get_last_tile() {
+    return last_tile;
+}
 
 void tile_change_callback(lv_event_t * e) {
-    // Record the previous active view
+    // Store the previous tile to determine the switch event
     static lv_obj_t * previous_tile = NULL;
 
     // Get active tile
@@ -45,7 +52,8 @@ void tile_change_callback(lv_event_t * e) {
         
         ESP_LOGI(TAG, "Active tile: %p", active_tile);
 
-        // Record
+        // Record the last tile
+        last_tile = previous_tile;
         previous_tile = active_tile;
 
         // Run the callback to enable the current view
@@ -61,7 +69,7 @@ void tile_change_callback(lv_event_t * e) {
 }
 
 
-void force_update_tile(lv_timer_t * timer) {
+static void force_update_tile(lv_timer_t * timer) {
     lv_obj_t * active_tile = lv_tileview_get_tile_active(main_tileview);
     lv_tileview_set_tile(main_tileview, active_tile, LV_ANIM_OFF);
 
@@ -91,41 +99,46 @@ void create_main_tileview(lv_obj_t *parent)
     // Add callback to the scroll event
     lv_obj_add_event_cb(main_tileview, tile_change_callback, LV_EVENT_VALUE_CHANGED, NULL);
 
-    // Tile 0, 0: "Send It" view
-    lv_obj_t * tile_send_it_level_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_RIGHT);  // send it view can only be swiped right
+    // Tiles at column 0 are reserved for control purposes
+    tile_low_power_mode_view = lv_tileview_add_tile(main_tileview, 0, 0, LV_DIR_NONE);  // The tile can only be entered automatically
+    lv_obj_set_user_data(tile_low_power_mode_view, enable_low_power_mode);  // Use enter and exit code to activate and deactivate the low power mode
+    create_low_power_mode_view(tile_low_power_mode_view);
+
+    // "Send It" view (most left tile)
+    lv_obj_t * tile_send_it_level_view = lv_tileview_add_tile(main_tileview, 1, 1, LV_DIR_RIGHT);  // send it view can only be swiped right
     lv_obj_set_user_data(tile_send_it_level_view, enable_send_it_view);
     create_send_it_view(tile_send_it_level_view);
     lv_obj_add_event_cb(tile_send_it_level_view, send_it_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
-    // Tile 0, 0: Timer config view
-    lv_obj_t * tile_countdown_timer_config_view = lv_tileview_add_tile(main_tileview, 1, 0, LV_DIR_BOTTOM);
+    // Timer config view (swiped up from digital level view)
+    lv_obj_t * tile_countdown_timer_config_view = lv_tileview_add_tile(main_tileview, 2, 0, LV_DIR_BOTTOM);
     create_countdown_timer_config_view(tile_countdown_timer_config_view);
     lv_obj_add_event_cb(tile_countdown_timer_config_view, countdown_timer_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
-    // Tile 0, 1: Digital Level Tile
-    lv_obj_t * tile_digital_level_view = lv_tileview_add_tile(main_tileview, 1, 1, LV_DIR_ALL);
+    // Digital level view (main tile)
+    lv_obj_t * tile_digital_level_view = lv_tileview_add_tile(main_tileview, 2, 1, LV_DIR_ALL);
     lv_obj_set_user_data(tile_digital_level_view, enable_digital_level_view_controller);  // store the callback
     create_digital_level_view(tile_digital_level_view);
     lv_obj_add_event_cb(tile_digital_level_view, digital_level_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
-    // Tile 1, 2: Dope config view (it has to be created after the digital level view)
-    lv_obj_t * tile_dope_config_view = lv_tileview_add_tile(main_tileview, 1, 2, LV_DIR_TOP);
+    // Dope view (swiped down from digital level view)
+    lv_obj_t * tile_dope_config_view = lv_tileview_add_tile(main_tileview, 2, 2, LV_DIR_TOP);
     create_dope_config_view(tile_dope_config_view);
     lv_obj_add_event_cb(tile_dope_config_view, dope_config_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
-    // Tile 2, 1
-    lv_obj_t * tile_config_view = lv_tileview_add_tile(main_tileview, 2, 1, LV_DIR_HOR);
+    // Configuration view (Swiped right from digital level view)
+    lv_obj_t * tile_config_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
     create_config_view(tile_config_view);
 
-    // Tile 3, 1
-    lv_obj_t * tile_acceleration_analysis_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
+    // Acceleration analysis view (swiped right from configuration view)
+    lv_obj_t * tile_acceleration_analysis_view = lv_tileview_add_tile(main_tileview, 4, 1, LV_DIR_HOR);
     lv_obj_set_user_data(tile_acceleration_analysis_view, enable_acceleration_analysis_view);
     create_acceleration_analysis_view(tile_acceleration_analysis_view);
 
     // Switch to the default view
-    // lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);
-    // lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
     lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);
+    // lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+    // lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 
     lv_obj_add_event_cb(main_tileview, main_tile_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);

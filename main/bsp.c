@@ -9,6 +9,18 @@
 #include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_panel_ops.h"
 #include "driver/ledc.h"
+
+
+esp_err_t set_display_brightness(esp_lcd_panel_io_handle_t *io_handle, uint8_t brightness_pct) {
+    ESP_UNUSED(io_handle);
+
+    uint32_t duty = (brightness_pct * (LCD_BL_LEDC_DUTY - 1)) / 100;
+    ESP_ERROR_CHECK(ledc_set_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL));
+
+    return ESP_OK;
+}
+
 esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle, uint8_t brightness_pct) {
     // Initialize SPI host
     spi_bus_config_t buscfg = {
@@ -66,9 +78,7 @@ esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handl
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 
     // Set brightness
-    uint32_t duty = (brightness_pct * (LCD_BL_LEDC_DUTY - 1)) / 100;
-    ESP_ERROR_CHECK(ledc_set_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL));
+    set_display_brightness(io_handle, brightness_pct);
 
     // Set lcd gap
     ESP_ERROR_CHECK(esp_lcd_panel_set_gap(*panel_handle, DISP_PANEL_H_GAP, DISP_PANEL_V_GAP));
@@ -79,6 +89,17 @@ esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handl
 #include "esp_lcd_co5300.h"
 #include "esp_lcd_touch_ft3168.h"
 
+
+esp_err_t set_display_brightness(esp_lcd_panel_io_handle_t *io_handle, uint8_t brightness_pct) {
+    uint32_t lcd_cmd = 0x51;
+    lcd_cmd &= 0xff;
+    lcd_cmd <<= 8;
+    lcd_cmd |= 0x02 << 24;
+    uint8_t param = 255 * brightness_pct / 100;
+    esp_lcd_panel_io_tx_param(*io_handle, lcd_cmd, &param,1);
+
+    return ESP_OK;
+}
 
 esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle, uint8_t brightness_pct) {
     // Initialize QSPI Host
@@ -116,12 +137,7 @@ esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handl
     ESP_ERROR_CHECK(esp_lcd_panel_init(*panel_handle));
 
     // Set brightness
-    uint32_t lcd_cmd = 0x51;
-    lcd_cmd &= 0xff;
-    lcd_cmd <<= 8;
-    lcd_cmd |= 0x02 << 24;
-    uint8_t param = 255 * brightness_pct / 100;
-    esp_lcd_panel_io_tx_param(*io_handle, lcd_cmd, &param,1);
+    set_display_brightness(brightness_pct);
 
     // Set lcd gap
     ESP_ERROR_CHECK(esp_lcd_panel_set_gap(*panel_handle, DISP_PANEL_H_GAP, DISP_PANEL_V_GAP));

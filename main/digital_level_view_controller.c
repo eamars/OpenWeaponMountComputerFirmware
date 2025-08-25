@@ -111,6 +111,7 @@ static void sensor_acceleration_poller_task(void *p) {
 
 
 void enable_digital_level_view_controller(bool enable) {
+    static TimerHandle_t disable_timer_handle = NULL;
     if (enable) {
         xSemaphoreGive(sensor_rotation_vector_poller_task_control);
         xSemaphoreGive(sensor_acceleration_poller_task_control);

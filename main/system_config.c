@@ -12,11 +12,33 @@
 
 system_config_t system_config;
 const system_config_t system_config_default = {
-    .rotation = LV_DISPLAY_ROTATION_0,  // LV_DISPLAY_ROTATION_0, LV_DISPLAY_ROTATION_90, LV_DISPLAY_ROTATION_180, LV_DISPLAY_ROTATION_270
+    .rotation = LV_DISPLAY_ROTATION_0,      // LV_DISPLAY_ROTATION_0, LV_DISPLAY_ROTATION_90, LV_DISPLAY_ROTATION_180, LV_DISPLAY_ROTATION_270
+    .idle_timeout = IDLE_TIMEOUT_5_MIN,
 };
 
 
-const char rotation_options[] = "0: 0°\n1: 90°\n2: 180°\n3: 270°";
+const char rotation_options[] = "0°\n90°\n180°\n270°";
+const char idle_timeout_options[] = "Never\n1 min\n5 min\n10 min\n10 sec";
+
+
+uint32_t idle_timeout_to_secs(idle_timeout_t timeout) {
+    switch (timeout) {
+        case IDLE_TIMEOUT_NEVER:
+            return 0;
+        case IDLE_TIMEOUT_1_MIN:
+            return 60;
+        case IDLE_TIMEOUT_5_MIN:
+            return 300;
+        case IDLE_TIMEOUT_10_MIN:
+            return 600;
+        case IDLE_TIMEOUT_10_SEC:
+            return 10;
+        default:
+            return 0;
+    }
+
+    return 0;
+}
 
 
 esp_err_t load_system_config() {
@@ -95,6 +117,14 @@ void update_rotation_event_cb(lv_event_t *e) {
     }
 }
 
+void update_idle_timeout_event_cb(lv_event_t *e) {
+    lv_obj_t * dropdown = lv_event_get_target(e);
+    int32_t selected = lv_dropdown_get_selected(dropdown);
+
+    system_config.idle_timeout = (idle_timeout_t) selected;
+    ESP_LOGI(TAG, "Idle timeout updated to %d", system_config.idle_timeout);
+}
+
 
 static void on_save_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(save_system_config());
@@ -129,6 +159,10 @@ lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_
     // Rotation
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Screen Rotation");
     config_item = create_dropdown_list(container, rotation_options, system_config.rotation, update_rotation_event_cb, NULL);
+
+    // Idle timeout
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Idle Timeout");
+    config_item = create_dropdown_list(container, idle_timeout_options, system_config.idle_timeout, update_idle_timeout_event_cb, NULL);
 
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");

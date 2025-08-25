@@ -38,6 +38,15 @@ bno085_ctx_t bno085_dev;
 extern system_config_t system_config;
 extern sensor_config_t sensor_config;
 
+// Initialize SPI touch screen and I2C display
+esp_lcd_panel_io_handle_t io_handle = NULL;
+esp_lcd_panel_handle_t panel_handle = NULL;
+esp_lcd_touch_handle_t touch_handle = NULL;
+
+// LVGL touch input device
+lv_indev_t *lvgl_touch_handle = NULL;  // allow the low power module to inject callback
+
+
 void mem_monitor_task(void *pvParameters) {
     while (1) {
         // Heap info
@@ -109,11 +118,6 @@ void app_main(void)
     // Initialize I2C
     i2c_master_bus_handle_t i2c_bus_handle = i2c_master_init();
     
-    // Initialize SPI touch screen and I2C display
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_handle_t panel_handle = NULL;
-    esp_lcd_touch_handle_t touch_handle = NULL;
-
     // Initialize display modules
     ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, 100));
     ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
@@ -176,7 +180,7 @@ void app_main(void)
         .disp = lvgl_disp, 
         .handle = touch_handle
     };
-    lvgl_port_add_touch(&touch_cfg);
+    lvgl_touch_handle = lvgl_port_add_touch(&touch_cfg);
 
     // Create LVGL application
     if (lvgl_port_lock(0)) {
