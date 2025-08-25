@@ -409,6 +409,10 @@ esp_err_t bno085_enable_linear_acceleration_report(bno085_ctx_t *ctx, uint32_t i
     return bno085_enable_report(ctx, SH2_LINEAR_ACCELERATION, interval_ms);   
 }
 
+esp_err_t bno085_enable_stability_classification_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
+    return bno085_enable_report(ctx, SH2_STABILITY_CLASSIFIER, interval_ms);
+}
+
 
 esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, float *roll, float *pitch, bool block_wait) {
     TickType_t wait_ticks;
@@ -464,6 +468,32 @@ esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x
         *x = sensor_value.un.linearAcceleration.x;
         *y = sensor_value.un.linearAcceleration.y;
         *z = sensor_value.un.linearAcceleration.z;
+    }
+
+    return ESP_OK;
+}
+
+
+esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, sh2_stability_classifier_t * classification, bool block_wait) {
+    TickType_t wait_ticks;
+    if (block_wait) {
+        wait_ticks = portMAX_DELAY;
+    }
+    else {
+        wait_ticks = 0;
+    }
+
+    sh2_SensorValue_t sensor_value;
+
+    // Wait for the queue from the corresponding report
+    if (xQueueReceive(ctx->enabled_sensor_report_list[SH2_STABILITY_CLASSIFIER].sensor_value_queue, &sensor_value, wait_ticks) != pdPASS) {
+        // ESP_LOGE(TAG, "Failed to receive stability classification report");
+        return ESP_FAIL;
+    }
+
+    // Decode sensor event
+    if (sensor_value.sensorId == SH2_STABILITY_CLASSIFIER) {
+        *classification = (sh2_stability_classifier_t)sensor_value.un.stabilityDetector.stability;
     }
 
     return ESP_OK;

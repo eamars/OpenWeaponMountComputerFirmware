@@ -41,6 +41,15 @@ typedef struct {
 } bno085_ctx_t;
 
 
+typedef enum {
+    SH2_STABILITY_CLASSIFIER_UNKNOWN = 0,
+    SH2_STABILITY_CLASSIFIER_ON_TABLE = 1,  // The hub is at rest on a stable surface with very little vibration.
+    SH2_STABILITY_CLASSIFIER_STATIONARY = 2,  // The hub’s motion is below the stable threshold but the stable duration requirement has not been met.
+    SH2_STABILITY_CLASSIFIER_STABLE = 3,  //  The hub’s motion has met the stable threshold and duration requirements.
+    SH2_STABILITY_CLASSIFIER_MOTION = 4   // The hub is moving
+} sh2_stability_classifier_t;
+
+
 /**
  * @brief Initialize the BNO085 sensor.
  *
@@ -70,6 +79,15 @@ esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t 
 esp_err_t bno085_enable_linear_acceleration_report(bno085_ctx_t *ctx, uint32_t interval_ms);
 
 
+/** 
+ * @brief Enable stability detection and classification report
+ *
+ * @param ctx Pointer to the BNO085 context.
+ * @param interval_ms Interval in milliseconds for the report. Setting to 0 to disable.
+ * @return esp_err_t ESP_OK on success, error code otherwise.
+ */
+esp_err_t bno085_enable_stability_classification_report(bno085_ctx_t *ctx, uint32_t interval_ms);
+
 /**
  * @brief Wait for BNO085 game rotation vector roll and pitch values.
  *
@@ -89,6 +107,16 @@ esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, flo
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
 esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x, float *y, float *z, bool block_wait);
+
+
+/**
+ * @brief Wait for stability classification report
+ *
+ * @param ctx Pointer to the BNO085 context.
+ * @param interval_ms Interval in milliseconds for the report.
+ * @return esp_err_t ESP_OK on success, error code otherwise.
+ */
+esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, sh2_stability_classifier_t * classification, bool block_wait);
 
 
 #endif // BNO085_H
