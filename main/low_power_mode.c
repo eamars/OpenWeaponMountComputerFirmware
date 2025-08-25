@@ -81,7 +81,7 @@ void low_power_monitor_task(void *p) {
             }
         }
 
-        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(1000));
+        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(LOW_POWER_MODE_MONITOR_TASK_PERIOD_MS));
     }
 }
 
@@ -180,20 +180,20 @@ void enable_low_power_mode(bool enable) {
 
         // Lower the report period
         if (sensor_config.enable_game_rotation_vector_report) {
-            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS * 100));
+            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, SENSOR_GAME_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS));
         }
         if (sensor_config.enable_linear_acceleration_report) {
-            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS * 100));
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_LOW_POWER_MODE_REPORT_PERIOD_MS));
         }
 
         lvgl_port_stop();
 
     } 
     else {
-        in_low_power_mode = false;
-
         // Update the last activity tick in making sure the count is updated before any other event
         last_activity_tick = xTaskGetTickCount();
+        
+        in_low_power_mode = false;
 
         // Enable sensor report
         if (sensor_config.enable_game_rotation_vector_report) {
