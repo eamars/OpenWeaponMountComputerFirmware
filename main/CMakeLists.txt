@@ -15,7 +15,7 @@ set(ALL_DEPS
 if(IDF_TARGET STREQUAL "esp32c6")
     list(APPEND ALL_DEPS "esp_lcd_jd9853" "esp_lcd_touch_axs5106" "nvs_flash")
 elseif (IDF_TARGET STREQUAL "esp32s3")
-    list(APPEND ALL_DEPS "esp_lcd_co5300" "esp_lcd_touch_ft3168")
+    list(APPEND ALL_DEPS "esp_lcd_co5300" "esp_lcd_touch_ft3168" "esp_lcd_jd9853" "esp_lcd_touch_axs5106" "nvs_flash")
 endif()
 
 idf_component_register(

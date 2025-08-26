@@ -30,6 +30,11 @@ TickType_t last_activity_tick = 0;
 bool in_low_power_mode = false;
 
 
+void IRAM_ATTR update_low_power_mode_last_activity_event() {
+    last_activity_tick = xTaskGetTickCount();
+}
+
+
 void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *data) {
     // Call the original read callback
     if (original_read_cb) {
@@ -38,7 +43,7 @@ void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *
 
     // Update last activity tick if there is any touch activity
     if (data->state == LV_INDEV_STATE_PR || data->enc_diff != 0) {
-        last_activity_tick = xTaskGetTickCount();
+        update_low_power_mode_last_activity_event();
     }
 }
 
@@ -107,7 +112,7 @@ void sensor_stability_classifier_poller_task(void *p) {
                 }
                 // If the sensor is moving then update the last activity tick to prevent the system from entering the sleep state
                 else {
-                    last_activity_tick = xTaskGetTickCount();
+                    update_low_power_mode_last_activity_event();
                 }
             }
         }
@@ -191,8 +196,8 @@ void enable_low_power_mode(bool enable) {
     } 
     else {
         // Update the last activity tick in making sure the count is updated before any other event
-        last_activity_tick = xTaskGetTickCount();
-        
+        update_low_power_mode_last_activity_event();
+
         in_low_power_mode = false;
 
         // Enable sensor report

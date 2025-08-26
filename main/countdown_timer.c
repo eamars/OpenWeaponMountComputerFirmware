@@ -11,6 +11,7 @@
 
 #include "system_config.h"
 #include "countdown_timer.h"
+#include "low_power_mode.h"
 
 #define TAG "CountdownTimer"
 
@@ -70,6 +71,9 @@ void countdown_timer_task(void *p) {
                 if (ctx->timer_update_cb) {
                     ctx->timer_update_cb(ctx->timer_update_cb_args, time_left_ms);
                 }
+
+                // Update low power mode state (prevent sleep when the timer is running)
+                update_low_power_mode_last_activity_event();
 
                 if (time_left_ms == 0) {
                     // Finished, move to next state

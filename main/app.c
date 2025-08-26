@@ -50,8 +50,8 @@ lv_indev_t *lvgl_touch_handle = NULL;  // allow the low power module to inject c
 void mem_monitor_task(void *pvParameters) {
     while (1) {
         // Heap info
-        size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
-        size_t min_free_heap = heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT);
+        size_t free_heap = esp_get_free_heap_size();
+        size_t min_free_heap = esp_get_minimum_free_heap_size();
 
 
         ESP_LOGI(TAG, "Free heap: %u kbytes | Min free heap: %u kbytes",
