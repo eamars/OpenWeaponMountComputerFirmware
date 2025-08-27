@@ -9,6 +9,7 @@
 #include "app_cfg.h"
 #include "bno085.h"
 #include "digital_level_view_controller.h"
+#include "digital_level_view.h"
 #include "system_config.h"
 #include "common.h"
 
@@ -23,6 +24,7 @@ static SemaphoreHandle_t sensor_event_poller_task_control;
 extern bno085_ctx_t bno085_dev;
 extern system_config_t system_config;
 extern float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
+extern digital_level_view_config_t digital_level_view_config;
 
 void update_send_it_view(float roll_rad) {
     float roll_deg = RAD_TO_DEG(roll_rad);
@@ -107,22 +109,21 @@ void set_rotation_send_it_view(lv_disp_rotation_t rotation) {
 void create_send_it_view(lv_obj_t *parent) {
     lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
+
     left_tilt_led = lv_led_create(parent);
-    
-    lv_led_set_color(left_tilt_led, lv_palette_main(LV_PALETTE_LIGHT_BLUE));
+    lv_led_set_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_left_tilt_indicator));
     lv_led_off(left_tilt_led);
+
     center_tilt_led = lv_led_create(parent);
-    
-    lv_led_set_color(center_tilt_led, lv_palette_main(LV_PALETTE_LIGHT_GREEN));
+    lv_led_set_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_horizontal_level_indicator));
     lv_led_off(center_tilt_led);
+
     right_tilt_led = lv_led_create(parent);
+    lv_led_set_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_right_tilt_indicator));
+    lv_led_off(right_tilt_led);
 
     // Build layout based on screen rotation
     set_rotation_send_it_view(system_config.rotation);
-    
-    lv_led_set_color(right_tilt_led, lv_palette_main(LV_PALETTE_RED));
-
-    lv_led_off(right_tilt_led);
 
     // Set initial state
     update_send_it_view(0);
