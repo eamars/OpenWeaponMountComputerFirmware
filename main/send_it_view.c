@@ -18,6 +18,8 @@
 lv_obj_t * left_tilt_led;
 lv_obj_t * center_tilt_led;
 lv_obj_t * right_tilt_led;
+lv_obj_t * parent_view;
+
 
 static TaskHandle_t sensor_event_poller_task_handle;
 static SemaphoreHandle_t sensor_event_poller_task_control;
@@ -29,40 +31,37 @@ extern digital_level_view_config_t digital_level_view_config;
 void update_send_it_view(float roll_rad) {
     float roll_deg = RAD_TO_DEG(roll_rad);
 
-    if (roll_deg < -5) {
-        lv_led_set_color(center_tilt_led, lv_palette_main(LV_PALETTE_LIGHT_BLUE));
+    // Set base colour
+    // FIXME: Those colours needed to be set dynamically based on digital_level_view_config
+    //  It cannot be set in create_send_it_view as the object digital_level_view_config is not loaded from NVS yet
+    lv_obj_set_style_bg_color(parent_view, lv_palette_main(digital_level_view_config.colour_foreground), 0);
 
-        lv_led_on(left_tilt_led);
-        lv_led_off(center_tilt_led);
-        lv_led_off(right_tilt_led);
+    if (roll_deg < -3 * digital_level_view_config.delta_level_threshold) {
+        lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_left_tilt_indicator), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
     }
-    else if (roll_deg < -2) {
-        lv_led_set_color(center_tilt_led, lv_palette_main(LV_PALETTE_LIGHT_BLUE));
-
-        lv_led_on(left_tilt_led);
-        lv_led_on(center_tilt_led);
-        lv_led_off(right_tilt_led);
+    else if (roll_deg < -2 * digital_level_view_config.delta_level_threshold) {
+        lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_left_tilt_indicator), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_left_tilt_indicator), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
     }
-    else if (roll_deg > -1 && roll_deg < 1) {
-        lv_led_set_color(center_tilt_led, lv_palette_main(LV_PALETTE_LIGHT_GREEN));
+    else if (roll_deg > -1 * digital_level_view_config.delta_level_threshold && roll_deg < 1 * digital_level_view_config.delta_level_threshold) {
+        lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_horizontal_level_indicator), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
 
-        lv_led_off(left_tilt_led);
-        lv_led_on(center_tilt_led);
-        lv_led_off(right_tilt_led);
     }
-    else if (roll_deg > 5) {
-        lv_led_set_color(center_tilt_led, lv_palette_main(LV_PALETTE_RED));
+    else if (roll_deg > 5 * digital_level_view_config.delta_level_threshold) {
+        lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_right_tilt_indicator), LV_PART_MAIN);
 
-        lv_led_off(left_tilt_led);
-        lv_led_off(center_tilt_led);
-        lv_led_on(right_tilt_led);
     }
-    else if (roll_deg > 2) {
-        lv_led_set_color(center_tilt_led, lv_palette_main(LV_PALETTE_RED));
-
-        lv_led_off(left_tilt_led);
-        lv_led_on(center_tilt_led);
-        lv_led_on(right_tilt_led);
+    else if (roll_deg > 2 * digital_level_view_config.delta_level_threshold) {
+        lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_right_tilt_indicator), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_right_tilt_indicator), LV_PART_MAIN);
     }
 }
 
@@ -94,33 +93,62 @@ void update_send_it_view(float roll_rad) {
 
 
 void set_rotation_send_it_view(lv_disp_rotation_t rotation) {
-    if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
-        lv_obj_align(left_tilt_led, LV_ALIGN_CENTER, 0, 100);
-        lv_obj_align(center_tilt_led, LV_ALIGN_CENTER, 0, 0);
-        lv_obj_align(right_tilt_led, LV_ALIGN_CENTER, 0, -100);
-    }
-    else {
-        lv_obj_align(left_tilt_led, LV_ALIGN_CENTER, -100, 0);
-        lv_obj_align(center_tilt_led, LV_ALIGN_CENTER, 0, 0);
-        lv_obj_align(right_tilt_led, LV_ALIGN_CENTER, 100, 0);
-    }
+    // if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
+    //     lv_obj_set_size(left_tilt_led, lv_pct(100), lv_pct(33));
+    //     lv_obj_align(left_tilt_led, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    //     lv_obj_set_size(center_tilt_led, lv_pct(100), lv_pct(33));
+    //     lv_obj_align(center_tilt_led, LV_ALIGN_CENTER, 0, 0);
+
+    //     lv_obj_set_size(right_tilt_led, lv_pct(100), lv_pct(33));
+    //     lv_obj_align(right_tilt_led, LV_ALIGN_TOP_MID, 0, 0);
+
+    // }
+    // else {
+    //     lv_obj_set_size(left_tilt_led, lv_pct(33), lv_pct(100));
+    //     lv_obj_align(left_tilt_led, LV_ALIGN_LEFT_MID, 0, 0);
+
+    //     lv_obj_set_size(center_tilt_led, lv_pct(33), lv_pct(100));
+    //     lv_obj_align(center_tilt_led, LV_ALIGN_CENTER, 0, 0);
+
+    //     lv_obj_set_size(right_tilt_led, lv_pct(33), lv_pct(100));
+    //     lv_obj_align(right_tilt_led, LV_ALIGN_RIGHT_MID, 0, 0);
+    // }
 }
 
 void create_send_it_view(lv_obj_t *parent) {
-    lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
+    parent_view = parent;
+    lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, LV_PART_MAIN);
 
-    left_tilt_led = lv_led_create(parent);
-    lv_led_set_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_left_tilt_indicator));
-    lv_led_off(left_tilt_led);
+    left_tilt_led = lv_obj_create(parent);
+    lv_obj_set_style_border_width(left_tilt_led, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(left_tilt_led, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(left_tilt_led, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(left_tilt_led, 0, LV_PART_MAIN);
 
-    center_tilt_led = lv_led_create(parent);
-    lv_led_set_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_horizontal_level_indicator));
-    lv_led_off(center_tilt_led);
 
-    right_tilt_led = lv_led_create(parent);
-    lv_led_set_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_right_tilt_indicator));
-    lv_led_off(right_tilt_led);
+    right_tilt_led = lv_obj_create(parent);
+    lv_obj_set_style_border_width(right_tilt_led, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(right_tilt_led, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(right_tilt_led, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(right_tilt_led, 0, LV_PART_MAIN);
+
+
+    center_tilt_led = lv_obj_create(parent);
+    lv_obj_set_style_border_width(center_tilt_led, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(center_tilt_led, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(center_tilt_led, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(center_tilt_led, 0, LV_PART_MAIN);
+
+    lv_obj_set_size(left_tilt_led, lv_pct(33), lv_pct(100));
+    lv_obj_align(left_tilt_led, LV_ALIGN_LEFT_MID, 0, 0);
+
+    lv_obj_set_size(center_tilt_led, lv_pct(33), lv_pct(100));
+    lv_obj_align(center_tilt_led, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_set_size(right_tilt_led, lv_pct(33), lv_pct(100));
+    lv_obj_align(right_tilt_led, LV_ALIGN_RIGHT_MID, 0, 0);
+
 
     // Build layout based on screen rotation
     set_rotation_send_it_view(system_config.rotation);
