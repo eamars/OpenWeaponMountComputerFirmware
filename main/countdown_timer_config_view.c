@@ -2,17 +2,27 @@
 #include "countdown_timer.h"
 #include "esp_log.h"
 #include "system_config.h"
+#include "nvs.h"
+#include "common.h"
+#include "esp_check.h"
 
 #define TAG "CountdownTimerConfigView"
+#define NVS_NAMESPACE "CT"
 
 const char * roller_minute = "0m\n1m\n2m\n3m\n4m\n5m\n6m\n7m\n8m\n9m\n10m";
 const char * roller_second = "0s\n1s\n2s\n3s\n4s\n5s\n6s\n7s\n8s\n9s\n10s\n11s\n12s\n13s\n14s\n15s\n16s\n17s\n18s\n19s\n20s\n21s\n22s\n23s\n24s\n25s\n26s\n27s\n28s\n29s\n30s\n31s\n32s\n33s\n34s\n35s\n36s\n37s\n38s\n39s\n40s\n41s\n42s\n43s\n44s\n45s\n46s\n47s\n48s\n49s\n50s\n51s\n52s\n53s\n54s\n55s\n56s\n57s\n58s\n59s";
 
 
 typedef struct {
+    uint32_t crc32;
     uint8_t minute;
     uint8_t second;
 } timer_config_t;
+
+const timer_config_t timer_config_default = {
+    .minute = 2,
+    .second = 0,
+};
 
 typedef struct {
     int idx;
@@ -142,6 +152,87 @@ void set_rotation_countdown_timer_config_view(lv_display_rotation_t display_rota
 }
 
 
+esp_err_t save_countdown_timer_config() {
+    esp_err_t ret;
+
+    // Write preset to the nvs storage
+    nvs_handle_t handle;
+    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
+
+    for (int preset_idx = 0; preset_idx < sizeof(presets) / sizeof(presets[0]); preset_idx += 1) {
+        // Calculate CRC
+        presets[preset_idx].timer_config.crc32 = crc32_wrapper(&presets[preset_idx].timer_config, sizeof(presets[preset_idx].timer_config), sizeof(presets[preset_idx].timer_config.crc32));
+
+        char preset_name[NVS_KEY_NAME_MAX_SIZE - 1];
+        memset(preset_name, 0, sizeof(preset_name));
+        snprintf(preset_name, sizeof(preset_name), "T%d", preset_idx);
+
+        ret = nvs_set_blob(handle, preset_name, &presets[preset_idx].timer_config, sizeof(presets[preset_idx].timer_config));
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob for preset %d", preset_idx);
+    }
+
+    ret = nvs_commit(handle);
+    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
+
+finally:
+    nvs_close(handle);
+
+    return ret;
+}
+
+/** 
+ * Load two presets
+ */
+esp_err_t load_countdown_timer_config() {
+    esp_err_t ret;
+
+    // Read configuration from NVS
+    nvs_handle_t handle;
+    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
+
+    size_t required_size = sizeof(timer_config_t);
+    for (int preset_idx = 0; preset_idx < sizeof(presets) / sizeof(presets[0]); preset_idx += 1) {
+        char preset_name[NVS_KEY_NAME_MAX_SIZE - 1];
+        memset(preset_name, 0, sizeof(preset_name));
+        snprintf(preset_name, sizeof(preset_name), "T%d", preset_idx);
+
+        ret = nvs_get_blob(handle, preset_name, &presets[preset_idx].timer_config, &required_size);
+        if (ret == ESP_ERR_NVS_NOT_FOUND) {
+            // No record, will initialize with new values
+            ESP_LOGI(TAG, "Initialize countdown_timer_config[%d] with default values", preset_idx);
+            memcpy(&presets[preset_idx].timer_config, &timer_config_default, sizeof(timer_config_default));
+            presets[preset_idx].timer_config.crc32 = crc32_wrapper(&presets[preset_idx].timer_config, sizeof(presets[preset_idx].timer_config), sizeof(presets[preset_idx].timer_config.crc32));
+
+            // Write to NVS
+            ret = nvs_set_blob(handle, preset_name, &presets[preset_idx].timer_config, required_size);
+            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write preset %d to NVS", preset_idx);
+            ret = nvs_commit(handle);
+            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes for preset %d", preset_idx);
+        }
+        else {
+            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to read NVS blob for preset %d", preset_idx);
+        }
+
+        // Verify CRC
+        uint32_t crc32 = crc32_wrapper(&presets[preset_idx].timer_config, sizeof(presets[preset_idx].timer_config), sizeof(presets[preset_idx].timer_config.crc32));
+        if (crc32 != presets[preset_idx].timer_config.crc32) {
+            ESP_LOGE(TAG, "CRC mismatch for preset %d", preset_idx);
+            
+            // Reset to default
+            memcpy(&presets[preset_idx].timer_config, &timer_config_default, sizeof(timer_config_default));
+        }
+        else {
+            ESP_LOGI(TAG, "Loaded preset %d: %dm %ds", preset_idx, presets[preset_idx].timer_config.minute, presets[preset_idx].timer_config.second);
+        }
+    }
+
+finally:
+    nvs_close(handle);
+
+    return ret;
+}
+
+
 void create_countdown_timer_config_view(lv_obj_t * parent) {
     memset(presets, 0, sizeof(presets));
 
@@ -198,10 +289,10 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     enable_roller(second_roller, false);
 
     // Add two presets under the second container
+    ESP_ERROR_CHECK(load_countdown_timer_config());  // read configuration from NVS
+
     // Preset 1
     presets[0].idx = 0;
-    presets[0].timer_config.minute = 2;
-    presets[0].timer_config.second = 0;
     presets[0].preset_button = lv_btn_create(bottom_container);
     lv_obj_set_size(presets[0].preset_button, lv_pct(100), lv_pct(48));
     // lv_obj_set_style_bg_color(presets[0].preset_button, lv_palette_main(LV_PALETTE_LIGHT_BLUE), 0);
@@ -218,8 +309,6 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
 
     // Preset 2
     presets[1].idx = 1;
-    presets[1].timer_config.minute = 1;
-    presets[1].timer_config.second = 30;
     presets[1].preset_button = lv_btn_create(bottom_container);
     lv_obj_set_size(presets[1].preset_button, lv_pct(100), lv_pct(48));
     // lv_obj_set_style_bg_color(presets[1].preset_button, lv_palette_main(LV_PALETTE_LIME), 0);
@@ -242,4 +331,15 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
 
 void countdown_timer_rotation_event_callback(lv_event_t * e) {
     set_rotation_countdown_timer_config_view(system_config.rotation);
+}
+
+
+void enable_countdown_timer_config_view(bool enable) {
+    if (enable) {
+        // There is no action to perform when enabling the countdown timer config view
+    }
+    else {
+        // Write to NVS flash automatically when swiped away
+        ESP_ERROR_CHECK(save_countdown_timer_config());
+    }
 }

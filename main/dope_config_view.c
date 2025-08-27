@@ -54,10 +54,6 @@ static lv_obj_t * top_container = NULL;
 static lv_obj_t * bottom_container = NULL;
 static lv_obj_t * nested_button_container = NULL;
 
-// Message box to show the confirm of saved data
-static lv_obj_t * msg_box;
-static lv_obj_t * msg_box_label;
-
 // Forward declaration
 lv_obj_t * create_dope_card(lv_obj_t *parent, dope_data_t *dope_data);
 esp_err_t save_dope_config();
@@ -68,42 +64,6 @@ const nvs_dope_data_t nvs_dope_data_default = {
     .dope10 = 0,
     .enable = false
 };
-
-
-static void on_msg_box_ok_button_clicked(lv_event_t *e) {
-    // hide
-    lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
-}
-
-
-static void create_info_msg_box(lv_obj_t *parent) {
-    // Create a message box to be called by its content
-    msg_box = lv_msgbox_create(parent);
-    lv_obj_set_size(msg_box, lv_pct(100), lv_pct(40));
-    msg_box_label = lv_msgbox_add_text(msg_box, "This is a message box");
-    lv_obj_t * btn = lv_msgbox_add_footer_button(msg_box, "OK");
-    lv_obj_add_event_cb(btn, on_msg_box_ok_button_clicked, LV_EVENT_CLICKED, NULL);
-    lv_obj_align(msg_box, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_pad_all(msg_box, 1, 0);
-
-    // Set hidden
-    lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void update_info_msg_box(const char * text) {
-    lv_label_set_text(msg_box_label, text);
-
-    lv_obj_clear_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void on_save_button_pressed(lv_event_t * e) {
-    // Save the list to FLASH
-    ESP_ERROR_CHECK(save_dope_config());
-
-    // Display the message box
-    update_info_msg_box("DOPE Saved");
-}
-
 
 void set_dope_item_settings_visibility(bool is_visible) {
     if (is_visible) {
@@ -199,7 +159,7 @@ static void close_edit_window(lv_event_t * e) {
 
 
 esp_err_t load_dope_config() {
-    esp_err_t err;
+    esp_err_t ret;
 
     // Read configuration from NVS
     nvs_handle_t handle;
@@ -207,15 +167,17 @@ esp_err_t load_dope_config() {
 
     // Read each dope item configuration
     for (int i = 0; i < DOPE_CONFIG_MAX_DOPE_ITEM; i += 1) {
-        nvs_dope_data_t dope_data = {0};
+        nvs_dope_data_t dope_data;
+        memset(&dope_data, 0, sizeof(dope_data));
+        
         size_t required_size = sizeof(dope_data);
 
         char key[NVS_KEY_NAME_MAX_SIZE - 1];
         memset(key, 0, sizeof(key));
         snprintf(key, NVS_KEY_NAME_MAX_SIZE - 1, "D%d", i);
-        err = nvs_get_blob(handle, key, &dope_data, &required_size);
+        ret = nvs_get_blob(handle, key, &dope_data, &required_size);
 
-        if (err == ESP_ERR_NVS_NOT_FOUND) {
+        if (ret == ESP_ERR_NVS_NOT_FOUND) {
             // If not found, use default values
             ESP_LOGI(TAG, "Dope item %d not found in NVS, using default values", i);
             memcpy(&dope_data, &nvs_dope_data_default, sizeof(nvs_dope_data_default));
@@ -224,11 +186,14 @@ esp_err_t load_dope_config() {
             dope_data.crc32 = crc32_wrapper(&dope_data, sizeof(dope_data), sizeof(dope_data.crc32));
 
             // Write back to NVS
-            ESP_RETURN_ON_ERROR(nvs_set_blob(handle, key, &dope_data, required_size), TAG, "Failed to write NVS blob");
-            ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
+            ret = nvs_set_blob(handle, key, &dope_data, required_size);
+            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
 
-        } else if (err != ESP_OK) {
-            ESP_RETURN_ON_ERROR(err, TAG, "Failed to read NVS blob");
+            ret = nvs_commit(handle);
+            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
+
+        } else {
+            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to read NVS blob for dope item %d", i);
         }
 
         // Verify CRC
@@ -246,13 +211,15 @@ esp_err_t load_dope_config() {
         }
     }
 
+finally:
     nvs_close(handle);
-    return ESP_OK;
+
+    return ret;
 }
 
 
 esp_err_t save_dope_config() {
-    esp_err_t err;
+    esp_err_t ret;
 
     // Write configuration to NVS
     nvs_handle_t handle;
@@ -273,15 +240,19 @@ esp_err_t save_dope_config() {
         char key[NVS_KEY_NAME_MAX_SIZE - 1];
         memset(key, 0, sizeof(key));
         snprintf(key, NVS_KEY_NAME_MAX_SIZE - 1, "D%d", i);
-        
-        ESP_RETURN_ON_ERROR(nvs_set_blob(handle, key, &dope_data, required_size), TAG, "Failed to write NVS blob");
+
+        ret = nvs_set_blob(handle, key, &dope_data, required_size);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
+
     }
 
-    ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
+    ret = nvs_commit(handle);
+    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
 
+finally:
     nvs_close(handle);
 
-    return ESP_OK;
+    return ret;
 }
 
 
@@ -494,18 +465,6 @@ void create_dope_config_view(lv_obj_t * parent) {
         lv_obj_clear_flag(dope_card_list, LV_OBJ_FLAG_HIDDEN);
     }
 
-    // Append a button to the end of list to save to FLASH
-    lv_obj_t * save_button = lv_btn_create(dope_list);
-    lv_obj_t * label = lv_label_create(save_button);
-    lv_obj_center(label);
-    lv_label_set_text(label, LV_SYMBOL_SAVE " Save");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
-    lv_obj_set_size(save_button, lv_pct(100), lv_pct(30));
-    lv_obj_add_event_cb(save_button, on_save_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
-
-    // Create a message box to display information and set to hidden by default
-    create_info_msg_box(parent);
-
     // Create dope configuration dialog
     create_dope_config_msgbox(parent);
 }
@@ -614,4 +573,13 @@ lv_obj_t * create_dope_card_list_widget(lv_obj_t * parent) {
 
 void dope_config_view_rotation_event_callback(lv_event_t * e) {
     set_rotation_dope_card_config_view(system_config.rotation);
+}
+
+void enable_dope_config_view(bool enable) {
+    if (enable) {
+        // No action needed when enabling
+    } else {
+        // Write to NVS flash automatically when swiped away
+        save_dope_config();
+    }
 }

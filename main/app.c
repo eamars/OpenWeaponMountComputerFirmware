@@ -139,7 +139,9 @@ void app_main(void)
     }
 
     // Initialize LVGL
-    const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_cfg.task_stack = 8192;
+    
     esp_err_t ret = lvgl_port_init(&lvgl_cfg);
     ESP_ERROR_CHECK(ret);
 

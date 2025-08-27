@@ -41,25 +41,26 @@ static void sensor_rotation_vector_poller_task(void *p) {
 
     while (1) {
         // Block wait for the task is allowed to run
-        xSemaphoreTake(sensor_rotation_vector_poller_task_control, portMAX_DELAY);
+        if (xSemaphoreTake(sensor_rotation_vector_poller_task_control, pdMS_TO_TICKS(200)) == pdTRUE) {
 
-        // Wait for data
-        esp_err_t err = bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, true);
+            // Wait for data
+            esp_err_t err = bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, true);
 
-        if (err == ESP_OK) {
-            // Roll is calculated based on the base measurement - screen rotation offset + user roll offset
-            float display_roll = get_relative_roll_angle_rad_thread_unsafe();
+            if (err == ESP_OK) {
+                // Roll is calculated based on the base measurement - screen rotation offset + user roll offset
+                float display_roll = get_relative_roll_angle_rad_thread_unsafe();
 
-            // Redraw the screen
-            if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
-                update_digital_level_view(display_roll, sensor_pitch_thread_unsafe);
-                lvgl_port_unlock();
+                // Redraw the screen
+                if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
+                    update_digital_level_view(display_roll, sensor_pitch_thread_unsafe);
+                    lvgl_port_unlock();
+                }
             }
+
+            xSemaphoreGive(sensor_rotation_vector_poller_task_control);  // allow the task to run
+
+            vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(DIGITAL_LEVEL_VIEW_DISPLAY_UPDATE_PERIOD_MS));
         }
-
-        xSemaphoreGive(sensor_rotation_vector_poller_task_control);  // allow the task to run
-
-        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(DIGITAL_LEVEL_VIEW_DISPLAY_UPDATE_PERIOD_MS));
     }
 }
 
@@ -71,41 +72,42 @@ static void sensor_acceleration_poller_task(void *p) {
 
     while (1) {
         // Block wait for the task is allowed to run
-        xSemaphoreTake(sensor_acceleration_poller_task_control, portMAX_DELAY);
+        if (xSemaphoreTake(sensor_acceleration_poller_task_control, pdMS_TO_TICKS(200)) == pdTRUE) { 
 
-        // Wait for data
-        esp_err_t err = bno085_wait_for_linear_acceleration_report(&bno085_dev, 
-            &sensor_x_acceleration_thread_unsafe, &sensor_y_acceleration_thread_unsafe, &sensor_z_acceleration_thread_unsafe, 
-            false);
+            // Wait for data
+            esp_err_t err = bno085_wait_for_linear_acceleration_report(&bno085_dev, 
+                &sensor_x_acceleration_thread_unsafe, &sensor_y_acceleration_thread_unsafe, &sensor_z_acceleration_thread_unsafe, 
+                false);
 
-        if (err == ESP_OK) {
-            // ESP_LOGI(TAG, "Digital Level View Controller Analysis: x=%.2f, y=%.2f, z=%.2f", sensor_x_acceleration_thread_unsafe, sensor_y_acceleration_thread_unsafe, sensor_z_acceleration_thread_unsafe);
-            float x_abs = fabsf(sensor_x_acceleration_thread_unsafe);
-            last_value = sensor_x_acceleration_thread_unsafe;
+            if (err == ESP_OK) {
+                // ESP_LOGI(TAG, "Digital Level View Controller Analysis: x=%.2f, y=%.2f, z=%.2f", sensor_x_acceleration_thread_unsafe, sensor_y_acceleration_thread_unsafe, sensor_z_acceleration_thread_unsafe);
+                float x_abs = fabsf(sensor_x_acceleration_thread_unsafe);
+                last_value = sensor_x_acceleration_thread_unsafe;
 
-            if (last_value < sensor_config.recoil_acceleration_trigger_level && 
-                x_abs >= sensor_config.recoil_acceleration_trigger_level && 
-                sensor_config.trigger_edge == TRIGGER_RISING_EDGE
-            ) {
-
-                // ESP_LOGI(TAG, "Recoil detected, auto_start_countdown_timer_on_recoil: %d, get_countdown_timer_widget_enabled: %d, get_countdown_timer_state: %d",
-                //          digital_level_view_config.auto_start_countdown_timer_on_recoil,
-                //          get_countdown_timer_widget_enabled(),
-                //          get_countdown_timer_state(&countdown_timer));
-                // Shot has fired, start the timer if not started already
-                if (digital_level_view_config.auto_start_countdown_timer_on_recoil &&     // recoil detected
-                    get_countdown_timer_widget_enabled() &&                               // widget is enabled
-                    (get_countdown_timer_state(&countdown_timer) == COUNTDOWN_TIMER_PAUSE)  // timer is ready
+                if (last_value < sensor_config.recoil_acceleration_trigger_level && 
+                    x_abs >= sensor_config.recoil_acceleration_trigger_level && 
+                    sensor_config.trigger_edge == TRIGGER_RISING_EDGE
                 ) {
-                    countdown_timer_continue(&countdown_timer);
-                    ESP_LOGI(TAG, "Countdown timer started due to recoil");
+
+                    // ESP_LOGI(TAG, "Recoil detected, auto_start_countdown_timer_on_recoil: %d, get_countdown_timer_widget_enabled: %d, get_countdown_timer_state: %d",
+                    //          digital_level_view_config.auto_start_countdown_timer_on_recoil,
+                    //          get_countdown_timer_widget_enabled(),
+                    //          get_countdown_timer_state(&countdown_timer));
+                    // Shot has fired, start the timer if not started already
+                    if (digital_level_view_config.auto_start_countdown_timer_on_recoil &&     // recoil detected
+                        get_countdown_timer_widget_enabled() &&                               // widget is enabled
+                        (get_countdown_timer_state(&countdown_timer) == COUNTDOWN_TIMER_PAUSE)  // timer is ready
+                    ) {
+                        countdown_timer_continue(&countdown_timer);
+                        ESP_LOGI(TAG, "Countdown timer started due to recoil");
+                    }
                 }
             }
+
+            xSemaphoreGive(sensor_acceleration_poller_task_control);  // allow the task to run
+
+            vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(DIGITAL_LEVEL_VIEW_DISPLAY_UPDATE_PERIOD_MS));
         }
-
-        xSemaphoreGive(sensor_acceleration_poller_task_control);  // allow the task to run
-
-        vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(20));
     }
 }
 
