@@ -31,11 +31,11 @@ typedef struct {
     timer_config_t timer_config;
 } preset_t;
 
-preset_t presets[2];
-preset_t * selected_preset = NULL;
-lv_obj_t * minute_roller = NULL;
-lv_obj_t * second_roller = NULL;
-lv_obj_t * parent_container = NULL;
+static preset_t presets[2];
+static preset_t * selected_preset = NULL;
+static lv_obj_t * minute_roller = NULL;
+static lv_obj_t * second_roller = NULL;
+static lv_obj_t * parent_container = NULL;
 static lv_obj_t * top_container;
 static lv_obj_t * bottom_container;
 extern countdown_timer_t countdown_timer;

@@ -5,7 +5,6 @@
 #include "main_tileview.h"
 #include "digital_level_view.h"
 #include "digital_level_view_controller.h"
-#include "send_it_view.h"
 #include "config_view.h"
 #include "countdown_timer_config_view.h"
 #include "dope_config_view.h"
@@ -104,12 +103,6 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_set_user_data(tile_low_power_mode_view, enable_low_power_mode);  // Use enter and exit code to activate and deactivate the low power mode
     create_low_power_mode_view(tile_low_power_mode_view);
 
-    // "Send It" view (most left tile)
-    lv_obj_t * tile_send_it_level_view = lv_tileview_add_tile(main_tileview, 1, 1, LV_DIR_RIGHT);  // send it view can only be swiped right
-    lv_obj_set_user_data(tile_send_it_level_view, enable_send_it_view);
-    create_send_it_view(tile_send_it_level_view);
-    lv_obj_add_event_cb(tile_send_it_level_view, send_it_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
-
     // Timer config view (swiped up from digital level view)
     lv_obj_t * tile_countdown_timer_config_view = lv_tileview_add_tile(main_tileview, 2, 0, LV_DIR_BOTTOM);
     lv_obj_set_user_data(tile_countdown_timer_config_view, enable_countdown_timer_config_view);
@@ -117,10 +110,9 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_add_event_cb(tile_countdown_timer_config_view, countdown_timer_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
     // Digital level view (main tile)
-    lv_obj_t * tile_digital_level_view = lv_tileview_add_tile(main_tileview, 2, 1, LV_DIR_ALL);
+    lv_obj_t * tile_digital_level_view = lv_tileview_add_tile(main_tileview, 2, 1, LV_DIR_VER | LV_DIR_RIGHT);
     lv_obj_set_user_data(tile_digital_level_view, enable_digital_level_view_controller);
     create_digital_level_view(tile_digital_level_view);
-    lv_obj_add_event_cb(tile_digital_level_view, digital_level_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
     // Dope view (swiped down from digital level view)
     lv_obj_t * tile_dope_config_view = lv_tileview_add_tile(main_tileview, 2, 2, LV_DIR_TOP);

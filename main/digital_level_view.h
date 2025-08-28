@@ -4,6 +4,7 @@
 
 #include <lvgl.h>
 #include "esp_err.h"
+#include "digital_level_view_controller.h"
 
 typedef struct {
     uint32_t crc32;
@@ -27,6 +28,10 @@ typedef struct {
     // Other widget control
     bool auto_start_countdown_timer_on_recoil;
     bool auto_move_dope_card_on_recoil;
+
+    // Type of digital level view
+    digital_level_view_type_t level_style;
+
 } digital_level_view_config_t;
 
 
