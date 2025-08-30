@@ -175,6 +175,11 @@ void create_low_power_mode_view(lv_obj_t * parent) {
 }
 
 
+static void delayed_stop_lvgl(lv_timer_t *timer) {
+    lvgl_port_stop();
+    lv_timer_del(timer);
+}
+
 void enable_low_power_mode(bool enable) {
     // This function is called by LVGL
     ESP_LOGI(TAG, "Low Power Mode %s", enable ? "enabled" : "disabled");
@@ -195,16 +200,17 @@ void enable_low_power_mode(bool enable) {
             ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_LOW_POWER_MODE_REPORT_PERIOD_MS));
         }
 
-        lvgl_port_stop();
+        // lvgl_port_stop();
+        lv_timer_create(delayed_stop_lvgl, 1, NULL);
 
     } 
     else {
         // Update the last activity tick in making sure the count is updated before any other event
         update_low_power_mode_last_activity_event();
 
-        lvgl_port_resume();
-
         in_low_power_mode = false;
+
+        lvgl_port_resume();
 
         // Enable sensor report
         if (sensor_config.enable_game_rotation_vector_report) {
