@@ -13,16 +13,24 @@
 #include "sh2.h"
 #include "sh2_SensorValue.h"
 
-#define BNO085_SENSOR_POLLER_TASK_PRIORITY 2  // low priority for high frequency poller
-#define BNO085_SENSOR_POLLER_TASK_STACK 4096
+#ifndef BNO085_SENSOR_POLLER_TASK_PRIORITY
+    #define BNO085_SENSOR_POLLER_TASK_PRIORITY 2  // low priority for high frequency poller
+#endif  // BNO085_SENSOR_POLLER_TASK_PRIORITY
+
+#ifndef BNO085_SENSOR_POLLER_TASK_STACK
+    #define BNO085_SENSOR_POLLER_TASK_STACK 4096
+#endif
 // #define BNO085_SENSOR_POLLER_PERIOD_MS 10
+
+#ifndef BNO085_EVENT_QUEUE_DEPTH
+    #define BNO085_EVENT_QUEUE_DEPTH 1
+#endif  // BNO085_EVENT_QUEUE_DEPTH
 
 #define DEG_TO_RAD(deg) ((deg) * M_PI / 180.0f)
 #define RAD_TO_DEG(rad) ((rad) * 180.0f / M_PI)
 
 
 typedef struct {
-    sh2_SensorId_t sensor_id;
     uint32_t interval_ms;
     QueueHandle_t sensor_value_queue;
 } sensor_report_config_t;

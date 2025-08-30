@@ -62,6 +62,7 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     }
 
     // Send it to the corresponding queue
+    // ESP_LOGI(TAG, "Event REceived %p", sensor_value.sensorId);
     xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
 }
 
@@ -221,7 +222,7 @@ void sensor_poller_task(void *self) {
 }
 
 
-esp_err_t _bno085_enable_report(sh2_SensorId_t sensor_id, uint32_t interval_ms) {
+esp_err_t sh2_enable_report(sh2_SensorId_t sensor_id, uint32_t interval_ms) {
     static sh2_SensorConfig_t config = {
         .changeSensitivityEnabled = false,
         .wakeupEnabled = false,
@@ -254,10 +255,10 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
             ESP_LOGW(TAG, "BNO085 Reset Unexpectly");
         
             // Go over saved configurations
-            for (int i = 0; i < SH2_MAX_SENSOR_EVENT_LEN; i += 1) {
+            for (uint8_t i = 0; i < SH2_MAX_SENSOR_EVENT_LEN; i += 1) {
                 // Re-enable reports
-                if (ctx->enabled_sensor_report_list[i].sensor_id != 0) {
-                    _bno085_enable_report(ctx->enabled_sensor_report_list[i].sensor_id, ctx->enabled_sensor_report_list[i].interval_ms);
+                if (ctx->enabled_sensor_report_list[i].interval_ms != 0) {
+                    sh2_enable_report(i, ctx->enabled_sensor_report_list[i].interval_ms);
                 }
             }
             break;
@@ -374,7 +375,6 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
     return ESP_OK;
 }
 
-
 esp_err_t bno085_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t interval_ms) {
     // look for a slot to save the config
     sensor_report_config_t * target_report_config = &ctx->enabled_sensor_report_list[sensor_id];
@@ -384,7 +384,7 @@ esp_err_t bno085_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint
 
     // Create queue if not created already
     if (target_report_config->sensor_value_queue == NULL) {
-        target_report_config->sensor_value_queue = xQueueCreate(1, sizeof(sh2_SensorValue_t));
+        target_report_config->sensor_value_queue = xQueueCreate(BNO085_EVENT_QUEUE_DEPTH, sizeof(sh2_SensorValue_t));
         if (target_report_config->sensor_value_queue == NULL) {
             ESP_LOGE(TAG, "Failed to create queue for sensor report");
             return ESP_FAIL;
@@ -392,11 +392,10 @@ esp_err_t bno085_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint
     }
 
     // Fill other house keeping information
-    target_report_config->sensor_id = sensor_id;
     target_report_config->interval_ms = interval_ms;
 
     // Enable report at the sensor
-    return _bno085_enable_report(sensor_id, interval_ms);
+    return sh2_enable_report(sensor_id, interval_ms);
 }
 
 

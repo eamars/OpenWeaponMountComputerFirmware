@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "esp_check.h"
+#include "esp_task_wdt.h"
 
 #include "low_power_mode.h"
 #include "system_config.h"
@@ -92,6 +93,9 @@ void low_power_monitor_task(void *p) {
 
 
 void sensor_stability_classifier_poller_task(void *p) {
+    // Disable the task watchdog as the task is expected to block indefinitely
+    esp_task_wdt_delete(NULL);
+
     while (1) {
         uint8_t stability_classification = STABILITY_CLASSIFIER_UNKNOWN;
         esp_err_t err = bno085_wait_for_stability_classification_report(&bno085_dev, &stability_classification, true);
@@ -198,6 +202,8 @@ void enable_low_power_mode(bool enable) {
         // Update the last activity tick in making sure the count is updated before any other event
         update_low_power_mode_last_activity_event();
 
+        lvgl_port_resume();
+
         in_low_power_mode = false;
 
         // Enable sensor report
@@ -212,7 +218,5 @@ void enable_low_power_mode(bool enable) {
         if (io_handle) {
             set_display_brightness(&io_handle, 100);
         }
-
-        lvgl_port_resume();
     }
 }

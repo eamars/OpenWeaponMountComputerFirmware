@@ -125,19 +125,6 @@ void app_main(void)
     // Initialize BNO085 sensor
     ESP_ERROR_CHECK(bno085_init_i2c(&bno085_dev, i2c_bus_handle, BNO085_INT_PIN));
 
-    if (sensor_config.enable_game_rotation_vector_report) {
-        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
-    }
-    else {
-        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 0));
-    }
-    if (sensor_config.enable_linear_acceleration_report) {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
-    }
-    else {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, 0));
-    }
-
     // Initialize LVGL
     lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
     lvgl_cfg.task_stack = 8192;

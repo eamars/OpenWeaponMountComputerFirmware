@@ -13,13 +13,16 @@
 #include "common.h"
 #include "sensor_config.h"
 #include "countdown_timer.h"
+#include "esp_task_wdt.h"
+#include "bno085.h"
 
 #define TAG "DigitalLevelViewController"
 
-static TaskHandle_t sensor_rotation_vector_poller_task_handle;
-static TaskHandle_t sensor_acceleration_poller_task_handle;
-static SemaphoreHandle_t sensor_rotation_vector_poller_task_control;
-static SemaphoreHandle_t sensor_acceleration_poller_task_control;
+#define SENSOR_POLL_EVENT_RUN   (1 << 0)
+
+
+static TaskHandle_t sensor_poller_task_handle;
+static EventGroupHandle_t sensor_task_control;
 
 float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
 float sensor_x_acceleration_thread_unsafe, sensor_y_acceleration_thread_unsafe, sensor_z_acceleration_thread_unsafe;
@@ -36,17 +39,22 @@ float get_relative_roll_angle_rad_thread_unsafe() {
     return wrap_angle(raw_roll);
 }
 
-static void sensor_rotation_vector_poller_task(void *p) {
-    TickType_t last_poll_tick = xTaskGetTickCount();
+
+void unified_ensor_poller_task(void *p) {
+    // Disable the task watchdog as the task is expected to block indefinitely
+    esp_task_wdt_delete(NULL);
+
+    TickType_t last_poll_tick;
+    float last_sensor_x_acceleration = 0;
 
     while (1) {
-        // Block wait for the task is allowed to run
-        if (xSemaphoreTake(sensor_rotation_vector_poller_task_control, pdMS_TO_TICKS(200)) == pdTRUE) {
+        xEventGroupWaitBits(sensor_task_control, SENSOR_POLL_EVENT_RUN, pdFALSE, pdFALSE, portMAX_DELAY);
 
-            // Wait for data
-            esp_err_t err = bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, true);
-
-            if (err == ESP_OK) {
+        last_poll_tick = xTaskGetTickCount();
+        while (xEventGroupGetBits(sensor_task_control) & SENSOR_POLL_EVENT_RUN) {
+            // Wait for watched sensor ids
+            // Game rotation vectors
+            if (bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, false) == ESP_OK) {
                 // Roll is calculated based on the base measurement - screen rotation offset + user roll offset
                 float display_roll = get_relative_roll_angle_rad_thread_unsafe();
 
@@ -57,34 +65,13 @@ static void sensor_rotation_vector_poller_task(void *p) {
                 }
             }
 
-            xSemaphoreGive(sensor_rotation_vector_poller_task_control);  // allow the task to run
-
-            vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(DIGITAL_LEVEL_VIEW_DISPLAY_UPDATE_PERIOD_MS));
-        }
-    }
-}
-
-
-static void sensor_acceleration_poller_task(void *p) {
-    TickType_t last_poll_tick = xTaskGetTickCount();
-
-    float last_value = 0;
-
-    while (1) {
-        // Block wait for the task is allowed to run
-        if (xSemaphoreTake(sensor_acceleration_poller_task_control, pdMS_TO_TICKS(200)) == pdTRUE) { 
-
-            // Wait for data
-            esp_err_t err = bno085_wait_for_linear_acceleration_report(&bno085_dev, 
-                &sensor_x_acceleration_thread_unsafe, &sensor_y_acceleration_thread_unsafe, &sensor_z_acceleration_thread_unsafe, 
-                false);
-
-            if (err == ESP_OK) {
+            // Linear acceleration
+            if (bno085_wait_for_linear_acceleration_report(&bno085_dev, &sensor_x_acceleration_thread_unsafe, &sensor_y_acceleration_thread_unsafe, &sensor_z_acceleration_thread_unsafe, false) == ESP_OK) {
                 // ESP_LOGI(TAG, "Digital Level View Controller Analysis: x=%.2f, y=%.2f, z=%.2f", sensor_x_acceleration_thread_unsafe, sensor_y_acceleration_thread_unsafe, sensor_z_acceleration_thread_unsafe);
                 float x_abs = fabsf(sensor_x_acceleration_thread_unsafe);
-                last_value = sensor_x_acceleration_thread_unsafe;
+                last_sensor_x_acceleration = sensor_x_acceleration_thread_unsafe;
 
-                if (last_value < sensor_config.recoil_acceleration_trigger_level && 
+                if (last_sensor_x_acceleration < sensor_config.recoil_acceleration_trigger_level && 
                     x_abs >= sensor_config.recoil_acceleration_trigger_level && 
                     sensor_config.trigger_edge == TRIGGER_RISING_EDGE
                 ) {
@@ -104,8 +91,6 @@ static void sensor_acceleration_poller_task(void *p) {
                 }
             }
 
-            xSemaphoreGive(sensor_acceleration_poller_task_control);  // allow the task to run
-
             vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(DIGITAL_LEVEL_VIEW_DISPLAY_UPDATE_PERIOD_MS));
         }
     }
@@ -113,49 +98,48 @@ static void sensor_acceleration_poller_task(void *p) {
 
 
 void enable_digital_level_view_controller(bool enable) {
-    static TimerHandle_t disable_timer_handle = NULL;
     if (enable) {
-        xSemaphoreGive(sensor_rotation_vector_poller_task_control);
-        xSemaphoreGive(sensor_acceleration_poller_task_control);
+        xEventGroupSetBits(sensor_task_control, SENSOR_POLL_EVENT_RUN);
     } else {
-        xSemaphoreTake(sensor_rotation_vector_poller_task_control, pdMS_TO_TICKS(200));
-        xSemaphoreTake(sensor_acceleration_poller_task_control, pdMS_TO_TICKS(200));
+        xEventGroupClearBits(sensor_task_control, SENSOR_POLL_EVENT_RUN);
     }
 }
 
 
 esp_err_t digital_level_view_controller_init() {
-    // Initialize the digital level view controller
+    sensor_task_control = xEventGroupCreate();
+    if (sensor_task_control == NULL) {
+        ESP_LOGE(TAG, "Failed to create sensor_poll_event");
+        return ESP_FAIL;
+    }
 
-
-    // Create sensor rotation vector poller task 
-    sensor_rotation_vector_poller_task_control = xSemaphoreCreateBinary();
-    BaseType_t rtos_return = xTaskCreate(
-        sensor_rotation_vector_poller_task, 
-        "dlv_poller", 
+    BaseType_t rtos_return;
+    // Create acceleration poller task
+    rtos_return = xTaskCreate(
+        unified_ensor_poller_task,
+        "sensor_poller",
         SENSOR_EVENT_POLLER_TASK_STACK,
         NULL,
         SENSOR_EVENT_POLLER_TASK_PRIORITY,
-        &sensor_rotation_vector_poller_task_handle
+        &sensor_poller_task_handle
     );
     if (rtos_return != pdPASS) {
-        ESP_LOGE(TAG, "Failed to allocate memory for sensor_poller");
+        ESP_LOGE(TAG, "Failed to allocate memory for unified_ensor_poller_task");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 
-    // Create acceleration poller task
-    sensor_acceleration_poller_task_control = xSemaphoreCreateBinary();
-    rtos_return = xTaskCreate(
-        sensor_acceleration_poller_task,
-        "accel_poller",
-        SENSOR_EVENT_POLLER_TASK_STACK,
-        NULL,
-        ACCELERATION_EVENT_POLLER_TASK_PRIORITY,
-        &sensor_acceleration_poller_task_handle
-    );
-    if (rtos_return != pdPASS) {
-        ESP_LOGE(TAG, "Failed to allocate memory for sensor_accel_poller");
-        ESP_ERROR_CHECK(ESP_FAIL);
+    // Initialize sensor reports
+    if (sensor_config.enable_game_rotation_vector_report) {
+        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
+    }
+    else {
+        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 0));
+    }
+    if (sensor_config.enable_linear_acceleration_report) {
+        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
+    }
+    else {
+        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, 0));
     }
 
     return ESP_OK;
