@@ -7,9 +7,9 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "freertos/event_groups.h"
 
 #include "driver/i2c_master.h"  
-#include "driver/uart.h"
 #include "sh2.h"
 #include "sh2_SensorValue.h"
 
@@ -26,6 +26,11 @@
     #define BNO085_EVENT_QUEUE_DEPTH 1
 #endif  // BNO085_EVENT_QUEUE_DEPTH
 
+
+#define BNO085_HARD_RESET_DELAY_MS 1000
+#define BNO085_SOFT_RESET_DELAY_MS 300
+
+
 #define DEG_TO_RAD(deg) ((deg) * M_PI / 180.0f)
 #define RAD_TO_DEG(rad) ((rad) * 180.0f / M_PI)
 
@@ -40,6 +45,7 @@ typedef struct {
     sh2_Hal_t _HAL; // SH2 HAL interface -> Align the memory with the context structure allowing better type casting
     TaskHandle_t sensor_poller_task_handle;
     sensor_report_config_t enabled_sensor_report_list[SH2_MAX_SENSOR_EVENT_LEN];
+    EventGroupHandle_t sensor_event_control;
 
     // Implement specific atributes
     i2c_master_dev_handle_t dev_handle;
@@ -49,9 +55,13 @@ typedef struct {
 } bno085_ctx_t;
 
 
+/**
+ * @brief Perform a software reset 
+ */
+int bno085_soft_reset(bno085_ctx_t *ctx);
 
 /**
- * @brief Initialize the BNO085 sensor.
+ * @brief Initialize the BNO085 sensor using I2C communication
  *
  * @param ctx Pointer to the BNO085 context.
  * @param i2c_bus_handle I2C bus handle for communication.
@@ -59,6 +69,12 @@ typedef struct {
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
 esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, int interrupt_pin);
+
+
+/**
+ * @brief Initialize the BNO085 sensor using SPI communication
+ */
+esp_err_t bno085_init_spi(bno085_ctx_t *ctx);
 
 /**
  * @brief Enable BNO085 report.

@@ -109,7 +109,7 @@ void enable_digital_level_view_controller(bool enable) {
 esp_err_t digital_level_view_controller_init() {
     sensor_task_control = xEventGroupCreate();
     if (sensor_task_control == NULL) {
-        ESP_LOGE(TAG, "Failed to create sensor_poll_event");
+        ESP_LOGE(TAG, "Failed to create sensor_task_control");
         return ESP_FAIL;
     }
 

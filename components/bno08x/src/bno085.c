@@ -8,15 +8,12 @@
 #include "esp_timer.h"
 
 #include "bno085.h"
+#include "sh2_hal_i2c.h"
 #include "sh2_err.h"
 
 
 #define TAG "BNO085"
-#define BNO085_I2C_ADDRESS 0x4A // Default I2C address for BNO085
-#define BNO085_I2C_WRITE_TIMEOUT_MS 100
-#define HARD_RESET_DELAY_MS 1000
-#define SOFT_RESET_DELAY_MS 300
-
+#define SENSOR_INTERRUPT_EVENT_BIT (1 << 0)
 
 // Forward declaration
 float q_to_roll_sf(float dqw, float dqx, float dqy, float dqz);
@@ -71,9 +68,9 @@ void bno085_hard_reset(bno085_ctx_t *ctx) {
     if (ctx->reset_pin != GPIO_NUM_NC) {
         disable_interrupt(ctx);
         gpio_set_level(ctx->reset_pin, 0);  // set to low (active low)
-        vTaskDelay(pdMS_TO_TICKS(HARD_RESET_DELAY_MS));
+        vTaskDelay(pdMS_TO_TICKS(BNO085_HARD_RESET_DELAY_MS));
         gpio_set_level(ctx->reset_pin, 1);  // set to high
-        vTaskDelay(pdMS_TO_TICKS(HARD_RESET_DELAY_MS));
+        vTaskDelay(pdMS_TO_TICKS(BNO085_HARD_RESET_DELAY_MS));
         enable_interrupt(ctx);
 
         ESP_LOGI(TAG, "BNO085 Resetted");
@@ -84,139 +81,26 @@ void bno085_hard_reset(bno085_ctx_t *ctx) {
 }
 
 
-int bno085_soft_reset(bno085_ctx_t *ctx) {
-    ESP_LOGI(TAG, "Sending soft reset to BNO085");
-    // Send softreset packet
-    uint8_t softreset_pkt[] = {5, 0, 1, 0, 1};
-    int attempts = 5;
-    for (; attempts >= 0; attempts -= 1) {
-        if (i2c_master_transmit(ctx->dev_handle, softreset_pkt, sizeof(softreset_pkt), BNO085_I2C_WRITE_TIMEOUT_MS) == ESP_OK) {
-            break;
-        }
-        ESP_LOGI(TAG, "Failed to send soft reset, will retry %d", attempts);
-        vTaskDelay(pdMS_TO_TICKS(SOFT_RESET_DELAY_MS));
-    }
-    if (attempts == 0) {
-        ESP_LOGI(TAG, "Failed to send soft reset, will quit");
-        return -1;
-    }
-
-    ESP_LOGI(TAG, "Soft reset sent successfully, waiting for device to reset");
-
-    vTaskDelay(pdMS_TO_TICKS(SOFT_RESET_DELAY_MS));
-    return 0;
-}
-
-
-int i2c_open(sh2_Hal_t *self) {
-    // ESP_LOGI(TAG, "i2c_open() called");
-
-    // Cast self back to the context object
-    bno085_ctx_t * ctx = (bno085_ctx_t *) self;
-
-    // Send softreset packet
-    int ret = bno085_soft_reset(ctx);
-    if (ret != 0) {
-        ESP_LOGE(TAG, "Failed to send soft reset");
-        return ret;
-    }
-
-    ESP_LOGI(TAG, "i2c_open() complete");
-
-    return 0;
-}
-
-
-void i2c_close(sh2_Hal_t *self) {
-    ESP_LOGI(TAG, "i2c_close() called");
-
-    // nothing need to be done
-}
-
-
-int i2c_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us) {
-    // ESP_LOGI(TAG, "i2c_read() called with len: %d", len);
-    esp_err_t err;
-
-    // Cast self back to the context object
-    bno085_ctx_t * ctx = (bno085_ctx_t *) self;
-
-    // Read header (4 bytes)
-    uint8_t headers[4];
-    err = i2c_master_receive(ctx->dev_handle, headers, 4, BNO085_I2C_WRITE_TIMEOUT_MS);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to read headers: %s", esp_err_to_name(err));
-        
-        // Send a soft reset
-        bno085_soft_reset(ctx);
-        return 0;
-    }
-
-    uint16_t packet_size = ((uint16_t)headers[0] + ((uint16_t)headers[1] << 8)) & ~0x8000;
-
-    // Check the buffer size
-    if (len < packet_size) {
-        return 0;
-    }
-    else if (packet_size > 0) {
-        // Read remaining packet
-        err = i2c_master_receive(ctx->dev_handle, pBuffer, packet_size, BNO085_I2C_WRITE_TIMEOUT_MS);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to read packet: %s", esp_err_to_name(err));
-        
-            // Send a soft reset
-            bno085_soft_reset(ctx); 
-            return 0;
-        }
-    }
-    else {
-        // ESP_LOGW(TAG, "No data");
-    }
-
-    return packet_size;
-}
-
-
-
-int i2c_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
-    esp_err_t err;
-    // ESP_LOGI(TAG, "i2c_write() called");
-
-    // Cast self back to the context object
-    bno085_ctx_t * ctx = (bno085_ctx_t *) self;
-
-    err = i2c_master_transmit(ctx->dev_handle, pBuffer, len, BNO085_I2C_WRITE_TIMEOUT_MS);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write data: %s", esp_err_to_name(err));
-        return 0;
-    }
-
-    // ESP_LOGI(TAG, "i2c_write() write %d bytes", len);
-    // for (int i = 0; i < len; i++) {
-    //     printf("%02x ", pBuffer[i]);
-    // }
-    // printf("\n");
-
-    return len;
-}
-
-
 /**
  * @brief Interrupt handler for the BNO085 sensor
  */
 void IRAM_ATTR bno085_interrupt_handler(void *arg) {
     bno085_ctx_t *ctx = (bno085_ctx_t *) arg;
 
-    // Permit the sensor poller to run
-    if (ctx->sensor_poller_task_handle) {
-        vTaskNotifyGiveFromISR(ctx->sensor_poller_task_handle, 0);
-    }   
+    // Allow the consumer to unblock
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (xEventGroupSetBitsFromISR(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT, &xHigherPriorityTaskWoken) != pdFAIL) {
+        // Yield a context switch if needed
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
 }
 
 void sensor_poller_task(void *self) {
+    bno085_ctx_t *ctx = (bno085_ctx_t *) self;
+
     while (1) {
         // Wait until the interrupt happens
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        xEventGroupWaitBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT, pdTRUE, pdTRUE, portMAX_DELAY);
         sh2_service();
     }
 }
@@ -285,6 +169,13 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
     ctx->reset_pin = GPIO_NUM_NC;  // No reset pin configured by default
     ctx->interrupt_pin = GPIO_NUM_NC;  // no interrupt pin configured before initialized
 
+    // Create the event control (it could happen before the sensor_poller_task starts)
+    ctx->sensor_event_control = xEventGroupCreate();
+    if (ctx->sensor_event_control == NULL) {
+        ESP_LOGE(TAG, "Failed to create sensor_event_control");
+        return ESP_FAIL;
+    }
+
     // Configure Interrupt
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << interrupt_pin),
@@ -328,10 +219,10 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
 
 
     // Assign HAL functions
-    ctx->_HAL.open = i2c_open;
-    ctx->_HAL.close = i2c_close;
-    ctx->_HAL.read = i2c_read;
-    ctx->_HAL.write = i2c_write;
+    ctx->_HAL.open = bno085_hal_i2c_open;
+    ctx->_HAL.close = bno085_hal_i2c_close;
+    ctx->_HAL.read = bno085_hal_i2c_read;
+    ctx->_HAL.write = bno085_hal_i2c_write;
     ctx->_HAL.getTimeUs = get_time_us;
 
     
@@ -371,6 +262,12 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
         return ESP_FAIL;
     }
 
+
+    return ESP_OK;
+}
+
+
+esp_err_t bno085_init_spi(bno085_ctx_t *ctx) {
 
     return ESP_OK;
 }
