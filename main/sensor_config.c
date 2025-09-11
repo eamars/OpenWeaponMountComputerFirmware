@@ -21,7 +21,7 @@ const sensor_config_t sensor_config_default = {
 };
 
 
-extern bno085_ctx_t bno085_dev;
+extern bno085_ctx_t * bno085_dev;
 
 esp_err_t save_sensor_config() {
     esp_err_t err;
@@ -124,10 +124,10 @@ static void toggle_linear_acceleration_report(lv_event_t *e) {
     ESP_LOGI(TAG, "Linear Acceleration Report toggled: %s", *state ? "Enabled" : "Disabled");
 
     if (*state) {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
+        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
     }
     else {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, 0));
+        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
     }
 }
 

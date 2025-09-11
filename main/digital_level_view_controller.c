@@ -27,7 +27,7 @@ static EventGroupHandle_t sensor_task_control;
 float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
 float sensor_x_acceleration_thread_unsafe, sensor_y_acceleration_thread_unsafe, sensor_z_acceleration_thread_unsafe;
 
-extern bno085_ctx_t bno085_dev;
+extern bno085_ctx_t * bno085_dev;
 extern system_config_t system_config;
 extern digital_level_view_config_t digital_level_view_config;
 extern sensor_config_t sensor_config;
@@ -54,7 +54,7 @@ void unified_ensor_poller_task(void *p) {
         while (xEventGroupGetBits(sensor_task_control) & SENSOR_POLL_EVENT_RUN) {
             // Wait for watched sensor ids
             // Game rotation vectors
-            if (bno085_wait_for_game_rotation_vector_roll_pitch(&bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, false) == ESP_OK) {
+            if (bno085_wait_for_game_rotation_vector_roll_pitch(bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, false) == ESP_OK) {
                 // Roll is calculated based on the base measurement - screen rotation offset + user roll offset
                 float display_roll = get_relative_roll_angle_rad_thread_unsafe();
 
@@ -66,7 +66,7 @@ void unified_ensor_poller_task(void *p) {
             }
 
             // Linear acceleration
-            if (bno085_wait_for_linear_acceleration_report(&bno085_dev, &sensor_x_acceleration_thread_unsafe, &sensor_y_acceleration_thread_unsafe, &sensor_z_acceleration_thread_unsafe, false) == ESP_OK) {
+            if (bno085_wait_for_linear_acceleration_report(bno085_dev, &sensor_x_acceleration_thread_unsafe, &sensor_y_acceleration_thread_unsafe, &sensor_z_acceleration_thread_unsafe, false) == ESP_OK) {
                 // ESP_LOGI(TAG, "Digital Level View Controller Analysis: x=%.2f, y=%.2f, z=%.2f", sensor_x_acceleration_thread_unsafe, sensor_y_acceleration_thread_unsafe, sensor_z_acceleration_thread_unsafe);
                 float x_abs = fabsf(sensor_x_acceleration_thread_unsafe);
                 last_sensor_x_acceleration = sensor_x_acceleration_thread_unsafe;
@@ -130,16 +130,16 @@ esp_err_t digital_level_view_controller_init() {
 
     // Initialize sensor reports
     if (sensor_config.enable_game_rotation_vector_report) {
-        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
+        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
     }
     else {
-        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, 0));
+        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
     }
     if (sensor_config.enable_linear_acceleration_report) {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
+        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
     }
     else {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, 0));
+        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
     }
 
     return ESP_OK;

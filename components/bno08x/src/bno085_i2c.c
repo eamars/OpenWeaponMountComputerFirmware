@@ -1,17 +1,28 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "sh2_hal_i2c.h"
 #include "bno085.h"
-#include "driver/i2c_master.h"  
+#include "bno085_private.h"
+#include "driver/i2c_master.h"
+
 #include "esp_log.h"
 #include "esp_check.h"
 
+#include "sh2_err.h"
 
-#define TAG "BNO085_HAL_I2C"
+
+#define TAG "BNO085_I2C"
+#define BNO085_I2C_WRITE_TIMEOUT_MS 100
+#define BNO085_I2C_ADDRESS 0x4A // Default I2C address for BNO085
 
 
-int i2c_soft_reset(bno085_ctx_t *ctx) {
+int bno085_hal_i2c_open(sh2_Hal_t *self);
+void bno085_hal_i2c_close(sh2_Hal_t *self);
+int bno085_hal_i2c_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us);
+int bno085_hal_i2c_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len);
+
+
+int i2c_soft_reset(bno085_i2c_ctx_t *ctx) {
     ESP_LOGI(TAG, "Sending soft reset to BNO085");
     // Send softreset packet
     uint8_t softreset_pkt[] = {5, 0, 1, 0, 1};
@@ -38,7 +49,7 @@ int bno085_hal_i2c_open(sh2_Hal_t *self) {
     // ESP_LOGI(TAG, "i2c_open() called");
 
     // Cast self back to the context object
-    bno085_ctx_t * ctx = (bno085_ctx_t *) self;
+    bno085_i2c_ctx_t * ctx = (bno085_i2c_ctx_t *) self;
 
     // Send softreset packet
     int ret = i2c_soft_reset(ctx);
@@ -65,7 +76,7 @@ int bno085_hal_i2c_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_
     esp_err_t err;
 
     // Cast self back to the context object
-    bno085_ctx_t * ctx = (bno085_ctx_t *) self;
+    bno085_i2c_ctx_t * ctx = (bno085_i2c_ctx_t *) self;
 
     // Read header (4 bytes)
     uint8_t headers[4];
@@ -109,7 +120,7 @@ int bno085_hal_i2c_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
     // ESP_LOGI(TAG, "i2c_write() called");
 
     // Cast self back to the context object
-    bno085_ctx_t * ctx = (bno085_ctx_t *) self;
+    bno085_i2c_ctx_t * ctx = (bno085_i2c_ctx_t *) self;
 
     err = i2c_master_transmit(ctx->dev_handle, pBuffer, len, BNO085_I2C_WRITE_TIMEOUT_MS);
     if (err != ESP_OK) {
@@ -124,4 +135,46 @@ int bno085_hal_i2c_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
     // printf("\n");
 
     return len;
+}
+
+esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, gpio_num_t interrupt_pin) {
+    // Initialize configuration
+    ESP_RETURN_ON_ERROR(_bno085_ctx_init(&ctx->parent, interrupt_pin, GPIO_NUM_NC, GPIO_NUM_NC, GPIO_NUM_NC), TAG, "Failed to initialize ctx object");
+
+    // Configure I2C
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = BNO085_I2C_ADDRESS,
+        .scl_speed_hz = 400000,
+    };
+
+    // Send an probe command to verify if the device is available
+    int attempt = 5;
+    for (; attempt > 0; attempt -= 1) {
+        if (i2c_master_probe(i2c_bus_handle, BNO085_I2C_ADDRESS, BNO085_I2C_WRITE_TIMEOUT_MS) == ESP_OK) {
+            ESP_LOGI(TAG, "BNO085 i2c slave device detected");
+            break;
+        }
+        ESP_LOGW(TAG, "Retry in 10ms");
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (attempt == 0) {
+        ESP_LOGE(TAG, "Failed to detect BNO085 i2c slave device");
+        return ESP_FAIL;
+    }
+
+    // Add I2C slave to the master
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, &ctx->dev_handle));
+
+
+    // Assign HAL functions
+    ctx->parent._HAL.open = bno085_hal_i2c_open;
+    ctx->parent._HAL.close = bno085_hal_i2c_close;
+    ctx->parent._HAL.read = bno085_hal_i2c_read;
+    ctx->parent._HAL.write = bno085_hal_i2c_write;
+    
+    // Initialize SH2
+    ESP_RETURN_ON_ERROR(_bno085_sh2_init(&ctx->parent), TAG, "Failed to initialize SH2 Interface");
+
+    return ESP_OK;
 }

@@ -126,6 +126,13 @@
 
     #define BNO085_INT_PIN (GPIO_NUM_9)
 
+
+    // New settings for custom board
+    #define SPI3_HOST (SPI3_HOST)
+    #define SPI3_MISO (GPIO_NUM_3)
+    #define SPI3_MOSI (GPIO_NUM_2)
+    #define SPI3_SCLK (GPIO_NUM_4)
+
 #endif  // USE_LCD_CO5300
 
 #else

@@ -21,7 +21,7 @@
 static circular_buffer_t *accel_buffer = NULL;
 
 extern sensor_config_t sensor_config;
-extern bno085_ctx_t bno085_dev;
+extern bno085_ctx_t * bno085_dev;
 static TaskHandle_t acceleration_event_poller_task_handle;
 static EventGroupHandle_t sensor_task_control;
 
@@ -45,7 +45,7 @@ static void acceleration_event_poller_task(void *p) {
         // Block waiting for BNO085 acceleration event
         while (xEventGroupGetBits(sensor_task_control) & SENSOR_POLL_EVENT_RUN) {
             float x, y, z;
-            esp_err_t err = bno085_wait_for_linear_acceleration_report(&bno085_dev, &x, &y, &z, true);
+            esp_err_t err = bno085_wait_for_linear_acceleration_report(bno085_dev, &x, &y, &z, true);
 
             if (err == ESP_OK) {
                 // ESP_LOGI(TAG, "Acceleration Analysis: x=%.2f, y=%.2f, z=%.2f", x, y, z);

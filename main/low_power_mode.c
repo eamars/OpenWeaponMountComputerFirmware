@@ -22,7 +22,7 @@ extern lv_obj_t * last_tile;
 extern esp_lcd_panel_io_handle_t io_handle;
 extern lv_indev_t * lvgl_touch_handle;
 extern sensor_config_t sensor_config;
-extern bno085_ctx_t bno085_dev;
+extern bno085_ctx_t * bno085_dev;
 
 lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
 TaskHandle_t low_power_monitor_task_handle;
@@ -98,7 +98,7 @@ void sensor_stability_classifier_poller_task(void *p) {
 
     while (1) {
         uint8_t stability_classification = STABILITY_CLASSIFIER_UNKNOWN;
-        esp_err_t err = bno085_wait_for_stability_classification_report(&bno085_dev, &stability_classification, true);
+        esp_err_t err = bno085_wait_for_stability_classification_report(bno085_dev, &stability_classification, true);
 
         if (err == ESP_OK) {
             
@@ -135,7 +135,7 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     lv_obj_center(label);
 
     // Enable sensor stability classification report
-    ESP_ERROR_CHECK(bno085_enable_stability_classification_report(&bno085_dev, SENSOR_STABILITY_CLASSIFIER_REPORT_PERIOD_MS));
+    ESP_ERROR_CHECK(bno085_enable_stability_classification_report(bno085_dev, SENSOR_STABILITY_CLASSIFIER_REPORT_PERIOD_MS));
 
     // Create user event poller task
     BaseType_t rtos_return = xTaskCreate(
@@ -194,10 +194,10 @@ void enable_low_power_mode(bool enable) {
 
         // Lower the report period
         if (sensor_config.enable_game_rotation_vector_report) {
-            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, SENSOR_GAME_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS));
+            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS));
         }
         if (sensor_config.enable_linear_acceleration_report) {
-            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_LOW_POWER_MODE_REPORT_PERIOD_MS));
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_LOW_POWER_MODE_REPORT_PERIOD_MS));
         }
 
         // lvgl_port_stop();
@@ -214,10 +214,10 @@ void enable_low_power_mode(bool enable) {
 
         // Enable sensor report
         if (sensor_config.enable_game_rotation_vector_report) {
-            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(&bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
+            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
         }
         if (sensor_config.enable_linear_acceleration_report) {
-            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(&bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
         }
 
         // Additional actions to take when disabling low power mode

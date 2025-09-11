@@ -10,6 +10,8 @@
 #include "freertos/event_groups.h"
 
 #include "driver/i2c_master.h"  
+#include "driver/spi_master.h"
+
 #include "sh2.h"
 #include "sh2_SensorValue.h"
 
@@ -26,9 +28,6 @@
     #define BNO085_EVENT_QUEUE_DEPTH 1
 #endif  // BNO085_EVENT_QUEUE_DEPTH
 
-
-#define BNO085_HARD_RESET_DELAY_MS 1000
-#define BNO085_SOFT_RESET_DELAY_MS 300
 
 
 #define DEG_TO_RAD(deg) ((deg) * M_PI / 180.0f)
@@ -47,18 +46,29 @@ typedef struct {
     sensor_report_config_t enabled_sensor_report_list[SH2_MAX_SENSOR_EVENT_LEN];
     EventGroupHandle_t sensor_event_control;
 
-    // Implement specific atributes
-    i2c_master_dev_handle_t dev_handle;
-    int reset_pin;
-    int interrupt_pin;
-    
+    gpio_num_t interrupt_pin;
+    gpio_num_t reset_pin;
+    gpio_num_t boot_pin;
+    gpio_num_t ps0_wake_pin;
 } bno085_ctx_t;
 
 
-/**
- * @brief Perform a software reset 
- */
-int bno085_soft_reset(bno085_ctx_t *ctx);
+typedef struct {
+    bno085_ctx_t parent;
+
+    // I2C specific attributes
+    i2c_master_dev_handle_t dev_handle;
+} bno085_i2c_ctx_t;
+
+
+typedef struct {
+    bno085_ctx_t parent;
+
+    // SPI specific attributes
+    spi_device_handle_t dev_handle;
+    gpio_num_t spi_cs_pin;
+} bno085_spi_ctx_t;
+
 
 /**
  * @brief Initialize the BNO085 sensor using I2C communication
@@ -68,13 +78,13 @@ int bno085_soft_reset(bno085_ctx_t *ctx);
  * @param interrupt_pin GPIO pin for the interrupt.
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
-esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, int interrupt_pin);
+esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, gpio_num_t interrupt_pin);
 
 
 /**
  * @brief Initialize the BNO085 sensor using SPI communication
  */
-esp_err_t bno085_init_spi(bno085_ctx_t *ctx);
+esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, gpio_num_t spi_cs_pin, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin, gpio_num_t ps0_wake_pin);
 
 /**
  * @brief Enable BNO085 report.

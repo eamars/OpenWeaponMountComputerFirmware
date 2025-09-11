@@ -3,12 +3,10 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_task.h"
-
-#include "driver/gpio.h"
 #include "esp_timer.h"
+#include "driver/gpio.h"
 
 #include "bno085.h"
-#include "sh2_hal_i2c.h"
 #include "sh2_err.h"
 
 
@@ -21,6 +19,13 @@ float q_to_pitch_sf(float dqw, float dqx, float dqy, float dqz);
 float q_to_yaw_sf(float dqw, float dqx, float dqy, float dqz);
 
 
+esp_err_t _bno085_wait_for_interrupt(bno085_ctx_t *ctx) {
+    if (xEventGroupWaitBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT, pdTRUE, pdTRUE, pdMS_TO_TICKS(500)) == pdTRUE) {
+        return ESP_OK;
+    }
+    return ESP_ERR_TIMEOUT;
+}
+
 uint32_t get_time_us(sh2_Hal_t *self) {
     uint32_t time_us = esp_timer_get_time() & 0xFFFFFFFFul;
 
@@ -28,14 +33,18 @@ uint32_t get_time_us(sh2_Hal_t *self) {
 }
 
 
-static void disable_interrupt(bno085_ctx_t *ctx) {
+void _bno085_disable_interrupt(bno085_ctx_t *ctx) {
     if (ctx->interrupt_pin != GPIO_NUM_NC) {
+        // Clear event bit prior to the disable
+        xEventGroupClearBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT);
         gpio_intr_disable(ctx->interrupt_pin);
     }
 }
 
-static void enable_interrupt(bno085_ctx_t *ctx) {
+void _bno085_enable_interrupt(bno085_ctx_t *ctx) {
     if (ctx->interrupt_pin != GPIO_NUM_NC) {
+        // Clear event bit prior to the enable
+        xEventGroupClearBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT);
         gpio_intr_enable(ctx->interrupt_pin);
     }
 }
@@ -64,23 +73,6 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
 }
 
 
-void bno085_hard_reset(bno085_ctx_t *ctx) {
-    if (ctx->reset_pin != GPIO_NUM_NC) {
-        disable_interrupt(ctx);
-        gpio_set_level(ctx->reset_pin, 0);  // set to low (active low)
-        vTaskDelay(pdMS_TO_TICKS(BNO085_HARD_RESET_DELAY_MS));
-        gpio_set_level(ctx->reset_pin, 1);  // set to high
-        vTaskDelay(pdMS_TO_TICKS(BNO085_HARD_RESET_DELAY_MS));
-        enable_interrupt(ctx);
-
-        ESP_LOGI(TAG, "BNO085 Resetted");
-    }
-    else {
-        ESP_LOGI(TAG, "BNO085 Reset pin not configured, skipping hard reset");
-    }
-}
-
-
 /**
  * @brief Interrupt handler for the BNO085 sensor
  */
@@ -100,8 +92,9 @@ void sensor_poller_task(void *self) {
 
     while (1) {
         // Wait until the interrupt happens
-        xEventGroupWaitBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT, pdTRUE, pdTRUE, portMAX_DELAY);
-        sh2_service();
+        if (_bno085_wait_for_interrupt(ctx) == ESP_OK) {
+            sh2_service();
+        }
     }
 }
 
@@ -163,69 +156,94 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
 }
 
 
-esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, int interrupt_pin) {
-    // Initialize configuration
-    memset(ctx, 0x0, sizeof(bno085_ctx_t));
-    ctx->reset_pin = GPIO_NUM_NC;  // No reset pin configured by default
-    ctx->interrupt_pin = GPIO_NUM_NC;  // no interrupt pin configured before initialized
+esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin, gpio_num_t ps0_wake_pin) {
+    if (ctx == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
 
-    // Create the event control (it could happen before the sensor_poller_task starts)
+    // Initialize the context structure
+    memset(ctx, 0, sizeof(bno085_ctx_t));
+
+    // Reset all pin assignments
+    ctx->interrupt_pin = interrupt_pin;
+    ctx->reset_pin = reset_pin;
+    ctx->boot_pin = boot_pin;
+    ctx->ps0_wake_pin = ps0_wake_pin;
+
+    // Initialize the sensor event control
     ctx->sensor_event_control = xEventGroupCreate();
     if (ctx->sensor_event_control == NULL) {
         ESP_LOGE(TAG, "Failed to create sensor_event_control");
         return ESP_FAIL;
     }
 
-    // Configure Interrupt
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << interrupt_pin),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,  // enable internal pull up to avoid floating state during BNO085 chip reset
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_NEGEDGE, // Trigger on falling edge (active low)
-    };
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
+    // Configure interrupt
+    if (ctx->interrupt_pin != GPIO_NUM_NC) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << ctx->interrupt_pin),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,  // enable internal pull up to avoid floating state during BNO085 chip reset
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_NEGEDGE, // Trigger on falling edge (active low)
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
 
-    // Setup interrupt handler
-    ESP_ERROR_CHECK(gpio_isr_handler_add(interrupt_pin, bno085_interrupt_handler, (void *) ctx));
-
-    // Record
-    ctx->interrupt_pin = interrupt_pin;
-
-    // Configure I2C
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = BNO085_I2C_ADDRESS,
-        .scl_speed_hz = 400000,
-    };
-
-    // Send an probe command to verify if the device is available
-    int attempt = 5;
-    for (; attempt > 0; attempt -= 1) {
-        if (i2c_master_probe(i2c_bus_handle, BNO085_I2C_ADDRESS, BNO085_I2C_WRITE_TIMEOUT_MS) == ESP_OK) {
-            ESP_LOGI(TAG, "BNO085 i2c slave device detected");
-            break;
-        }
-        ESP_LOGW(TAG, "Retry in 10ms");
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-    if (attempt == 0) {
-        ESP_LOGE(TAG, "Failed to detect BNO085 i2c slave device");
-        return ESP_FAIL;
+        // Setup interrupt handler
+        ESP_ERROR_CHECK(gpio_isr_handler_add(ctx->interrupt_pin, bno085_interrupt_handler, (void *) ctx));
     }
 
-    // Add I2C slave to the master
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, &ctx->dev_handle));
+    // Configure reset pin
+    if (ctx->reset_pin != GPIO_NUM_NC) {
+        gpio_config_t io_conf = {
+            .intr_type = GPIO_INTR_DISABLE,
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = (1ULL << ctx->reset_pin),
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+
+        // Set reset pin to high
+        gpio_set_level(ctx->reset_pin, 1);
+    }
+
+    // Configure boot pin
+    if (ctx->boot_pin != GPIO_NUM_NC) {
+        gpio_config_t io_conf = {
+            .intr_type = GPIO_INTR_DISABLE,
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = (1ULL << ctx->boot_pin),
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+
+        // Set boot pin to high (normal mode)
+        gpio_set_level(ctx->boot_pin, 1);
+    }
+
+    // Configure ps0_wake pin
+    if (ctx->ps0_wake_pin != GPIO_NUM_NC) {
+        gpio_config_t io_conf = {
+            .intr_type = GPIO_INTR_DISABLE,
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = (1ULL << ctx->ps0_wake_pin),
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+
+        // NOTE: Do not configure the default value
+    }
+
+    return ESP_OK;
+}
 
 
-    // Assign HAL functions
-    ctx->_HAL.open = bno085_hal_i2c_open;
-    ctx->_HAL.close = bno085_hal_i2c_close;
-    ctx->_HAL.read = bno085_hal_i2c_read;
-    ctx->_HAL.write = bno085_hal_i2c_write;
+esp_err_t _bno085_sh2_init(bno085_ctx_t *ctx) {
     ctx->_HAL.getTimeUs = get_time_us;
 
-    
+    // Assume other HAL functions are already assigned
     // Open SH2 interface
     int status;
     status = sh2_open((sh2_Hal_t *) ctx, sh2_event_callback, (void *) ctx);
@@ -262,15 +280,9 @@ esp_err_t bno085_init_i2c(bno085_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_han
         return ESP_FAIL;
     }
 
-
     return ESP_OK;
 }
 
-
-esp_err_t bno085_init_spi(bno085_ctx_t *ctx) {
-
-    return ESP_OK;
-}
 
 esp_err_t bno085_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t interval_ms) {
     // look for a slot to save the config

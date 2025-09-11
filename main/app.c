@@ -34,7 +34,8 @@
 
 #define TAG "App"
 
-bno085_ctx_t bno085_dev;
+static bno085_i2c_ctx_t bno085_i2c_dev;
+bno085_ctx_t * bno085_dev;
 extern system_config_t system_config;
 extern sensor_config_t sensor_config;
 
@@ -88,6 +89,22 @@ i2c_master_bus_handle_t i2c_master_init() {
     return i2c_bus_handle;
 }
 
+
+esp_err_t spi3_master_init() {
+    spi_bus_config_t buscfg = {
+        .miso_io_num = SPI3_MISO,
+        .mosi_io_num = SPI3_MOSI,
+        .sclk_io_num = SPI3_SCLK,
+        .quadwp_io_num = GPIO_NUM_NC,
+        .quadhd_io_num = GPIO_NUM_NC,
+    };
+
+    // Initialize SPI3
+    ESP_ERROR_CHECK(spi_bus_initialize(SPI3_HOST,&buscfg, SPI_DMA_CH_AUTO));
+
+    return ESP_OK;
+}
+
 esp_err_t storage_init() {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -123,7 +140,8 @@ void app_main(void)
     ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
 
     // Initialize BNO085 sensor
-    ESP_ERROR_CHECK(bno085_init_i2c(&bno085_dev, i2c_bus_handle, BNO085_INT_PIN));
+    ESP_ERROR_CHECK(bno085_init_i2c(&bno085_i2c_dev, i2c_bus_handle, BNO085_INT_PIN));
+    bno085_dev = (bno085_ctx_t *) &bno085_i2c_dev;
 
     // Initialize LVGL
     lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
