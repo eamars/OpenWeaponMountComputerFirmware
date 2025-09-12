@@ -54,17 +54,89 @@ int bno085_hal_spi_open(sh2_Hal_t *self) {
         bno085_spi_hard_reset((bno085_ctx_t *) self);
     }
 
-
     return 0;
 } 
 void bno085_hal_spi_close(sh2_Hal_t *self) {
-
+    // do nothing
 }
 int bno085_hal_spi_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us) {
-    return 0;
+    bno085_spi_ctx_t * ctx = (bno085_spi_ctx_t *) self;
+    esp_err_t err;
+
+    uint8_t tx_headers[4] = {0};
+    uint8_t rx_headers[4] = {0};
+
+    spi_transaction_t transaction = {
+        .tx_buffer = tx_headers,
+        .length = sizeof(tx_headers) * 8,  // in bits
+
+        .rx_buffer = rx_headers,
+        .rxlength = sizeof(rx_headers) * 8, // in bits
+
+        .flags = 0,
+    };
+
+    err = spi_device_transmit(ctx->dev_handle, &transaction);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read headers: %s", esp_err_to_name(err));
+        return 0;
+    }
+
+    // Parse the return header to determine the packet size
+    uint16_t packet_size = ((uint16_t)rx_headers[0] + ((uint16_t)rx_headers[1] << 8)) & ~0x8000;
+
+    // Check the buffer size
+    if (len < packet_size) {
+        return 0;
+    }
+    else if (packet_size > 0) {
+        // Read remaining packet
+        transaction.tx_buffer = NULL;  // No MOSI for the reminder of the packet
+        transaction.length = packet_size * 8;
+
+        transaction.rx_buffer = pBuffer;
+        transaction.rxlength = packet_size * 8; // in bits
+
+        err = spi_device_transmit(ctx->dev_handle, &transaction);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to read packet: %s", esp_err_to_name(err));
+            return 0;
+        }
+
+        // ESP_LOGI(TAG, "spi_read() read %d bytes", packet_size);
+        // for (int i = 0; i < packet_size; i++) {
+        //     printf("%02x ", pBuffer[i]);
+        // }
+        // printf("\n");
+    }
+    else {
+        // No data
+    }
+    
+
+    return packet_size;
 }
 int bno085_hal_spi_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
-    return 0;
+    bno085_spi_ctx_t * ctx = (bno085_spi_ctx_t *) self;
+    esp_err_t err;
+
+    spi_transaction_t transaction = {
+        .tx_buffer = pBuffer,
+        .length = len * 8,  // in bits
+
+        .rx_buffer = NULL,
+        .rxlength = 0,
+
+        .flags = 0,
+    };
+
+    err = spi_device_transmit(ctx->dev_handle, &transaction);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write data: %s", esp_err_to_name(err));
+        return 0;
+    }
+
+    return len;
 }
 
 esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, gpio_num_t spi_cs_pin, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin, gpio_num_t ps0_wake_pin)
@@ -88,6 +160,7 @@ esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, gpio_num_t spi_cs_pin, gpio_num
         .command_bits = 0,
         .spics_io_num = ctx->spi_cs_pin,
         .queue_size = 5,
+        .mode = 0x3,    // CPOL=1, CPHA=1, MODE=SPI_MODE3
     };
 
     // Initialize the slave device
