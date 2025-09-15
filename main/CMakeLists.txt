@@ -9,14 +9,23 @@ set(ALL_DEPS
     nvs_flash
     esp_lcd_touch
     esp_lvgl_port
+    app_update
+
+    # 1.47" LCD display
+    esp_lcd_jd9853
+    esp_lcd_touch_axs5106
+
+    # 1.64" AMOLED display
+    esp_lcd_co5300
+    esp_lcd_touch_ft3168
 )
 
 
-if(IDF_TARGET STREQUAL "esp32c6")
-    list(APPEND ALL_DEPS "esp_lcd_jd9853" "esp_lcd_touch_axs5106" "nvs_flash")
-elseif (IDF_TARGET STREQUAL "esp32s3")
-    list(APPEND ALL_DEPS "esp_lcd_co5300" "esp_lcd_touch_ft3168" "esp_lcd_jd9853" "esp_lcd_touch_axs5106" "nvs_flash")
-endif()
+# if(IDF_TARGET STREQUAL "esp32c6")
+#     list(APPEND ALL_DEPS "esp_lcd_jd9853" "esp_lcd_touch_axs5106")
+# elseif (IDF_TARGET STREQUAL "esp32s3")
+#     list(APPEND ALL_DEPS "esp_lcd_co5300" "esp_lcd_touch_ft3168")
+# endif()
 
 idf_component_register(
     SRCS ${SRC_FILES}

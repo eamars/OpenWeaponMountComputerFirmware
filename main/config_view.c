@@ -6,7 +6,7 @@
 #include "digital_level_view.h"
 #include "system_config.h"
 #include "sensor_config.h"
-
+#include "about_config.h"
 
 #define TAG "ConfigView"
 
@@ -289,6 +289,7 @@ void create_config_view(lv_obj_t *parent) {
     create_system_config_view_config(config_menu, main_page);
     create_digital_level_view_config(config_menu, main_page);
     create_sensor_config_view_config(config_menu, main_page);
+    create_about_config_view_config(config_menu, main_page);
 
     lv_menu_set_page(config_menu, main_page);
 }
