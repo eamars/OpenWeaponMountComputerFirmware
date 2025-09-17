@@ -11,8 +11,13 @@
 #define TAG "ConfigView"
 
 lv_obj_t * config_menu;
+static lv_obj_t * parent_container;
 static lv_obj_t * msg_box;
 static lv_obj_t * msg_box_label;
+static lv_obj_t * status_bar;
+
+extern system_config_t system_config;
+
 
 lv_obj_t * create_menu_container_with_text(lv_obj_t * parent, const char * icon, const char * text) {
     lv_obj_t * container = lv_menu_cont_create(parent);
@@ -270,21 +275,94 @@ void update_info_msg_box(const char * text) {
     lv_obj_clear_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
 }
 
+void set_rotation_config_view(lv_display_rotation_t rotation) {
+    if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
+        // Parent container layout
+        lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_COLUMN);
+
+        // Set order of status bar and menu
+        lv_obj_move_to_index(status_bar, 0);
+
+        // Set size
+        lv_obj_set_width(status_bar, lv_pct(100));
+        lv_obj_set_height(status_bar, LV_SIZE_CONTENT);
+
+        // Status bar layout
+        lv_obj_set_flex_flow(status_bar, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(status_bar,
+            LV_FLEX_ALIGN_END,  // main axis (row) center
+            LV_FLEX_ALIGN_CENTER,  // cross axis center
+            LV_FLEX_ALIGN_CENTER); // track cross axis center
+
+    } else {
+        lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_ROW);
+
+        lv_obj_move_to_index(config_menu, 0);
+
+        lv_obj_set_height(status_bar, lv_pct(100));
+        lv_obj_set_width(status_bar, LV_SIZE_CONTENT);
+
+        lv_obj_set_flex_flow(status_bar, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(status_bar,
+            LV_FLEX_ALIGN_START,  // main axis (row) center
+            LV_FLEX_ALIGN_CENTER,  // cross axis center
+            LV_FLEX_ALIGN_CENTER); // track cross axis center
+    }
+}
+
+
+void config_view_rotation_event_callback(lv_event_t * e) {
+    set_rotation_config_view(system_config.rotation);
+}
+
 void create_config_view(lv_obj_t *parent) {
-    config_menu = lv_menu_create(parent);
+    // Create a parent container
+    parent_container = lv_obj_create(parent);
+    lv_obj_set_size(parent_container, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_pad_all(parent_container, 0, 0);
+    lv_obj_set_style_bg_opa(parent_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_scroll_dir(parent_container, LV_DIR_NONE);  // no scroll
+
+    // Create status bar
+    status_bar = lv_obj_create(parent_container);
+    lv_obj_set_style_pad_all(status_bar, 0, 0);
+    lv_obj_set_style_bg_color(status_bar, lv_color_darken(lv_color_white(), 20), 0);
+    lv_obj_set_style_border_width(status_bar, 0, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(status_bar, 0, LV_PART_MAIN);
+
+    // Set container attribute for status bar
+    lv_obj_set_scroll_dir(status_bar, LV_DIR_NONE);  // no scroll
+
+    // WiFi icon
+    lv_obj_t * wifi_icon = lv_label_create(status_bar);
+    lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
+
+    // Battery icon
+    lv_obj_t * battery_icon = lv_label_create(status_bar);
+    lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_FULL);
+
+
+    // Create menu item
+    config_menu = lv_menu_create(parent_container);
+    lv_obj_set_style_pad_all(config_menu, 0, 0);
+    lv_obj_set_flex_grow(config_menu, 1);
     lv_obj_set_size(config_menu, lv_pct(100), lv_pct(100));
     lv_obj_center(config_menu);
     lv_obj_set_style_bg_color(config_menu, lv_color_darken(lv_color_white(), 20), 0);
+    lv_menu_set_mode_header(config_menu, LV_MENU_HEADER_BOTTOM_FIXED);
 
     lv_obj_t * back_button = lv_menu_get_main_header_back_button(config_menu);
     lv_obj_t * back_button_label = lv_label_create(back_button);
     lv_label_set_text(back_button_label, "Back");
 
+    // Set overall layout based on rotation
+    set_rotation_config_view(system_config.rotation);
+
     // Create a messagebox for displaying information
     create_info_msg_box(parent);
 
     /*Create a main page*/
-    lv_obj_t * main_page = lv_menu_page_create(config_menu, "Settings");
+    lv_obj_t * main_page = lv_menu_page_create(config_menu, NULL);
 
     create_system_config_view_config(config_menu, main_page);
     create_digital_level_view_config(config_menu, main_page);
@@ -292,6 +370,9 @@ void create_config_view(lv_obj_t *parent) {
     create_about_config_view_config(config_menu, main_page);
 
     lv_menu_set_page(config_menu, main_page);
+
+    // Setup event callback handlers
+    lv_obj_add_event_cb(parent, config_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 }
 
 

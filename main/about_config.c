@@ -27,7 +27,7 @@ lv_obj_t * create_about_config_line_item(lv_obj_t * parent, const char * name, c
     lv_obj_set_width(container, lv_pct(100));  // extend to full width
     lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(container,
-                          LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
     
@@ -46,6 +46,8 @@ lv_obj_t * create_about_config_view_config(lv_obj_t *parent, lv_obj_t * parent_m
     create_about_config_line_item(sub_page_config_view, "Version", app_desc->version);
     create_about_config_line_item(sub_page_config_view, "ESP-IDF", app_desc->idf_ver);
     create_about_config_line_item(sub_page_config_view, "Build", app_desc->date);
+
+    lv_menu_separator_create(sub_page_config_view);
 
     // OTA information
     esp_partition_iterator_t it;
@@ -79,7 +81,7 @@ lv_obj_t * create_about_config_view_config(lv_obj_t *parent, lv_obj_t * parent_m
     lv_obj_t * label = lv_label_create(cont);
 
     // lv_image_set_src(img, LV_SYMBOL_SETTINGS);
-    lv_label_set_text(label, "System Config");
+    lv_label_set_text(label, "About");
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
     lv_obj_set_flex_grow(label, 1);
 
