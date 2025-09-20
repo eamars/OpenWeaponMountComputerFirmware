@@ -74,7 +74,7 @@ void low_power_monitor_task(void *p) {
             uint32_t idle_timeout_secs_ms = idle_timeout_to_secs(system_config.idle_timeout) * 1000;
             TickType_t current_tick = xTaskGetTickCount();
             uint32_t idle_duration_ms = pdTICKS_TO_MS(current_tick - last_activity_tick);
-            ESP_LOGI(TAG, "Idle duration: %d ms, threshold: %d ms", idle_duration_ms, idle_timeout_secs_ms);
+            // ESP_LOGI(TAG, "Idle duration: %d ms, threshold: %d ms", idle_duration_ms, idle_timeout_secs_ms);
 
             if (idle_duration_ms > idle_timeout_secs_ms) {
                 if (lvgl_port_lock(0)) {

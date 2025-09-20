@@ -7,6 +7,7 @@
 #include "system_config.h"
 #include "sensor_config.h"
 #include "about_config.h"
+#include "wifi_config.h"
 
 #define TAG "ConfigView"
 
@@ -52,6 +53,27 @@ lv_obj_t * create_menu_container_with_text(lv_obj_t * parent, const char * icon,
                           LV_FLEX_ALIGN_CENTER);
 
     return container;
+}
+
+lv_obj_t * create_config_label_static(lv_obj_t * parent, char * text) {
+    lv_obj_t * container = lv_menu_cont_create(parent);
+    // Expand the parent object with the size of content
+    lv_obj_set_height(container, LV_SIZE_CONTENT);
+
+    lv_obj_t * label = lv_label_create(container);
+    lv_label_set_text_static(label, text);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_flex_grow(label, 1);
+
+    lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_width(container, lv_pct(100));  // extend to full width
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(container,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+
+    return label;
 }
 
 
@@ -367,6 +389,8 @@ void create_config_view(lv_obj_t *parent) {
     create_system_config_view_config(config_menu, main_page);
     create_digital_level_view_config(config_menu, main_page);
     create_sensor_config_view_config(config_menu, main_page);
+    create_wifi_config_view_config(config_menu, main_page);
+
     create_about_config_view_config(config_menu, main_page);
 
     lv_menu_set_page(config_menu, main_page);

@@ -18,6 +18,12 @@ set(ALL_DEPS
     # 1.64" AMOLED display
     esp_lcd_co5300
     esp_lcd_touch_ft3168
+
+    # Wifi part
+    esp_wifi
+    wifi_provisioning
+    esp_event
+    esp_http_server
 )
 
 
