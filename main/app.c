@@ -31,7 +31,7 @@
 #include "system_config.h"
 #include "sensor_config.h"
 #include "bsp.h"
-#include "wifi_event.h"
+#include "wifi.h"
 #include "wifi_provision.h"
 
 #define TAG "App"
@@ -136,78 +136,8 @@ void app_main(void)
     ESP_ERROR_CHECK(load_system_config());
     ESP_ERROR_CHECK(load_sensor_config());
 
-    // Initialize WiFi stack
-    ESP_ERROR_CHECK(esp_netif_init());
-    // Register Wifi events
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_PROV_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(PROTOCOMM_SECURITY_SESSION_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
-
-    // Initialize Wifi including netif with default configuration
-    esp_netif_create_default_wifi_sta();
-    esp_netif_create_default_wifi_ap();
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    // Configure the provision manager
-    wifi_prov_mgr_config_t config = {
-        .wifi_prov_conn_cfg = {
-            .wifi_conn_attempts = 5,
-        },
-        .scheme = wifi_prov_scheme_softap,
-        .scheme_event_handler = WIFI_PROV_EVENT_HANDLER_NONE,
-    };
-    ESP_ERROR_CHECK(wifi_prov_mgr_init(config));
-
-    // Check if the provisioning is already done
-    bool is_provisioned = false;
-    ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&is_provisioned));
-
-    if (!is_provisioned) {
-        // Not provisioned, we will start the provisioning service
-        ESP_LOGI(TAG, "Starting WiFi SoftAP provisioning");
-
-        char * service_name = "PROV_OWMC";
-
-        /* What is the security level that we want (0, 1, 2):
-         *      - WIFI_PROV_SECURITY_0 is simply plain text communication.
-         *      - WIFI_PROV_SECURITY_1 is secure communication which consists of secure handshake
-         *          using X25519 key exchange and proof of possession (pop) and AES-CTR
-         *          for encryption/decryption of messages.
-         *      - WIFI_PROV_SECURITY_2 SRP6a based authentication and key exchange
-         *        + AES-GCM encryption/decryption of messages
-         */
-        wifi_prov_security_t security = WIFI_PROV_SECURITY_1;
-        const char * pop = "PROV_1234"; // Proof of possession for security level 1 and 2
-
-        /* This is the structure for passing security parameters
-         * for the protocomm security 1.
-         */
-        wifi_prov_security1_params_t *sec_params = pop;
-
-        const char *username  = NULL;
-        /* What is the service key (could be NULL)
-         * This translates to :
-         *     - Wi-Fi password when scheme is wifi_prov_scheme_softap
-         *          (Minimum expected length: 8, maximum 64 for WPA2-PSK)
-         *     - simply ignored when scheme is wifi_prov_scheme_ble
-         */
-        const char *service_key = NULL;
-
-        /* Start provisioning service */
-        ESP_ERROR_CHECK(wifi_prov_mgr_start_provisioning(security, (const void *) sec_params, service_name, service_key));
-
-        
-    }
-    else {
-        ESP_LOGI(TAG, "Already provisioned, starting WiFi STA");
-        // Already provisioned, we can start the WiFi directly
-        wifi_prov_mgr_deinit(); // Deinitialize the manager as we don't need it anymore
-
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-        ESP_ERROR_CHECK(esp_wifi_start());
-    }
+    // Initialize WiFi and related calls
+    ESP_ERROR_CHECK(wifi_init());
 
     // Initialize I2C
     i2c_master_bus_handle_t i2c_bus_handle = i2c_master_init();

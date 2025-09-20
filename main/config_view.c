@@ -243,6 +243,20 @@ lv_obj_t * create_save_reload_reset_buttons(lv_obj_t * container, lv_event_cb_t 
 }
 
 
+lv_obj_t * create_single_button(lv_obj_t * container, const char * icon, lv_event_cb_t event_cb) {
+    lv_obj_t * reset_provision_button = lv_btn_create(container);
+
+    // Save/reload Styling
+    // lv_obj_add_flag(reset_provision_button, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+    lv_obj_set_style_bg_image_src(reset_provision_button, icon, 0);
+    lv_obj_set_width(reset_provision_button, lv_pct(40));
+    lv_obj_set_height(reset_provision_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_add_event_cb(reset_provision_button, event_cb, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    return container;
+}
+
+
 static void on_switch_value_changed(lv_event_t *e) {
     lv_obj_t *sw = lv_event_get_target(e);
     bool *state = lv_event_get_user_data(e);
@@ -281,7 +295,9 @@ static void on_msg_box_ok_button_clicked(lv_event_t *e) {
 void create_info_msg_box(lv_obj_t *parent) {
     // Create a message box to be called by its content
     msg_box = lv_msgbox_create(parent);
-    lv_obj_set_size(msg_box, lv_pct(100), lv_pct(40));
+    lv_obj_set_width(msg_box, lv_pct(100));
+    lv_obj_set_height(msg_box, LV_SIZE_CONTENT);
+
     msg_box_label = lv_msgbox_add_text(msg_box, "This is a message box");
     lv_obj_t * btn = lv_msgbox_add_footer_button(msg_box, "OK");
     lv_obj_add_event_cb(btn, on_msg_box_ok_button_clicked, LV_EVENT_CLICKED, NULL);

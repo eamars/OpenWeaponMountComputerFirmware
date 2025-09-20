@@ -19,6 +19,7 @@ lv_obj_t * create_dropdown_list(lv_obj_t * container, const char * options, int3
 lv_obj_t * create_save_reload_reset_buttons(lv_obj_t * container, lv_event_cb_t save_event_cb, lv_event_cb_t reload_event_cb, lv_event_cb_t reset_event_cb);
 lv_obj_t * create_switch(lv_obj_t * container, bool * state, lv_event_cb_t event_cb);
 lv_obj_t * create_config_label_static(lv_obj_t * parent, char * text);
+lv_obj_t * create_single_button(lv_obj_t * container, const char * icon, lv_event_cb_t event_cb);
 
 void update_info_msg_box(const char * text);
 

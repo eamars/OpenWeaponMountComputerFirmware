@@ -1,4 +1,7 @@
+#include <string.h>
+
 #include "wifi_config.h"
+#include "wifi.h"
 
 #include "config_view.h"
 #include "wifi_provision.h"
@@ -7,10 +10,17 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
+#include "lvgl.h"
+
 #define TAG "WiFiConfig"
+#define PROV_QR_VERSION         "v1"
+#define PROV_TRANSPORT_SOFTAP   "softap"
 
 
+extern wifi_provision_state_t wifi_provision_state;
 static char wifi_status_str[64];
+static lv_obj_t * qr_msg_box;
+static lv_obj_t * qr_code;
 
 static void toggle_enable_wifi(lv_event_t *e) {
     lv_obj_t * sw = lv_event_get_target_obj(e);
@@ -24,17 +34,27 @@ static void on_reset_provision_button_pressed(lv_event_t * e) {
     update_info_msg_box("WiFi Provisioning reset. Please re-provision the device.");
 }
 
-lv_obj_t * create_reset_provision_button(lv_obj_t * container, lv_event_cb_t reset_provision_cb) {
-    lv_obj_t * reset_provision_button = lv_btn_create(container);
 
-    // Save/reload Styling
-    // lv_obj_add_flag(reset_provision_button, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-    lv_obj_set_style_bg_image_src(reset_provision_button, LV_SYMBOL_WARNING, 0);
-    lv_obj_set_width(reset_provision_button, lv_pct(40));
-    lv_obj_set_height(reset_provision_button, 36);  // TODO: Find a better way to read the height from other widgets
-    lv_obj_add_event_cb(reset_provision_button, reset_provision_cb, LV_EVENT_SINGLE_CLICKED, NULL);
 
-    return container;
+void on_qr_code_button_pressed(lv_event_t * e) {
+    // Configure QR code
+    char payload[150];
+    memset(payload, 0, sizeof(payload));
+
+
+    snprintf(payload, sizeof(payload), "{\"ver\":\"%s\",\"name\":\"%s\"" \
+                ",\"pop\":\"%s\",\"transport\":\"%s\"}",
+            PROV_QR_VERSION, wifi_provision_state.service_name, wifi_provision_state.pop, PROV_TRANSPORT_SOFTAP);
+    lv_qrcode_update(qr_code, payload, strlen(payload));
+
+    // Set display
+    lv_obj_clear_flag(qr_msg_box, LV_OBJ_FLAG_HIDDEN);
+}
+
+
+void on_qr_code_clicked(lv_event_t * e) {
+    // hide
+    lv_obj_add_flag(qr_msg_box, LV_OBJ_FLAG_HIDDEN);
 }
 
 
@@ -51,7 +71,38 @@ lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_m
 
     // Reset Wifi provision
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Reset Provision");
-    config_item = create_reset_provision_button(container, on_reset_provision_button_pressed);
+    config_item = create_single_button(container, LV_SYMBOL_WARNING, on_reset_provision_button_pressed);
+
+    // Create Wifi provision QR code
+    if (!wifi_provision_state.is_provisioned) {
+        lv_coord_t w = lv_obj_get_width(parent);
+        lv_coord_t h = lv_obj_get_height(parent);
+
+        // Create qr msg box
+        qr_msg_box = lv_msgbox_create(parent);
+        lv_obj_set_width(qr_msg_box, lv_pct(100));
+        lv_obj_set_height(qr_msg_box, lv_pct(100));
+        lv_obj_set_style_pad_all(qr_msg_box, 0, 0);
+        lv_obj_set_scroll_dir(qr_msg_box, LV_DIR_NONE);  // no scroll
+
+        qr_code = lv_qrcode_create(qr_msg_box);
+        lv_qrcode_set_size(qr_code, LV_MIN(w, h));
+        lv_obj_set_style_pad_all(qr_code, 0, 0);
+
+        lv_qrcode_set_dark_color(qr_code, lv_color_black());
+        lv_qrcode_set_light_color(qr_code, lv_color_white());
+
+        lv_obj_add_flag(qr_code, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(qr_code, on_qr_code_clicked, LV_EVENT_CLICKED, NULL);
+
+        // set hidden
+        lv_obj_add_flag(qr_msg_box, LV_OBJ_FLAG_HIDDEN);
+        
+        container = create_menu_container_with_text(sub_page_config_view, NULL, "Provision QR Code");
+        config_item = create_single_button(container, LV_SYMBOL_IMAGE, on_qr_code_button_pressed);
+    }
+
+
 
     // Wifi status label
     snprintf(wifi_status_str, sizeof(wifi_status_str), "Status: %s", "Disconnected");  // TODO: load actual wifi status
