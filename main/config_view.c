@@ -16,6 +16,8 @@ static lv_obj_t * parent_container;
 static lv_obj_t * msg_box;
 static lv_obj_t * msg_box_label;
 static lv_obj_t * status_bar;
+static lv_obj_t * status_bar_wireless_state;
+static lv_obj_t * status_bar_battery_state;
 
 extern system_config_t system_config;
 
@@ -363,8 +365,8 @@ void create_config_view(lv_obj_t *parent) {
 
     // Create status bar
     status_bar = lv_obj_create(parent_container);
-    lv_obj_set_style_pad_all(status_bar, 0, 0);
-    lv_obj_set_style_bg_color(status_bar, lv_color_darken(lv_color_white(), 20), 0);
+    lv_obj_set_style_pad_all(status_bar, 5, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(status_bar, lv_color_darken(lv_color_white(), 20), LV_PART_MAIN);
     lv_obj_set_style_border_width(status_bar, 0, LV_PART_MAIN);
     lv_obj_set_style_shadow_width(status_bar, 0, LV_PART_MAIN);
 
@@ -372,13 +374,12 @@ void create_config_view(lv_obj_t *parent) {
     lv_obj_set_scroll_dir(status_bar, LV_DIR_NONE);  // no scroll
 
     // WiFi icon
-    lv_obj_t * wifi_icon = lv_label_create(status_bar);
-    lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
+    status_bar_wireless_state = lv_label_create(status_bar);
+    update_status_bar_wireless_state(STATUS_BAR_WIRELESS_STATE_UNKNOWN);
 
     // Battery icon
-    lv_obj_t * battery_icon = lv_label_create(status_bar);
-    lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_FULL);
-
+    status_bar_battery_state = lv_label_create(status_bar);
+    update_status_bar_battery_level(101);  // FIXME: Currently set to power by USB
 
     // Create menu item
     config_menu = lv_menu_create(parent_container);
@@ -416,3 +417,49 @@ void create_config_view(lv_obj_t *parent) {
 }
 
 
+void update_status_bar_wireless_state(status_bar_wireless_state_t state) {
+    switch (state)
+    {
+        case STATUS_BAR_WIRELESS_STATE_UNKNOWN:
+            lv_label_set_text(status_bar_wireless_state, "");
+            break;
+
+        case STATUS_BAR_WIRELESS_STATE_NOT_PROVISIONED:
+            lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
+            break;
+
+        case STATUS_BAR_WIRELESS_STATE_PROVISIONING:
+            lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_SHUFFLE);
+            break;
+        case STATUS_BAR_WIRELESS_STATE_STA_CONNECTING:
+            lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_REFRESH);
+            break;
+        case STATUS_BAR_WIRELESS_STATE_STA_CONNECTED:
+            lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_WIFI);
+            break;
+        case STATUS_BAR_WIRELESS_STATE_STA_DISCONNECTED:
+            lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
+            break;
+        default:
+            break;
+    }
+}
+
+void update_status_bar_battery_level(int level_percentage) {
+    if (level_percentage < 0) {
+        // Unknown state
+        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_WARNING);
+    } else if (level_percentage < 10) {
+        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_BATTERY_EMPTY);
+    } else if (level_percentage < 40) {
+        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_BATTERY_1);
+    } else if (level_percentage < 70) {
+        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_BATTERY_2);
+    } else if (level_percentage < 90) {
+        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_BATTERY_3);
+    } else if (level_percentage <= 100) {
+        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_BATTERY_FULL);
+    } else {
+        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_USB);
+    }
+}

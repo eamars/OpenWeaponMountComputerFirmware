@@ -12,6 +12,8 @@
 #include "esp_event.h"
 #include "esp_random.h"
 
+#include "config_view.h"
+
 #define TAG "WiFiEvent"
 
 
@@ -27,13 +29,18 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
         switch (event_id)
         {
             case WIFI_EVENT_STA_START:
+                update_status_bar_wireless_state(STATUS_BAR_WIRELESS_STATE_STA_CONNECTING);
+
                 esp_wifi_connect();
                 break;
 
             case WIFI_EVENT_STA_DISCONNECTED:
                 ESP_LOGI(TAG, "Disconnected. Connecting to the AP again...");
+                update_status_bar_wireless_state(STATUS_BAR_WIRELESS_STATE_STA_CONNECTING);
+
                 esp_wifi_connect();
                 break;
+
             case WIFI_EVENT_AP_STACONNECTED:
                 ESP_LOGI(TAG, "SoftAP transport: Connected");
                 break;
@@ -53,6 +60,8 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
             {
                 ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
                 ESP_LOGI(TAG, "Connected with IP Address:" IPSTR, IP2STR(&event->ip_info.ip));
+                update_status_bar_wireless_state(STATUS_BAR_WIRELESS_STATE_STA_CONNECTED);
+
                 break;
             }
             default:
@@ -78,6 +87,8 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
 
 
 esp_err_t wifi_init() {
+    update_status_bar_wireless_state(STATUS_BAR_WIRELESS_STATE_UNKNOWN);
+
     // Initialize WiFi stack
     ESP_ERROR_CHECK(esp_netif_init());
     // Register Wifi events
@@ -108,20 +119,18 @@ esp_err_t wifi_init() {
     ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&wifi_provision_state.is_provisioned));
 
     if (!wifi_provision_state.is_provisioned) {
-        ESP_LOGI(TAG, "Starting WiFi SoftAP provisioning");
+        update_status_bar_wireless_state(STATUS_BAR_WIRELESS_STATE_NOT_PROVISIONED);
 
         // Generate service name based on MAC address
         uint8_t eth_mac[6];
         esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
-        snprintf(wifi_provision_state.service_name, sizeof(wifi_provision_state.service_name), "PROV_%02X%02X%02X", eth_mac[3], eth_mac[4], eth_mac[5]);
+        snprintf(wifi_provision_state.service_name, sizeof(wifi_provision_state.service_name), "OWMC_%02X%02X%02X", eth_mac[3], eth_mac[4], eth_mac[5]);
 
         // Generate POP randomly
         for (int i = 0; i < sizeof(wifi_provision_state.pop) - 1; i++) {
             wifi_provision_state.pop[i] = '0' + (esp_random() % 10);
         }
         wifi_provision_state.pop[sizeof(wifi_provision_state.pop) - 1] = '\0';
-
-        ESP_LOGI(TAG, "SoftAP SSID: %s, POP: %s", wifi_provision_state.service_name, wifi_provision_state.pop);
 
         // Start provisioning
         ESP_ERROR_CHECK(wifi_prov_mgr_start_provisioning(
@@ -132,6 +141,7 @@ esp_err_t wifi_init() {
 
     } else {
         ESP_LOGI(TAG, "Already provisioned, starting WiFi STA");
+
         // Already provisioned, we can start the WiFi directly
         wifi_prov_mgr_deinit(); // Deinitialize the manager as we don't need it anymore
 

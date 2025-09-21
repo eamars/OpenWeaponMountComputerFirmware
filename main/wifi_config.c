@@ -19,7 +19,7 @@
 
 extern wifi_provision_state_t wifi_provision_state;
 static char wifi_status_str[64];
-static lv_obj_t * qr_msg_box;
+static lv_obj_t * qr_container;
 static lv_obj_t * qr_code;
 
 static void toggle_enable_wifi(lv_event_t *e) {
@@ -37,10 +37,16 @@ static void on_reset_provision_button_pressed(lv_event_t * e) {
 
 
 void on_qr_code_button_pressed(lv_event_t * e) {
+    // Set QR Code size based on the condition
+    // Note: QR code has to be scaled before setting the data
+    lv_coord_t box_w = lv_obj_get_content_width(qr_container);
+    lv_coord_t box_h = lv_obj_get_content_height(qr_container);
+    ESP_LOGI(TAG, "QR container size: %d x %d", box_w, box_h);
+    lv_qrcode_set_size(qr_code, LV_MIN(box_w, box_h));  // leave some margin
+
     // Configure QR code
     char payload[150];
     memset(payload, 0, sizeof(payload));
-
 
     snprintf(payload, sizeof(payload), "{\"ver\":\"%s\",\"name\":\"%s\"" \
                 ",\"pop\":\"%s\",\"transport\":\"%s\"}",
@@ -48,13 +54,13 @@ void on_qr_code_button_pressed(lv_event_t * e) {
     lv_qrcode_update(qr_code, payload, strlen(payload));
 
     // Set display
-    lv_obj_clear_flag(qr_msg_box, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(qr_container, LV_OBJ_FLAG_HIDDEN);
 }
 
 
 void on_qr_code_clicked(lv_event_t * e) {
     // hide
-    lv_obj_add_flag(qr_msg_box, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(qr_container, LV_OBJ_FLAG_HIDDEN);
 }
 
 
@@ -73,36 +79,42 @@ lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_m
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Reset Provision");
     config_item = create_single_button(container, LV_SYMBOL_WARNING, on_reset_provision_button_pressed);
 
+    // Create qr msg box
+    qr_container = lv_obj_create(parent);
+    lv_obj_set_size(qr_container, lv_pct(100), lv_pct(100));
+
+    // Remove padding, border, and scroll to allow full expansion
+    lv_obj_set_style_pad_all(qr_container, 0, 0);
+    lv_obj_set_style_border_width(qr_container, 0, 0);
+    lv_obj_clear_flag(qr_container, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Enable flex so the child (QR) can expand
+    lv_obj_set_flex_flow(qr_container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(qr_container,
+                          LV_FLEX_ALIGN_CENTER,  /* main axis */
+                          LV_FLEX_ALIGN_CENTER,  /* cross axis */
+                          LV_FLEX_ALIGN_CENTER); /* track cross axis */
+
     // Create Wifi provision QR code
-    if (!wifi_provision_state.is_provisioned) {
-        lv_coord_t w = lv_obj_get_width(parent);
-        lv_coord_t h = lv_obj_get_height(parent);
+    qr_code = lv_qrcode_create(qr_container);
 
-        // Create qr msg box
-        qr_msg_box = lv_msgbox_create(parent);
-        lv_obj_set_width(qr_msg_box, lv_pct(100));
-        lv_obj_set_height(qr_msg_box, lv_pct(100));
-        lv_obj_set_style_pad_all(qr_msg_box, 0, 0);
-        lv_obj_set_scroll_dir(qr_msg_box, LV_DIR_NONE);  // no scroll
+    lv_color_t bg_color = lv_color_darken(lv_color_white(), 0);
+    lv_color_t fg_color = lv_color_darken(lv_color_black(), 0);
 
-        qr_code = lv_qrcode_create(qr_msg_box);
-        lv_qrcode_set_size(qr_code, LV_MIN(w, h));
-        lv_obj_set_style_pad_all(qr_code, 0, 0);
+    lv_qrcode_set_dark_color(qr_code, fg_color);
+    lv_qrcode_set_light_color(qr_code, bg_color);
 
-        lv_qrcode_set_dark_color(qr_code, lv_color_black());
-        lv_qrcode_set_light_color(qr_code, lv_color_white());
+    lv_obj_set_style_border_color(qr_code, bg_color, 0);
+    lv_obj_set_style_border_width(qr_code, 5, 0);
 
-        lv_obj_add_flag(qr_code, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(qr_code, on_qr_code_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(qr_code, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(qr_code, on_qr_code_clicked, LV_EVENT_CLICKED, NULL);
 
-        // set hidden
-        lv_obj_add_flag(qr_msg_box, LV_OBJ_FLAG_HIDDEN);
-        
-        container = create_menu_container_with_text(sub_page_config_view, NULL, "Provision QR Code");
-        config_item = create_single_button(container, LV_SYMBOL_IMAGE, on_qr_code_button_pressed);
-    }
-
-
+    // set hidden
+    lv_obj_add_flag(qr_container, LV_OBJ_FLAG_HIDDEN);
+    
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Provision QR Code");
+    config_item = create_single_button(container, LV_SYMBOL_IMAGE, on_qr_code_button_pressed);
 
     // Wifi status label
     snprintf(wifi_status_str, sizeof(wifi_status_str), "Status: %s", "Disconnected");  // TODO: load actual wifi status

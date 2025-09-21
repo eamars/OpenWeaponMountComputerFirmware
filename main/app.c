@@ -136,9 +136,6 @@ void app_main(void)
     ESP_ERROR_CHECK(load_system_config());
     ESP_ERROR_CHECK(load_sensor_config());
 
-    // Initialize WiFi and related calls
-    ESP_ERROR_CHECK(wifi_init());
-
     // Initialize I2C
     i2c_master_bus_handle_t i2c_bus_handle = i2c_master_init();
     
@@ -205,4 +202,7 @@ void app_main(void)
         lv_display_set_rotation(lvgl_disp, system_config.rotation);
         lvgl_port_unlock();
     }
+
+    // Initialize WiFi and related calls
+    ESP_ERROR_CHECK(wifi_init());
 }

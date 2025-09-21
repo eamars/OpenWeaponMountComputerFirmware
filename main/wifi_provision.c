@@ -5,6 +5,8 @@
 #include "esp_log.h"
 #include "esp_err.h"
 
+#include "config_view.h"
+
 #define TAG "WiFiProvision"
 
 void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data) {
@@ -12,6 +14,8 @@ void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data)
     {
     case WIFI_PROV_START:
         ESP_LOGI(TAG, "Provisioning started");
+        update_status_bar_wireless_state(STATUS_BAR_WIRELESS_STATE_PROVISIONING);
+
         break;
     case WIFI_PROV_CRED_RECV: {
         wifi_sta_config_t *wifi_sta_cfg = (wifi_sta_config_t *) event_data;
@@ -28,6 +32,8 @@ void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data)
                     "\n\tPlease reset to factory and retry provisioning",
                     (*reason == WIFI_PROV_STA_AUTH_ERROR) ?
                     "Wi-Fi station authentication failed" : "Wi-Fi access-point not found");
+        update_status_bar_wireless_state(STATUS_BAR_WIRELESS_STATE_NOT_PROVISIONED);
+
         break;
     }
     case WIFI_PROV_CRED_SUCCESS:
