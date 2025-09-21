@@ -25,7 +25,6 @@ typedef enum {
 extern system_config_t system_config;
 extern lv_obj_t * tile_low_power_mode_view;
 extern lv_obj_t * main_tileview;
-extern lv_obj_t * last_tile;
 extern esp_lcd_panel_io_handle_t io_handle;
 extern lv_indev_t * lvgl_touch_handle;
 extern sensor_config_t sensor_config;
@@ -36,6 +35,7 @@ TaskHandle_t low_power_monitor_task_handle;
 TaskHandle_t sensor_stability_classifier_poller_task_handle;
 TickType_t last_activity_tick = 0;
 static EventGroupHandle_t low_power_control_event;
+static lv_obj_t * last_tile = NULL;  // last tile before entering the low power mode
 
 void IRAM_ATTR update_low_power_mode_last_activity_event() {
     last_activity_tick = xTaskGetTickCount();
@@ -86,7 +86,10 @@ void low_power_monitor_task(void *p) {
 
             if (idle_duration_ms > idle_timeout_secs_ms) {
                 if (lvgl_port_lock(0)) {
-                    
+                    // Record the last tile
+                    last_tile = lv_tileview_get_tile_active(main_tileview);
+
+                    // Shift to low power tileview
                     lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
                     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
                     lvgl_port_unlock();

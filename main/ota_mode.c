@@ -12,7 +12,6 @@ static lv_obj_t * progress_bar;
 
 extern lv_obj_t * tile_ota_mode_view;
 extern lv_obj_t * main_tileview;
-extern lv_obj_t * last_tile;
 extern lv_obj_t * default_tile;
 
 void create_ota_mode_view(lv_obj_t * parent) {

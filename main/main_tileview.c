@@ -25,12 +25,7 @@ lv_obj_t * tile_low_power_mode_view = NULL;
 lv_obj_t * tile_ota_mode_view = NULL;
 
 lv_obj_t * default_tile = NULL;
-lv_obj_t * last_tile = NULL;
 
-
-lv_obj_t * get_last_tile() {
-    return last_tile;
-}
 
 void tile_change_callback(lv_event_t * e) {
     // Store the previous tile to determine the switch event
@@ -51,10 +46,7 @@ void tile_change_callback(lv_event_t * e) {
             }
         }
         
-        ESP_LOGI(TAG, "Active tile: %p", active_tile);
-
         // Record the last tile
-        last_tile = previous_tile;
         previous_tile = active_tile;
 
         // Run the callback to enable the current view
@@ -100,16 +92,6 @@ void create_main_tileview(lv_obj_t *parent)
     // Add callback to the scroll event
     lv_obj_add_event_cb(main_tileview, tile_change_callback, LV_EVENT_VALUE_CHANGED, NULL);
 
-    // Tiles at column 0 are reserved for control purposes
-    tile_low_power_mode_view = lv_tileview_add_tile(main_tileview, 0, 0, LV_DIR_NONE);  // The tile can only be entered automatically
-    lv_obj_set_user_data(tile_low_power_mode_view, enable_low_power_mode);  // Use enter and exit code to activate and deactivate the low power mode
-    create_low_power_mode_view(tile_low_power_mode_view);
-
-    // 0, 1 for OTA mode
-    tile_ota_mode_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_NONE);  // The tile can only be entered automatically
-    lv_obj_set_user_data(tile_ota_mode_view, enter_ota_mode);  // Use enter and exit code to activate and deactivate the low power mode
-    create_ota_mode_view(tile_ota_mode_view);
-
     // Timer config view (swiped up from digital level view)
     lv_obj_t * tile_countdown_timer_config_view = lv_tileview_add_tile(main_tileview, 2, 0, LV_DIR_BOTTOM);
     lv_obj_set_user_data(tile_countdown_timer_config_view, enable_countdown_timer_config_view);
@@ -135,6 +117,17 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_t * tile_acceleration_analysis_view = lv_tileview_add_tile(main_tileview, 4, 1, LV_DIR_HOR);
     lv_obj_set_user_data(tile_acceleration_analysis_view, enable_acceleration_analysis_view);
     create_acceleration_analysis_view(tile_acceleration_analysis_view);
+
+
+    // Tiles at column 0 are reserved for control purposes
+    tile_low_power_mode_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_NONE);  // The tile can only be entered automatically
+    lv_obj_set_user_data(tile_low_power_mode_view, enable_low_power_mode);  // Use enter and exit code to activate and deactivate the low power mode
+    create_low_power_mode_view(tile_low_power_mode_view);
+
+    // 0, 1 for OTA mode
+    tile_ota_mode_view = lv_tileview_add_tile(main_tileview, 0, 0, LV_DIR_NONE);  // The tile can only be entered automatically
+    lv_obj_set_user_data(tile_ota_mode_view, enter_ota_mode);  // Use enter and exit code to activate and deactivate the low power mode
+    create_ota_mode_view(tile_ota_mode_view);
 
     // Switch to the default view
     default_tile = tile_digital_level_view;

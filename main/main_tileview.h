@@ -6,6 +6,4 @@
 
 void create_main_tileview(lv_obj_t *parent);
 
-lv_obj_t * get_last_tile();
-
 #endif // MAIN_TILEVIEW_H
