@@ -12,7 +12,7 @@
 #include "bno085.h"
 #include "system_config.h"
 #include "low_power_mode.h"
-
+#include "ota_mode.h"
 
 #define TAG "MainTileView"
 
@@ -22,7 +22,9 @@ typedef void (*tile_update_enable_cb_t) (bool);
 
 lv_obj_t * main_tileview = NULL;
 lv_obj_t * tile_low_power_mode_view = NULL;
+lv_obj_t * tile_ota_mode_view = NULL;
 
+lv_obj_t * default_tile = NULL;
 lv_obj_t * last_tile = NULL;
 
 
@@ -103,6 +105,11 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_set_user_data(tile_low_power_mode_view, enable_low_power_mode);  // Use enter and exit code to activate and deactivate the low power mode
     create_low_power_mode_view(tile_low_power_mode_view);
 
+    // 0, 1 for OTA mode
+    tile_ota_mode_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_NONE);  // The tile can only be entered automatically
+    lv_obj_set_user_data(tile_ota_mode_view, enter_ota_mode);  // Use enter and exit code to activate and deactivate the low power mode
+    create_ota_mode_view(tile_ota_mode_view);
+
     // Timer config view (swiped up from digital level view)
     lv_obj_t * tile_countdown_timer_config_view = lv_tileview_add_tile(main_tileview, 2, 0, LV_DIR_BOTTOM);
     lv_obj_set_user_data(tile_countdown_timer_config_view, enable_countdown_timer_config_view);
@@ -130,9 +137,8 @@ void create_main_tileview(lv_obj_t *parent)
     create_acceleration_analysis_view(tile_acceleration_analysis_view);
 
     // Switch to the default view
-    lv_tileview_set_tile(main_tileview, tile_digital_level_view, LV_ANIM_OFF);
-    // lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
-    // lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
+    default_tile = tile_digital_level_view;
+    lv_tileview_set_tile(main_tileview, default_tile, LV_ANIM_OFF);
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 
     lv_obj_add_event_cb(main_tileview, main_tile_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);

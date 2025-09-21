@@ -1,13 +1,13 @@
 #include "circular_buffer.h"
 #include "esp_heap_caps.h"
-
+#include "app_cfg.h"
 
 
 circular_buffer_t * circular_buffer_create(size_t size) {
-    circular_buffer_t * cb = heap_caps_calloc(1, sizeof(circular_buffer_t), MALLOC_CAP_DEFAULT);
+    circular_buffer_t * cb = heap_caps_calloc(1, sizeof(circular_buffer_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
     if (!cb) return NULL;
 
-    cb->buffer_ptr = heap_caps_calloc(size, sizeof(float), MALLOC_CAP_DEFAULT);
+    cb->buffer_ptr = heap_caps_calloc(size, sizeof(float), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
     if (!cb->buffer_ptr) {
         free(cb);
         return NULL;

@@ -12,7 +12,7 @@
 #define TAG "SensorConfig"
 #define NVS_NAMESPACE "SEC"
 
-sensor_config_t sensor_config;
+HEAPS_CAPS_ATTR sensor_config_t sensor_config;
 const sensor_config_t sensor_config_default = {
     .recoil_acceleration_trigger_level = 10,
     .trigger_edge = TRIGGER_RISING_EDGE,

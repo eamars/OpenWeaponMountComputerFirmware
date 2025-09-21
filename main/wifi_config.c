@@ -12,13 +12,15 @@
 
 #include "lvgl.h"
 
+#include "app_cfg.h"
+
 #define TAG "WiFiConfig"
 #define PROV_QR_VERSION         "v1"
 #define PROV_TRANSPORT_SOFTAP   "softap"
 
 
 extern wifi_provision_state_t wifi_provision_state;
-static char wifi_status_str[64];
+HEAPS_CAPS_ATTR static char wifi_status_str[64];
 static lv_obj_t * qr_container;
 static lv_obj_t * qr_code;
 

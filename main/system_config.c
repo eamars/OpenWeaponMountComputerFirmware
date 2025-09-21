@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "nvs.h"
 #include "config_view.h"
+#include "app_cfg.h"
 
 #include "common.h"
 
@@ -10,7 +11,7 @@
 #define NVS_NAMESPACE "SC"
 
 
-system_config_t system_config;
+HEAPS_CAPS_ATTR system_config_t system_config;
 const system_config_t system_config_default = {
     .rotation = LV_DISPLAY_ROTATION_0,      // LV_DISPLAY_ROTATION_0, LV_DISPLAY_ROTATION_90, LV_DISPLAY_ROTATION_180, LV_DISPLAY_ROTATION_270
     .idle_timeout = IDLE_TIMEOUT_5_MIN,

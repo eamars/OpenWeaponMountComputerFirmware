@@ -36,7 +36,6 @@
 
 #define TAG "App"
 
-static bno085_i2c_ctx_t bno085_i2c_dev;
 bno085_ctx_t * bno085_dev;
 extern system_config_t system_config;
 extern sensor_config_t sensor_config;
@@ -144,8 +143,13 @@ void app_main(void)
     ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
 
     // Initialize BNO085 sensor
-    ESP_ERROR_CHECK(bno085_init_i2c(&bno085_i2c_dev, i2c_bus_handle, BNO085_INT_PIN));
-    bno085_dev = (bno085_ctx_t *) &bno085_i2c_dev;
+    bno085_i2c_ctx_t * bno085_i2c_dev = heap_caps_malloc(sizeof(bno085_i2c_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+    if (bno085_i2c_dev == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for BNO085 I2C device");
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
+    ESP_ERROR_CHECK(bno085_init_i2c(bno085_i2c_dev, i2c_bus_handle, BNO085_INT_PIN));
+    bno085_dev = (bno085_ctx_t *) bno085_i2c_dev;
 
     // Initialize LVGL
     lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();

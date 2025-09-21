@@ -6,9 +6,16 @@
 #include "driver/spi_master.h"
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
+#include "esp_heap_caps.h"
 
 
 #if CONFIG_IDF_TARGET_ESP32C6
+    // By default the memory will be allocated to internal RAM
+    #define HEAPS_CAPS_ALLOC_DEFAULT_FLAGS MALLOC_CAP_DEFAULT
+
+    // By default the heaps static memory will be allocated to internal RAM (no attribute)
+    #define HEAPS_CAPS_ATTR
+
     #define USE_LCD_JD9853 1  // Use JD9853 LCD module https://www.waveshare.com/product/displays/lcd-oled/lcd-oled-3/1.47inch-touch-lcd.htm
     #define USE_TOUCH_AXS5106 1 // Use AXS5106 touch controller
 
@@ -47,8 +54,15 @@
     #define DISP_PANEL_V_GAP (0)  // Vertical gap for display panel
 
     #define BNO085_INT_PIN (GPIO_NUM_9)
+    
 
 #elif CONFIG_IDF_TARGET_ESP32S3
+    // By default the memory will be allocated to PSRAM
+    #define HEAPS_CAPS_ALLOC_DEFAULT_FLAGS MALLOC_CAP_SPIRAM
+
+    // By default the heaps static memory will be allocated to PSRAM
+    #define HEAPS_CAPS_ATTR EXT_RAM_BSS_ATTR
+
     #define USE_LCD_JD9853 1  // Use JD9853 LCD module https://www.waveshare.com/product/displays/lcd-oled/lcd-oled-3/1.47inch-touch-lcd.htm
     #define USE_TOUCH_AXS5106 1 // Use AXS5106 touch controller
 

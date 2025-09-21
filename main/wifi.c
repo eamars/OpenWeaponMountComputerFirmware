@@ -1,5 +1,5 @@
 #include "freertos/FreeRTOS.h"
-// #include "freertos/event_groups.h"
+#include "freertos/event_groups.h"
 
 #include "wifi.h"
 #include "wifi_provision.h"
@@ -87,6 +87,12 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
 
 
 esp_err_t wifi_init() {
+    wifi_event_group = xEventGroupCreate();
+    if (wifi_event_group == NULL) {
+        ESP_LOGE(TAG, "Failed to create event group");
+        return ESP_FAIL;
+    }
+    
     update_status_bar_wireless_state(STATUS_BAR_WIRELESS_STATE_UNKNOWN);
 
     // Initialize WiFi stack

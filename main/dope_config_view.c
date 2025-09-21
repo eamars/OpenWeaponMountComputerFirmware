@@ -5,6 +5,7 @@
 #include "nvs.h"
 #include "system_config.h"
 #include "common.h"
+#include "app_cfg.h"
 
 #define TAG "DopeConfigView"
 #define DOPE_CONFIG_NAMESPACE "DOPE"
@@ -394,7 +395,8 @@ void create_dope_config_msgbox(lv_obj_t * parent) {
 
 void create_dope_config_view(lv_obj_t * parent) {
     // Allocate memory for dope data
-    all_dope_data = heap_caps_calloc(DOPE_CONFIG_MAX_DOPE_ITEM, sizeof(dope_data_t), MALLOC_CAP_DEFAULT);
+    all_dope_data = heap_caps_calloc(DOPE_CONFIG_MAX_DOPE_ITEM, sizeof(dope_data_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+
     if (!all_dope_data) {
         ESP_LOGE(TAG, "Failed to allocate memory for dope data");
         ESP_ERROR_CHECK(ESP_FAIL);

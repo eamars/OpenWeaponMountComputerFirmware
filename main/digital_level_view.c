@@ -28,7 +28,7 @@
 
 
 
-digital_level_view_config_t digital_level_view_config;
+HEAPS_CAPS_ATTR digital_level_view_config_t digital_level_view_config;
 const digital_level_view_config_t digital_level_view_config_default = {
     .roll_display_gain = 1.0f,
     .pitch_display_gain = 0.1f, // Default gain of 1/10
@@ -49,7 +49,7 @@ static lv_obj_t * parent_container = NULL;
 static lv_obj_t * overlay_container = NULL;
 
 extern system_config_t system_config;
-countdown_timer_t countdown_timer;
+HEAPS_CAPS_ATTR countdown_timer_t countdown_timer;
 digital_level_view_t * current_digital_level_view;
 
 extern digital_level_view_t digital_level_view_type_1_context;
