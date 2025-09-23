@@ -251,14 +251,18 @@ static void wifi_provision_timeout_cb(TimerHandle_t timer) {
 esp_err_t wifi_init() {
     // Load configuration
     ESP_ERROR_CHECK(load_wifi_user_config());
-
-    wifi_user_config.wifi_expiry_timeout_s = 40;
-
+    
     // Create event group if not previously created
     ESP_ERROR_CHECK(create_wireless_event_group());
     // Set initial state
     wireless_state = WIRELESS_STATE_NOT_PROVISIONED;
     status_bar_update_wireless_state(wireless_state);
+
+    // Generate service name based on MAC address
+    uint8_t eth_mac[6];
+    esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
+    snprintf(wifi_provision_state.service_name, sizeof(wifi_provision_state.service_name), "OWMC_%02X%02X%02X", eth_mac[3], eth_mac[4], eth_mac[5]);
+
 
     // Initialize WiFi stack
     ESP_ERROR_CHECK(esp_netif_init());
@@ -269,8 +273,11 @@ esp_err_t wifi_init() {
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
 
     // Initialize Wifi including netif with default configuration
-    esp_netif_create_default_wifi_sta();
+    esp_netif_t *netif = esp_netif_create_default_wifi_sta();
+    ESP_ERROR_CHECK(esp_netif_set_hostname(netif, wifi_provision_state.service_name));
+
     esp_netif_create_default_wifi_ap();
+
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 

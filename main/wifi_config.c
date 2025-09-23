@@ -25,6 +25,20 @@ HEAPS_CAPS_ATTR static char wifi_status_str[64];
 static lv_obj_t * qr_container;
 static lv_obj_t * qr_code;
 static lv_obj_t * reset_provision_button;
+static lv_obj_t * wifi_status_label = NULL;
+
+
+void wifi_config_update_status(const char * state_str) {
+    if (wifi_status_label) {
+        snprintf(wifi_status_str, sizeof(wifi_status_str), "Status: %s", state_str);
+
+        // Force redraw
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text_static(wifi_status_label, wifi_status_str);
+            lvgl_port_unlock();
+        }
+    }
+}
 
 
 static void toggle_enable_wifi(lv_event_t *e) {
@@ -77,11 +91,10 @@ void wifi_config_disable_provision_interface(wireless_state_e reason) {
         lv_obj_delete(qr_code);
         qr_code = NULL;
 
-        // Disable the button to reset provisioning state
-        lv_obj_add_state(reset_provision_button, LV_STATE_DISABLED);
-
-
         if (reason == WIRELESS_STATE_PROVISION_EXPIRE) {
+            // Disable the button to reset provisioning state
+            lv_obj_add_state(reset_provision_button, LV_STATE_DISABLED);
+
             lv_obj_t * reason_label = lv_label_create(qr_container);
             lv_obj_set_width(reason_label, lv_pct(80));
             lv_label_set_long_mode(reason_label, LV_LABEL_LONG_MODE_WRAP);
@@ -110,6 +123,11 @@ lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_m
     lv_obj_t * config_item;
 
     lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
+
+    // Wifi status label
+    snprintf(wifi_status_str, sizeof(wifi_status_str), "Status: %s", "Disconnected");  // TODO: load actual wifi status
+    wifi_status_label = create_config_label_static(sub_page_config_view, wifi_status_str);
+
 
     // Enable Wifi
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Enable WiFi");
@@ -156,10 +174,6 @@ lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_m
     
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Provision QR Code");
     config_item = create_single_button(container, LV_SYMBOL_IMAGE, on_qr_code_button_pressed);
-
-    // Wifi status label
-    snprintf(wifi_status_str, sizeof(wifi_status_str), "Status: %s", "Disconnected");  // TODO: load actual wifi status
-    lv_obj_t * wifi_status_label = create_config_label_static(sub_page_config_view, wifi_status_str);
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);

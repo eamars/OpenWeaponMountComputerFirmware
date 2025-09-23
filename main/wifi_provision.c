@@ -10,6 +10,8 @@
 
 #include "config_view.h"
 #include "wifi.h"
+#include "wifi_config.h"
+
 
 #define TAG "WiFiProvision"
 
@@ -96,11 +98,6 @@ void wifi_provision_reset() {
 
 
 void wifi_provision_init() {
-    // Generate service name based on MAC address
-    uint8_t eth_mac[6];
-    esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
-    snprintf(wifi_provision_state.service_name, sizeof(wifi_provision_state.service_name), "OWMC_%02X%02X%02X", eth_mac[3], eth_mac[4], eth_mac[5]);
-
     // Generate POP randomly
     for (int i = 0; i < sizeof(wifi_provision_state.pop) - 1; i++) {
         wifi_provision_state.pop[i] = '0' + (esp_random() % 10);

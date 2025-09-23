@@ -424,30 +424,39 @@ void status_bar_update_wireless_state(wireless_state_e state) {
         {
             case WIRELESS_STATE_NOT_PROVISIONED:
                 lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
+                wifi_config_update_status("not provisioned");
                 break;
             case WIRELESS_STATE_PROVISIONING:
                 lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_SHUFFLE);
+                wifi_config_update_status("provisioning");
                 break;
             case WIRELESS_STATE_PROVISION_FAILED:
                 lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_WARNING);
+                wifi_config_update_status("provision failed");
                 break;
             case WIRELESS_STATE_PROVISION_EXPIRE:
                 lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_CLOSE);
+                wifi_config_update_status("provision expired");
                 break;
             case WIRELESS_STATE_NOT_CONNECTED:
                 lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
+                wifi_config_update_status("not connected");
                 break;
             case WIRELESS_STATE_CONNECTING:
                 lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
+                wifi_config_update_status("connecting");
                 break;
             case WIRELESS_STATE_CONNECTED:
                 lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_WIFI);
+                wifi_config_update_status("connected");
                 break;
             case WIRELESS_STATE_DISCONNECTED:
                 lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
+                wifi_config_update_status("disconnected");
                 break;
             case WIRELESS_STATE_NOT_CONNECTED_EXPIRE:
                 lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_CLOSE);
+                wifi_config_update_status("connect expired");
                 break;
             default:
                 break;
