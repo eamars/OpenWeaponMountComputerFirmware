@@ -251,7 +251,7 @@ static void wifi_provision_timeout_cb(TimerHandle_t timer) {
 esp_err_t wifi_init() {
     // Load configuration
     ESP_ERROR_CHECK(load_wifi_user_config());
-    
+
     // Create event group if not previously created
     ESP_ERROR_CHECK(create_wireless_event_group());
     // Set initial state
@@ -263,7 +263,7 @@ esp_err_t wifi_init() {
     esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
     snprintf(wifi_provision_state.service_name, sizeof(wifi_provision_state.service_name), "OWMC_%02X%02X%02X", eth_mac[3], eth_mac[4], eth_mac[5]);
 
-
+   
     // Initialize WiFi stack
     ESP_ERROR_CHECK(esp_netif_init());
     // Register Wifi events
@@ -361,4 +361,58 @@ void wifi_expiry_watchdog_stop() {
 
 wireless_state_e get_wireless_state() {
     return wireless_state;
+}
+
+esp_err_t wifi_wait_for_provision(uint32_t block_wait_ms) {
+    create_wireless_event_group();
+
+    // Wait for provision event
+    EventBits_t asserted_bits = xEventGroupWaitBits(
+        wireless_event_group, 
+        WIRELESS_STATEFUL_IS_PROVISIONED, 
+        pdFALSE,        // don't clear on assert -> Calling the same function when provisioned will return immediately
+        pdTRUE,         // wait for all bits to assert
+        pdMS_TO_TICKS(block_wait_ms)
+    );
+
+    if (asserted_bits & WIRELESS_STATEFUL_IS_PROVISIONED) {
+        return ESP_OK;
+    }
+
+    return ESP_ERR_TIMEOUT;
+}
+
+
+bool wifi_is_provisioned() {
+    create_wireless_event_group();
+    EventBits_t asserted_bits = xEventGroupGetBits(wireless_event_group);
+
+    return asserted_bits & WIRELESS_STATEFUL_IS_PROVISIONED;
+} 
+
+
+esp_err_t wifi_wait_for_sta_connected(uint32_t block_wait_ms) {
+    create_wireless_event_group();
+
+    // Wait for connect event
+    EventBits_t asserted_bits = xEventGroupWaitBits(
+        wireless_event_group, 
+        WIRELESS_STATEFUL_IS_STA_CONNECTED, 
+        pdFALSE,        // don't clear on assert
+        pdTRUE,         // wait for all bits to assert
+        pdMS_TO_TICKS(block_wait_ms)
+    );
+
+    if (asserted_bits & WIRELESS_STATEFUL_IS_STA_CONNECTED) {
+        return ESP_OK;
+    }
+
+    return ESP_ERR_TIMEOUT;
+}
+
+bool wifi_is_sta_connected() {
+    create_wireless_event_group();
+    EventBits_t asserted_bits = xEventGroupGetBits(wireless_event_group);
+
+    return asserted_bits & WIRELESS_STATEFUL_IS_STA_CONNECTED;
 }
