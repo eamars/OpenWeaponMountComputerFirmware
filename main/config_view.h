@@ -4,6 +4,8 @@
 
 #include <lvgl.h>
 
+#include "wifi.h"
+
 #define MAX_NUM_COLOURS 20  // 19 preset colours from lv_palette_t
 #define LV_PALETTE_BLACK LV_PALETTE_LAST
 
@@ -21,24 +23,14 @@ lv_obj_t * create_switch(lv_obj_t * container, bool * state, lv_event_cb_t event
 lv_obj_t * create_config_label_static(lv_obj_t * parent, char * text);
 lv_obj_t * create_single_button(lv_obj_t * container, const char * icon, lv_event_cb_t event_cb);
 
-
-typedef enum {
-    STATUS_BAR_WIRELESS_STATE_UNKNOWN = 0,
-    STATUS_BAR_WIRELESS_STATE_NOT_PROVISIONED,
-    STATUS_BAR_WIRELESS_STATE_PROVISIONING,
-    STATUS_BAR_WIRELESS_STATE_STA_CONNECTING,
-    STATUS_BAR_WIRELESS_STATE_STA_CONNECTED,
-    STATUS_BAR_WIRELESS_STATE_STA_DISCONNECTED,
-} status_bar_wireless_state_t;
-
 // Status bar update
-void update_status_bar_wireless_state(status_bar_wireless_state_t state);
+void status_bar_update_wireless_state(wireless_state_e state);
 
 /** 
  * @brief Update the battery level icon in the status bar
  * @param level_percentage Battery level percentage (0-100). < 100 is powered by USB, -1 is unknown>
  */
-void update_status_bar_battery_level(int level_percentage);
+void status_bar_update_battery_level(int level_percentage);
 
 void update_info_msg_box(const char * text);
 

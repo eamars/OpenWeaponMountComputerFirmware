@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_lvgl_port.h"
 
 #include "digital_level_view.h"
 #include "system_config.h"
@@ -255,7 +256,7 @@ lv_obj_t * create_single_button(lv_obj_t * container, const char * icon, lv_even
     lv_obj_set_height(reset_provision_button, 36);  // TODO: Find a better way to read the height from other widgets
     lv_obj_add_event_cb(reset_provision_button, event_cb, LV_EVENT_SINGLE_CLICKED, NULL);
 
-    return container;
+    return reset_provision_button;
 }
 
 
@@ -375,11 +376,11 @@ void create_config_view(lv_obj_t *parent) {
 
     // WiFi icon
     status_bar_wireless_state = lv_label_create(status_bar);
-    update_status_bar_wireless_state(STATUS_BAR_WIRELESS_STATE_UNKNOWN);
+    status_bar_update_wireless_state(WIRELESS_STATE_NOT_PROVISIONED);
 
     // Battery icon
     status_bar_battery_state = lv_label_create(status_bar);
-    update_status_bar_battery_level(101);  // FIXME: Currently set to power by USB
+    status_bar_update_battery_level(101);  // FIXME: Currently set to power by USB
 
     // Create menu item
     config_menu = lv_menu_create(parent_container);
@@ -417,35 +418,45 @@ void create_config_view(lv_obj_t *parent) {
 }
 
 
-void update_status_bar_wireless_state(status_bar_wireless_state_t state) {
-    switch (state)
-    {
-        case STATUS_BAR_WIRELESS_STATE_UNKNOWN:
-            lv_label_set_text(status_bar_wireless_state, "");
-            break;
-
-        case STATUS_BAR_WIRELESS_STATE_NOT_PROVISIONED:
-            lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
-            break;
-
-        case STATUS_BAR_WIRELESS_STATE_PROVISIONING:
-            lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_SHUFFLE);
-            break;
-        case STATUS_BAR_WIRELESS_STATE_STA_CONNECTING:
-            lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_REFRESH);
-            break;
-        case STATUS_BAR_WIRELESS_STATE_STA_CONNECTED:
-            lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_WIFI);
-            break;
-        case STATUS_BAR_WIRELESS_STATE_STA_DISCONNECTED:
-            lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
-            break;
-        default:
-            break;
+void status_bar_update_wireless_state(wireless_state_e state) {
+    if (lvgl_port_lock(0)) {
+        switch (state)
+        {
+            case WIRELESS_STATE_NOT_PROVISIONED:
+                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
+                break;
+            case WIRELESS_STATE_PROVISIONING:
+                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_SHUFFLE);
+                break;
+            case WIRELESS_STATE_PROVISION_FAILED:
+                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_WARNING);
+                break;
+            case WIRELESS_STATE_PROVISION_EXPIRE:
+                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_CLOSE);
+                break;
+            case WIRELESS_STATE_NOT_CONNECTED:
+                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
+                break;
+            case WIRELESS_STATE_CONNECTING:
+                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
+                break;
+            case WIRELESS_STATE_CONNECTED:
+                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_WIFI);
+                break;
+            case WIRELESS_STATE_DISCONNECTED:
+                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
+                break;
+            case WIRELESS_STATE_NOT_CONNECTED_EXPIRE:
+                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_CLOSE);
+                break;
+            default:
+                break;
+        }
+        lvgl_port_unlock();
     }
 }
 
-void update_status_bar_battery_level(int level_percentage) {
+void status_bar_update_battery_level(int level_percentage) {
     if (level_percentage < 0) {
         // Unknown state
         lv_label_set_text(status_bar_battery_state, LV_SYMBOL_WARNING);

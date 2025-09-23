@@ -2,14 +2,13 @@
 
 #include "wifi_config.h"
 #include "wifi.h"
-
 #include "config_view.h"
 #include "wifi_provision.h"
 
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
-
+#include "esp_lvgl_port.h"
 #include "lvgl.h"
 
 #include "app_cfg.h"
@@ -19,10 +18,14 @@
 #define PROV_TRANSPORT_SOFTAP   "softap"
 
 
-extern wifi_provision_state_t wifi_provision_state;
+extern wireless_state_e wireless_state;
+extern wireless_provision_state_t wifi_provision_state;
+extern wifi_user_config_t wifi_config;
 HEAPS_CAPS_ATTR static char wifi_status_str[64];
 static lv_obj_t * qr_container;
 static lv_obj_t * qr_code;
+static lv_obj_t * reset_provision_button;
+
 
 static void toggle_enable_wifi(lv_event_t *e) {
     lv_obj_t * sw = lv_event_get_target_obj(e);
@@ -39,21 +42,23 @@ static void on_reset_provision_button_pressed(lv_event_t * e) {
 
 
 void on_qr_code_button_pressed(lv_event_t * e) {
-    // Set QR Code size based on the condition
-    // Note: QR code has to be scaled before setting the data
-    lv_coord_t box_w = lv_obj_get_content_width(qr_container);
-    lv_coord_t box_h = lv_obj_get_content_height(qr_container);
-    ESP_LOGI(TAG, "QR container size: %d x %d", box_w, box_h);
-    lv_qrcode_set_size(qr_code, LV_MIN(box_w, box_h));  // leave some margin
+    if (qr_code) {
+        // Set QR Code size based on the condition
+        // Note: QR code has to be scaled before setting the data
+        lv_coord_t box_w = lv_obj_get_content_width(qr_container);
+        lv_coord_t box_h = lv_obj_get_content_height(qr_container);
+        ESP_LOGI(TAG, "QR container size: %d x %d", box_w, box_h);
+        lv_qrcode_set_size(qr_code, LV_MIN(box_w, box_h));  // leave some margin
 
-    // Configure QR code
-    char payload[150];
-    memset(payload, 0, sizeof(payload));
+        // Configure QR code
+        char payload[150];
+        memset(payload, 0, sizeof(payload));
 
-    snprintf(payload, sizeof(payload), "{\"ver\":\"%s\",\"name\":\"%s\"" \
-                ",\"pop\":\"%s\",\"transport\":\"%s\"}",
-            PROV_QR_VERSION, wifi_provision_state.service_name, wifi_provision_state.pop, PROV_TRANSPORT_SOFTAP);
-    lv_qrcode_update(qr_code, payload, strlen(payload));
+        snprintf(payload, sizeof(payload), "{\"ver\":\"%s\",\"name\":\"%s\"" \
+                    ",\"pop\":\"%s\",\"transport\":\"%s\"}",
+                PROV_QR_VERSION, wifi_provision_state.service_name, wifi_provision_state.pop, PROV_TRANSPORT_SOFTAP);
+        lv_qrcode_update(qr_code, payload, strlen(payload));
+    }
 
     // Set display
     lv_obj_clear_flag(qr_container, LV_OBJ_FLAG_HIDDEN);
@@ -63,6 +68,40 @@ void on_qr_code_button_pressed(lv_event_t * e) {
 void on_qr_code_clicked(lv_event_t * e) {
     // hide
     lv_obj_add_flag(qr_container, LV_OBJ_FLAG_HIDDEN);
+}
+
+
+void wifi_config_disable_provision_interface(wireless_state_e reason) {
+    if (lvgl_port_lock(0)) {
+        // Delete QR code first
+        lv_obj_delete(qr_code);
+        qr_code = NULL;
+
+        // Disable the button to reset provisioning state
+        lv_obj_add_state(reset_provision_button, LV_STATE_DISABLED);
+
+
+        if (reason == WIRELESS_STATE_PROVISION_EXPIRE) {
+            lv_obj_t * reason_label = lv_label_create(qr_container);
+            lv_obj_set_width(reason_label, lv_pct(80));
+            lv_label_set_long_mode(reason_label, LV_LABEL_LONG_MODE_WRAP);
+            lv_obj_add_flag(reason_label, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(reason_label, on_qr_code_clicked, LV_EVENT_CLICKED, NULL);
+
+            lv_label_set_text(reason_label, "Provision Expired. Power cycle the device to restart provision process.");
+        }
+        else if (reason == WIRELESS_STATE_PROVISIONED) {
+            lv_obj_t * reason_label = lv_label_create(qr_container);
+            lv_obj_set_width(reason_label, lv_pct(80));
+            lv_label_set_long_mode(reason_label, LV_LABEL_LONG_MODE_WRAP);
+            lv_obj_add_flag(reason_label, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(reason_label, on_qr_code_clicked, LV_EVENT_CLICKED, NULL);
+
+            lv_label_set_text(reason_label, "Provision Complete. Use Reset Provision button and power cycle the device to restart provision process.");
+        }
+
+        lvgl_port_unlock();
+    }
 }
 
 
@@ -79,7 +118,7 @@ lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_m
 
     // Reset Wifi provision
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Reset Provision");
-    config_item = create_single_button(container, LV_SYMBOL_WARNING, on_reset_provision_button_pressed);
+    reset_provision_button = create_single_button(container, LV_SYMBOL_WARNING, on_reset_provision_button_pressed);
 
     // Create qr msg box
     qr_container = lv_obj_create(parent);

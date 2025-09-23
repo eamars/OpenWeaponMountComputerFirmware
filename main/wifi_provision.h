@@ -6,5 +6,6 @@
 void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data);
 
 void wifi_provision_reset();
+void wifi_provision_init();
 
 #endif  // WIFI_PROVISION_H_

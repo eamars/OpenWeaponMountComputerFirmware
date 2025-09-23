@@ -10,6 +10,7 @@ set(ALL_DEPS
     esp_lcd_touch
     esp_lvgl_port
     app_update
+    esp_timer
 
     # 1.47" LCD display
     esp_lcd_jd9853
