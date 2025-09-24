@@ -25,6 +25,13 @@ set(ALL_DEPS
     wifi_provisioning
     esp_event
     esp_http_server
+    esp_http_client
+
+    # json parser
+    json_parser
+
+    # OTA
+    esp_https_ota
 )
 
 

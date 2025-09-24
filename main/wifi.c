@@ -6,6 +6,7 @@
 #include "wifi_provision.h"
 #include "common.h"
 #include "wifi_config.h"
+#include "app_cfg.h"
 
 #include "wifi_provisioning/manager.h"
 #include "wifi_provisioning/scheme_softap.h"
@@ -14,8 +15,6 @@
 #include "esp_log.h"
 #include "esp_event.h"
 #include "esp_random.h"
-#include "nvs.h"
-#include "esp_crc.h"
 #include "esp_check.h"
 #include "esp_task_wdt.h"
 
@@ -23,7 +22,6 @@
 #include "config_view.h"
 
 #define TAG "WiFi"
-#define NVS_NAMESPACE "WIFI"
 
 
 extern wireless_provision_state_t wifi_provision_state;
@@ -33,7 +31,7 @@ wireless_state_e wireless_state;
 TimerHandle_t wifi_expiry_timeout_timer;
 
 
-wifi_user_config_t wifi_user_config;
+HEAPS_CAPS_ATTR wifi_user_config_t wifi_user_config;
 const wifi_user_config_t default_wifi_user_config = {
     .wifi_enable = true,
     .wifi_expiry_timeout_s = 600,  // 10 minutes
@@ -89,6 +87,10 @@ void wifi_deinit_task(void *p) {
     esp_netif_deinit();
 
     ESP_LOGI(TAG, "Wi-Fi stack deinitialized, stopping wifi_state_poller_task");
+
+    // Update GUI
+    wifi_config_disable_enable_interface();
+
     vTaskDelete(NULL);   // safely remove this task
 }
 
@@ -114,10 +116,12 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
                 // Update event too
                 xEventGroupClearBits(wireless_event_group, WIRELESS_STATEFUL_IS_STA_CONNECTED);
 
-                // Restart the expiry timer after disconnected from Wifi
-                wifi_expiry_watchdog_restart();
+                // Restart the expiry timer after disconnected from Wifi (exclude the intentional state change)
+                if (wifi_user_config.wifi_enable) {
+                    wifi_expiry_watchdog_restart();
+                    esp_wifi_connect();
+                }
 
-                esp_wifi_connect();
                 break;
 
             case WIFI_EVENT_AP_STACONNECTED:
@@ -172,76 +176,6 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
 }
 
 
-esp_err_t save_wifi_user_config() {
-    esp_err_t ret;
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-
-    // Calculate CRC
-    wifi_user_config.crc32 = crc32_wrapper(&wifi_user_config, sizeof(wifi_user_config), sizeof(wifi_user_config.crc32));
-
-    // Write to NVS
-    ret = nvs_set_blob(handle, "cfg", &wifi_user_config, sizeof(wifi_user_config));
-    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
-
-    ret = nvs_commit(handle);
-    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
-
-finally:
-    nvs_close(handle);
-
-    return ret;
-}
-
-
-
-esp_err_t load_wifi_user_config() {
-    esp_err_t ret;
-
-    // Read configuration from NVS
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-
-    size_t required_size = sizeof(wifi_user_config);
-    ret = nvs_get_blob(handle, "cfg", &wifi_user_config, &required_size);
-
-    if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        ESP_LOGI(TAG, "Initialize wifi_user_config with default values");
-
-        // Copy default values
-        memcpy(&wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
-        wifi_user_config.crc32 = crc32_wrapper(&wifi_user_config, sizeof(wifi_user_config), sizeof(wifi_user_config.crc32));
-
-        // Write to NVS
-        ret = nvs_set_blob(handle, "cfg", &wifi_user_config, sizeof(wifi_user_config));
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
-        ret = nvs_commit(handle);
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
-    }
-    else {
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to read NVS blob");
-    }
-
-    // Verify CRC32
-    uint32_t crc32 = crc32_wrapper(&wifi_user_config, sizeof(wifi_user_config), sizeof(wifi_user_config.crc32));
-
-    if (crc32 != wifi_user_config.crc32) {
-        ESP_LOGW(TAG, "CRC32 mismatch, will use default settings. Expected %p, got %p", wifi_user_config.crc32, crc32);
-        memcpy(&wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
-
-        ESP_ERROR_CHECK(save_wifi_user_config());
-    }
-    else {
-        ESP_LOGI(TAG, "wifi_user_config loaded successfully");
-    }
-
-finally:
-    nvs_close(handle);
-
-    return ret;
-}
-
-
 static void wifi_provision_timeout_cb(TimerHandle_t timer) {
     // Trigger expiry event
     xEventGroupSetBits(wireless_event_group, WIRELESS_STATEFUL_IS_EXPIRED);
@@ -249,9 +183,6 @@ static void wifi_provision_timeout_cb(TimerHandle_t timer) {
 
 
 esp_err_t wifi_init() {
-    // Load configuration
-    ESP_ERROR_CHECK(load_wifi_user_config());
-
     // Create event group if not previously created
     ESP_ERROR_CHECK(create_wireless_event_group());
     // Set initial state
@@ -263,7 +194,6 @@ esp_err_t wifi_init() {
     esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
     snprintf(wifi_provision_state.service_name, sizeof(wifi_provision_state.service_name), "OWMC_%02X%02X%02X", eth_mac[3], eth_mac[4], eth_mac[5]);
 
-   
     // Initialize WiFi stack
     ESP_ERROR_CHECK(esp_netif_init());
     // Register Wifi events
@@ -335,13 +265,30 @@ esp_err_t wifi_init() {
         ESP_LOGI(TAG, "Already provisioned, starting WiFi STA");
         wifi_config_disable_provision_interface(WIRELESS_STATE_PROVISIONED);
 
-        xEventGroupSetBits(wireless_event_group, WIRELESS_STATE_PROVISIONED);
+        wireless_state = WIRELESS_STATE_NOT_CONNECTED;
+        status_bar_update_wireless_state(wireless_state);
+
+        xEventGroupSetBits(wireless_event_group, WIRELESS_STATEFUL_IS_PROVISIONED);
 
         // Already provisioned, we can start the WiFi directly
         wifi_prov_mgr_deinit(); // Deinitialize the manager as we don't need it anymore
 
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
         ESP_ERROR_CHECK(esp_wifi_start());
+
+        wireless_state = WIRELESS_STATE_CONNECTING;
+        status_bar_update_wireless_state(wireless_state);
+    }
+
+    // Disable wifi if configured so
+    if (wireless_state != WIRELESS_STATE_PROVISION_EXPIRE || wireless_state != WIRELESS_STATE_NOT_CONNECTED_EXPIRE) {
+        if (!wifi_user_config.wifi_enable) {
+            wireless_state = WIRELESS_STATE_DISCONNECTED;
+            status_bar_update_wireless_state(wireless_state);
+            xEventGroupClearBits(wireless_event_group, WIRELESS_STATEFUL_IS_STA_CONNECTED);
+
+            esp_wifi_stop();
+        }
     }
 
     return ESP_OK;

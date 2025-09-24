@@ -114,3 +114,6 @@ XUNIT_RESULT*.xml
 # Top level sdkconfig (generated)
 sdkconfig
 sdkconfig.old
+
+# Python virtual environments
+venv/*

@@ -68,4 +68,8 @@ void wifi_expiry_watchdog_restart();
 void wifi_expiry_watchdog_stop();
 
 
+esp_err_t save_wifi_user_config();
+esp_err_t load_wifi_user_config();
+
+
 #endif  // WIFI_H_

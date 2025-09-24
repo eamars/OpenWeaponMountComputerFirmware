@@ -5,27 +5,39 @@
 #include "config_view.h"
 #include "wifi_provision.h"
 
+#include "esp_wifi.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
+#include "nvs.h"
+#include "esp_crc.h"
 
+#include "common.h"
 #include "app_cfg.h"
 
 #define TAG "WiFiConfig"
+#define NVS_NAMESPACE "WIFI"
+
 #define PROV_QR_VERSION         "v1"
 #define PROV_TRANSPORT_SOFTAP   "softap"
 
 
 extern wireless_state_e wireless_state;
 extern wireless_provision_state_t wifi_provision_state;
-extern wifi_user_config_t wifi_config;
+extern wifi_user_config_t wifi_user_config;
+extern const wifi_user_config_t default_wifi_user_config;
 HEAPS_CAPS_ATTR static char wifi_status_str[64];
 static lv_obj_t * qr_container;
 static lv_obj_t * qr_code;
 static lv_obj_t * reset_provision_button;
 static lv_obj_t * wifi_status_label = NULL;
+static lv_obj_t * wifi_enable_switch = NULL;
+extern EventGroupHandle_t wireless_event_group;
+
+extern esp_err_t save_wifi_user_config();
+extern esp_err_t load_wifi_user_config();
 
 
 void wifi_config_update_status(const char * state_str) {
@@ -45,6 +57,13 @@ static void toggle_enable_wifi(lv_event_t *e) {
     lv_obj_t * sw = lv_event_get_target_obj(e);
     bool * state = lv_event_get_user_data(e);
     *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
+
+    if (*state) {
+        esp_wifi_start();
+    }
+    else {
+        esp_wifi_stop();
+    }
 }
 
 
@@ -85,11 +104,23 @@ void on_qr_code_clicked(lv_event_t * e) {
 }
 
 
+void wifi_config_disable_enable_interface() {
+    if (lvgl_port_lock(0)) {
+        // Then disable the enable wifi toggle switch
+        lv_obj_remove_state(wifi_enable_switch, LV_STATE_CHECKED);
+        lv_obj_add_state(wifi_enable_switch, LV_STATE_DISABLED);
+        lvgl_port_unlock();
+    }
+}
+
+
 void wifi_config_disable_provision_interface(wireless_state_e reason) {
     if (lvgl_port_lock(0)) {
         // Delete QR code first
-        lv_obj_delete(qr_code);
-        qr_code = NULL;
+        if (qr_code) {
+            lv_obj_delete(qr_code);
+            qr_code = NULL;
+        }
 
         if (reason == WIRELESS_STATE_PROVISION_EXPIRE) {
             // Disable the button to reset provisioning state
@@ -118,9 +149,108 @@ void wifi_config_disable_provision_interface(wireless_state_e reason) {
 }
 
 
+esp_err_t save_wifi_user_config() {
+    esp_err_t ret;
+    nvs_handle_t handle;
+    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
+
+    // Calculate CRC
+    wifi_user_config.crc32 = crc32_wrapper(&wifi_user_config, sizeof(wifi_user_config), sizeof(wifi_user_config.crc32));
+
+    // Write to NVS
+    ret = nvs_set_blob(handle, "cfg", &wifi_user_config, sizeof(wifi_user_config));
+    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
+
+    ret = nvs_commit(handle);
+    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
+
+finally:
+    nvs_close(handle);
+
+    return ret;
+}
+
+
+
+esp_err_t load_wifi_user_config() {
+    esp_err_t ret;
+
+    // Read configuration from NVS
+    nvs_handle_t handle;
+    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
+
+    size_t required_size = sizeof(wifi_user_config);
+    ret = nvs_get_blob(handle, "cfg", &wifi_user_config, &required_size);
+
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(TAG, "Initialize wifi_user_config with default values");
+
+        // Copy default values
+        memcpy(&wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
+        wifi_user_config.crc32 = crc32_wrapper(&wifi_user_config, sizeof(wifi_user_config), sizeof(wifi_user_config.crc32));
+
+        // Write to NVS
+        ret = nvs_set_blob(handle, "cfg", &wifi_user_config, sizeof(wifi_user_config));
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
+        ret = nvs_commit(handle);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
+    }
+    else {
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to read NVS blob");
+    }
+
+    // Verify CRC32
+    uint32_t crc32 = crc32_wrapper(&wifi_user_config, sizeof(wifi_user_config), sizeof(wifi_user_config.crc32));
+
+    if (crc32 != wifi_user_config.crc32) {
+        ESP_LOGW(TAG, "CRC32 mismatch, will use default settings. Expected %p, got %p", wifi_user_config.crc32, crc32);
+        memcpy(&wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
+
+        ESP_ERROR_CHECK(save_wifi_user_config());
+    }
+    else {
+        ESP_LOGI(TAG, "wifi_user_config loaded successfully");
+    }
+
+finally:
+    nvs_close(handle);
+
+    return ret;
+}
+
+
+
+static void on_save_button_pressed(lv_event_t * e) {
+    ESP_ERROR_CHECK(save_wifi_user_config());
+
+    update_info_msg_box("Configuration Saved");
+}
+
+static void on_reload_button_pressed(lv_event_t * e) {
+    ESP_ERROR_CHECK(load_wifi_user_config());
+
+    update_info_msg_box("Previous Configuration Reloaded");
+
+    // TODO: Update current displayed values
+}
+
+static void on_reset_button_pressed(lv_event_t * e) {
+    // Initialize with default values
+    memcpy(&wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
+
+    update_info_msg_box("Configuration reset to default. Use reload button to undo the action");
+
+    // TODO: Update current display values
+}
+
+
 lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
     lv_obj_t * container;
     lv_obj_t * config_item;
+
+    // Load configuration
+    ESP_ERROR_CHECK(load_wifi_user_config());
+
 
     lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
@@ -131,8 +261,7 @@ lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_m
 
     // Enable Wifi
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Enable WiFi");
-    bool temp_wifi_enable = false;  // TODO: load actual wifi state
-    config_item = create_switch(container, &temp_wifi_enable, toggle_enable_wifi);
+    wifi_enable_switch = create_switch(container, &wifi_user_config.wifi_enable, toggle_enable_wifi);
 
     // Reset Wifi provision
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Reset Provision");
@@ -174,6 +303,11 @@ lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_m
     
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Provision QR Code");
     config_item = create_single_button(container, LV_SYMBOL_IMAGE, on_qr_code_button_pressed);
+
+    // Save Reload
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
+    config_item = create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
+
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);

@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/event_groups.h"
 
 #include "esp_check.h"
 #include "esp_err.h"
@@ -35,6 +36,7 @@
 #include "wifi_provision.h"
 
 #define TAG "App"
+
 
 bno085_ctx_t * bno085_dev;
 extern system_config_t system_config;
