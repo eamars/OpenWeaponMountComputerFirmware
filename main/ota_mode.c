@@ -179,13 +179,34 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
     }
     else {
         ESP_LOGI(TAG, "Remote firmware path: %s", firmware_path_buffer);
-
     }
 
-    // Now we have the path to the firmware, then we can feed the path to the OTA updater
-    esp_https_ota_config_t ota_config = {
-        .http_config = &confi
-    }
+    // Log the OTA information. The rest will be handled in the OTA config view
+
+    // // Now we have the path to the firmware, then we can feed the path to the OTA updater
+    // esp_http_client_cleanup(client_handle);
+
+    // // Restart the client handle to point to the new location
+    // http_config.path = firmware_path_buffer;
+    // client_handle = esp_http_client_init(&http_config);
+
+    // // GET
+    // esp_http_client_set_method(client_handle, HTTP_METHOD_GET);
+    // ret = esp_http_client_open(client_handle, 0);
+    // ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to open HTTP connection");
+
+    // // TODO: Get OTA to start
+
+    // // FIXME: automatically enter OTA Mode
+    // if (lvgl_port_lock(0)) {
+    //     // Record the last tile
+    //     last_tile = lv_tileview_get_tile_active(main_tileview);
+
+    //     // Shift to low power tileview
+    //     lv_tileview_set_tile(main_tileview, tile_ota_mode_view, LV_ANIM_OFF);
+    //     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+    //     lvgl_port_unlock();
+    // }
 
     ret = ESP_OK;
 
@@ -216,18 +237,6 @@ void ota_poller_task(void *p) {
             break;
         }
     }
-
-    
-    // // FIXME: automatically enter OTA Mode
-    // if (lvgl_port_lock(0)) {
-    //     // Record the last tile
-    //     last_tile = lv_tileview_get_tile_active(main_tileview);
-
-    //     // Shift to low power tileview
-    //     lv_tileview_set_tile(main_tileview, tile_ota_mode_view, LV_ANIM_OFF);
-    //     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
-    //     lvgl_port_unlock();
-    // }
 
     vTaskDelete(NULL);   // safely remove this task
  }
