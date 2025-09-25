@@ -25,9 +25,14 @@ static lv_obj_t * progress_bar;
 
 extern lv_obj_t * tile_ota_mode_view;
 extern lv_obj_t * main_tileview;
+extern lv_obj_t * tile_ota_prompt_view;
+extern lv_obj_t * default_tile;
 
 static TaskHandle_t ota_poller_task_handle;
 static lv_obj_t * last_tile = NULL;  // last tile before entering the OTA mode
+static lv_obj_t * ota_description_label;
+
+HEAPS_CAPS_ATTR ota_manifest_t ota_manifest;
 
 
 const char * ota_sources [] = {
@@ -36,7 +41,8 @@ const char * ota_sources [] = {
     NULL,
 };
 
-const char * manifest_endpoint = "/manifest.json";
+// End point for PCB revision 1
+const char * manifest_endpoint = "/p1/manifest.json";
 
 
 
@@ -112,6 +118,26 @@ static void ota_event_handler(void* arg, esp_event_base_t event_base,
 }
 
 
+ void set_ota_prompt_view_visibility(bool is_visible) {
+    if (lvgl_port_lock(0)) {
+        if (is_visible) {
+            // Shift to OTA view
+            last_tile = lv_tileview_get_tile_active(main_tileview);
+            lv_tileview_set_tile(main_tileview, tile_ota_prompt_view, LV_ANIM_OFF);
+        } else {
+            if (last_tile) {
+                lv_tileview_set_tile(main_tileview, tile_ota_prompt_view, LV_ANIM_OFF);
+                last_tile = NULL;
+            }
+            else {
+                lv_tileview_set_tile(main_tileview, default_tile, LV_ANIM_OFF);
+            }
+            lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+        }
+        lvgl_port_unlock();
+    }
+ }
+
 esp_err_t apply_ota_from_source(const char * ota_source) {
     esp_err_t ret;
     char * manifest_json_raw = NULL;
@@ -123,6 +149,7 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
         .path = manifest_endpoint,
         .port = 8080,
         .event_handler = http_client_event_handler,
+        .timeout_ms = 20 * 1000,  // longer timeout for slow response servers
     };
     esp_http_client_handle_t client_handle = esp_http_client_init(&http_config);
 
@@ -163,23 +190,98 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
         ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to decode json string: %s", manifest_json_raw);
     }
 
-    char version_str_buffer[32];
-    if (json_obj_get_string(&jctx, "version", version_str_buffer, sizeof(version_str_buffer)) != OS_SUCCESS) {
+    // Read manifest_version
+    if (json_obj_get_int(&jctx, "manifest_version", &ota_manifest.manifest_version)) {
         ret = ESP_FAIL;
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract version string: %s", manifest_json_raw);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract manifest_version: %s", manifest_json_raw);
     }
     else {
-        ESP_LOGI(TAG, "Remote firmware version: %s", version_str_buffer);
+        ESP_LOGI(TAG, "manifest_version: %d", ota_manifest.manifest_version);
     }
 
-    char firmware_path_buffer[64];
-    if (json_obj_get_string(&jctx, "path", firmware_path_buffer, sizeof(firmware_path_buffer)) != OS_SUCCESS) {
+    // Read fw_version
+    if (json_obj_get_string(&jctx, "fw_version", ota_manifest.fw_version, sizeof(ota_manifest.fw_version)) != OS_SUCCESS) {
         ret = ESP_FAIL;
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract firwmare path string: %s", manifest_json_raw);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract fw_version: %s", manifest_json_raw);
     }
     else {
-        ESP_LOGI(TAG, "Remote firmware path: %s", firmware_path_buffer);
+        ESP_LOGI(TAG, "fw_version: %s", ota_manifest.fw_version);
     }
+
+    // Read fw_build_hash
+    if (json_obj_get_string(&jctx, "fw_build_hash", ota_manifest.fw_build_hash, sizeof(ota_manifest.fw_build_hash)) != OS_SUCCESS) {
+        ret = ESP_FAIL;
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract fw_build_hash: %s", manifest_json_raw);
+    }
+    else {
+        ESP_LOGI(TAG, "fw_build_hash: %s", ota_manifest.fw_build_hash);
+    }
+
+    // Read fw_path
+    if (json_obj_get_string(&jctx, "fw_path", ota_manifest.fw_path, sizeof(ota_manifest.fw_path)) != OS_SUCCESS) {
+        ret = ESP_FAIL;
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract fw_path: %s", manifest_json_raw);
+    }
+    else {
+        ESP_LOGI(TAG, "fw_path: %s", ota_manifest.fw_path);
+    }
+
+    // Read fw_note
+    if (json_obj_get_string(&jctx, "fw_note", ota_manifest.fw_note, sizeof(ota_manifest.fw_note)) != OS_SUCCESS) {
+        ret = ESP_FAIL;
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract fw_note: %s", manifest_json_raw);
+    }
+    else {
+        ESP_LOGI(TAG, "fw_note: %s", ota_manifest.fw_note);
+    }
+
+    // Read port number
+    if (json_obj_get_int(&jctx, "port", &ota_manifest.port)) {
+        ret = ESP_FAIL;
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract port: %s", manifest_json_raw);
+    }
+    else {
+        ESP_LOGI(TAG, "port: %d", ota_manifest.port);
+    }
+
+    // Read ignore version flag
+    if (json_obj_get_bool(&jctx, "ignore_version", &ota_manifest.ignore_version)) {
+        ret = ESP_FAIL;
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract ignore_version: %s", manifest_json_raw);
+    }
+    else {
+        ESP_LOGI(TAG, "ignore_version: %d", ota_manifest.ignore_version);
+    }
+
+    // Read importance
+    if (json_obj_get_int(&jctx, "importance", (int *) &ota_manifest.importance)) {
+        ret = ESP_FAIL;
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract importance: %s", manifest_json_raw);
+    }
+    else {
+        ESP_LOGI(TAG, "importance: %d", ota_manifest.importance);
+    }
+
+
+    ota_manifest.initialized = true;
+
+    // Update the description field
+    lv_label_set_text_fmt(ota_description_label, 
+        "New Firmware #ff0000 %s # Available\n"
+        "It is recommended to update immediately\n"
+        "Release Note:\n"
+        "------\n"
+        "%s",
+        ota_manifest.fw_version, 
+        ota_manifest.fw_note
+    );
+
+
+    if (ota_manifest.importance > OTA_IMPORTANCE_NORMAL) {
+        set_ota_prompt_view_visibility(true);
+    }
+
+
 
     // Log the OTA information. The rest will be handled in the OTA config view
 
@@ -221,6 +323,10 @@ finally:
 }
 
 void ota_poller_task(void *p) {
+    // Uninitialize the OTA manifest
+    memset(&ota_manifest, 0x0, sizeof(ota_manifest));
+    ota_manifest.initialized = false;
+
     // Wait for wifi to be connected
     while (true) {
         esp_err_t ret = wifi_wait_for_sta_connected(1000);
@@ -239,6 +345,20 @@ void ota_poller_task(void *p) {
     }
 
     vTaskDelete(NULL);   // safely remove this task
+ }
+
+ static void on_ota_cancel_button_pressed(lv_event_t *e) {
+    set_ota_prompt_view_visibility(false);
+ }
+
+ static void on_ota_accept_button_pressed(lv_event_t * e) {
+    ESP_LOGI(TAG, "Start Upgrade pressed");
+    set_ota_prompt_view_visibility(false);
+
+    // Shift to OTA view
+    last_tile = lv_tileview_get_tile_active(main_tileview);
+    lv_tileview_set_tile(main_tileview, tile_ota_mode_view, LV_ANIM_OFF);
+    lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
  }
 
 
@@ -298,4 +418,42 @@ void enter_ota_mode(bool enable) {
     else {
         prevent_low_power_mode_enter(false);
     }
+}
+
+
+void create_ota_prompt_view(lv_obj_t * parent) {
+    lv_obj_set_scroll_dir(parent, LV_DIR_VER);  // only vertical scroll
+    lv_obj_set_style_pad_all(parent, 5, LV_PART_MAIN);
+    lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(parent,
+                    LV_FLEX_ALIGN_START,  // main axis (row) center
+                    LV_FLEX_ALIGN_CENTER,  // cross axis center
+                    LV_FLEX_ALIGN_CENTER); // track cross axis center
+
+    // Add cancel button at top
+    lv_obj_t * ota_cancel_button = lv_button_create(parent);
+    lv_obj_add_event_cb(ota_cancel_button, on_ota_cancel_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_t * ota_cancel_button_label = lv_label_create(ota_cancel_button);
+    lv_label_set_text(ota_cancel_button_label, "Cancel");
+    lv_obj_center(ota_cancel_button_label);
+    lv_obj_set_style_text_font(ota_cancel_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
+
+    // Add update description
+    ota_description_label = lv_label_create(parent);
+    lv_obj_set_width(ota_description_label, lv_pct(100));
+    lv_label_set_recolor(ota_description_label, true);  // allow inline colour annotation
+    lv_label_set_long_mode(ota_description_label, LV_LABEL_LONG_MODE_WRAP);
+    lv_label_set_text(ota_description_label, "OTA Not Ready");
+
+    // Add accept button at bottom
+    lv_obj_t * ota_accept_button = lv_button_create(parent);
+    lv_obj_set_style_bg_color(ota_accept_button, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(ota_accept_button, on_ota_accept_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_t * ota_accept_button_label = lv_label_create(ota_accept_button);
+    lv_label_set_text(ota_accept_button_label, "Start Upgrade");
+    lv_obj_center(ota_accept_button_label);
+    lv_obj_set_style_text_font(ota_accept_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
+
 }

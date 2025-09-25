@@ -15,10 +15,16 @@ class OTARequestHandler(SimpleHTTPRequestHandler):
         sys.stdout.write("[HTTP] " + format % args + "\n")
 
     def do_GET(self):
-        if self.path == "/manifest.json":
+        if self.path == "/p1/manifest.json":
             manifest = {
-                "version": "1.0.0",
-                "path": "/firmware.bin"
+                "manifest_version": 1,
+                "fw_version": "1.0.0",
+                "fw_build_hash": "60d0473",
+                "fw_path": "/firmware.bin",
+                "fw_note": "This version fix several stability issues, including the screen shattering, lagging and tearing.",
+                "port": 8080,
+                "ignore_version": False,
+                "importance": 1
             }
             body = json.dumps(manifest).encode("utf-8")
             self.send_response(200)
@@ -26,7 +32,7 @@ class OTARequestHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-            print(f"[HTTP] Served manifest.json: {manifest}")
+            print(f"[HTTP] Served manifest.json: {body}")
 
         else:
             super().do_GET()
