@@ -27,6 +27,9 @@ typedef struct {
 #define OTA_POLLER_TASK_STACK 4096
 #define OTA_POLLER_TASK_PRIORITY 4
 
+#define OTA_UPDATE_TASK_STACK 4096
+#define OTA_UPDATE_TASK_PRIORITY 7
+
 void create_ota_mode_view(lv_obj_t * parent);
 void create_ota_prompt_view(lv_obj_t * parent);
 void enter_ota_mode(bool enable);

@@ -34,6 +34,7 @@ lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
 TaskHandle_t low_power_monitor_task_handle;
 TaskHandle_t sensor_stability_classifier_poller_task_handle;
 TickType_t last_activity_tick = 0;
+int32_t low_power_mode_display_index = 0;
 static EventGroupHandle_t low_power_control_event;
 static lv_obj_t * last_tile = NULL;  // last tile before entering the low power mode
 
@@ -204,6 +205,11 @@ void enable_low_power_mode(bool enable) {
     if (enable) {
         xEventGroupSetBits(low_power_control_event, IN_LOW_POWER_MODE);
 
+        // Bring the low power mode to the front of the screen
+        low_power_mode_display_index = lv_obj_get_index(main_tileview);
+        lv_obj_move_foreground(main_tileview);  // make sure the touch event can trigger
+        ESP_LOGI(TAG, "Previous low power mode index: %d", low_power_mode_display_index);
+
         // Dim the display
         if (io_handle) {
             set_display_brightness(&io_handle, 1);
@@ -227,6 +233,9 @@ void enable_low_power_mode(bool enable) {
         xEventGroupClearBits(low_power_control_event, IN_LOW_POWER_MODE);
 
         lvgl_port_resume();
+
+        // Move the low power mode back to its original index
+        lv_obj_move_to_index(main_tileview, low_power_mode_display_index);
 
         // Enable sensor report
         if (sensor_config.enable_game_rotation_vector_report) {

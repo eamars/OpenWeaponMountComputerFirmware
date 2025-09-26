@@ -23,7 +23,6 @@ typedef void (*tile_update_enable_cb_t) (bool);
 lv_obj_t * main_tileview = NULL;
 lv_obj_t * tile_low_power_mode_view = NULL;
 lv_obj_t * tile_ota_mode_view = NULL;
-lv_obj_t * tile_ota_prompt_view = NULL;
 
 lv_obj_t * default_tile = NULL;
 
@@ -129,10 +128,6 @@ void create_main_tileview(lv_obj_t *parent)
     tile_ota_mode_view = lv_tileview_add_tile(main_tileview, 0, 1, LV_DIR_NONE);  // The tile can only be entered automatically
     lv_obj_set_user_data(tile_ota_mode_view, enter_ota_mode);  // Use enter and exit code to activate and deactivate the low power mode
     create_ota_mode_view(tile_ota_mode_view);
-
-    // 0, 2 for OTA prompt
-    tile_ota_prompt_view = lv_tileview_add_tile(main_tileview, 0, 2, LV_DIR_NONE);  // The tile can only be entered automatically
-    create_ota_prompt_view(tile_ota_prompt_view);
 
     // Switch to the default view
     default_tile = tile_digital_level_view;

@@ -11,6 +11,7 @@
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
 #include "esp_ota_ops.h"
+#include "esp_task_wdt.h"
 #include "json_parser.h"
 
 #include "freertos/FreeRTOS.h"
@@ -20,17 +21,28 @@
 
 #define TAG "OTAMode"
 
+typedef enum {
+    OTA_EVENT_MANIFEST_READY = (1 << 0),
+    OTA_EVENT_OTA_COMPLETE = (1 << 1),
+    OTA_EVENT_USER_CONFIRMED = (1 << 2),
+    OTA_EVENT_IS_POWERED_BY_USB = (1 << 3),
+} ota_event_e;
+static EventGroupHandle_t ota_event_group = NULL;
+
 static lv_obj_t * progress_label;
 static lv_obj_t * progress_bar;
 
 extern lv_obj_t * tile_ota_mode_view;
 extern lv_obj_t * main_tileview;
-extern lv_obj_t * tile_ota_prompt_view;
 extern lv_obj_t * default_tile;
 
 static TaskHandle_t ota_poller_task_handle;
+static TaskHandle_t ota_update_task_handle;
+
 static lv_obj_t * last_tile = NULL;  // last tile before entering the OTA mode
 static lv_obj_t * ota_description_label;
+static lv_obj_t * ota_prompt_view;
+
 
 HEAPS_CAPS_ATTR ota_manifest_t ota_manifest;
 
@@ -45,7 +57,17 @@ const char * ota_sources [] = {
 const char * manifest_endpoint = "/p1/manifest.json";
 
 
-
+static inline esp_err_t create_ota_event_group() {
+    // If not created, then create the event group. This function may be called before the `wifi_init()`. 
+    if (ota_event_group == NULL) {
+        ota_event_group = xEventGroupCreate();
+        if (ota_event_group == NULL) {
+            ESP_LOGE(TAG, "Failed to create ota_event_group");
+            return ESP_FAIL;
+        }
+    }
+    return ESP_OK;
+}
 
 esp_err_t http_client_event_handler(esp_http_client_event_t *evt)
 {
@@ -119,22 +141,11 @@ static void ota_event_handler(void* arg, esp_event_base_t event_base,
 
 
  void set_ota_prompt_view_visibility(bool is_visible) {
-    if (lvgl_port_lock(0)) {
-        if (is_visible) {
-            // Shift to OTA view
-            last_tile = lv_tileview_get_tile_active(main_tileview);
-            lv_tileview_set_tile(main_tileview, tile_ota_prompt_view, LV_ANIM_OFF);
-        } else {
-            if (last_tile) {
-                lv_tileview_set_tile(main_tileview, tile_ota_prompt_view, LV_ANIM_OFF);
-                last_tile = NULL;
-            }
-            else {
-                lv_tileview_set_tile(main_tileview, default_tile, LV_ANIM_OFF);
-            }
-            lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
-        }
-        lvgl_port_unlock();
+    if (is_visible) {
+        // Shift to OTA view
+        lv_obj_clear_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
     }
  }
 
@@ -278,37 +289,14 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
 
 
     if (ota_manifest.importance > OTA_IMPORTANCE_NORMAL) {
-        set_ota_prompt_view_visibility(true);
+        if (lvgl_port_lock(0)) {
+            set_ota_prompt_view_visibility(true);
+            lvgl_port_unlock();
+        }
     }
 
-
-
-    // Log the OTA information. The rest will be handled in the OTA config view
-
-    // // Now we have the path to the firmware, then we can feed the path to the OTA updater
-    // esp_http_client_cleanup(client_handle);
-
-    // // Restart the client handle to point to the new location
-    // http_config.path = firmware_path_buffer;
-    // client_handle = esp_http_client_init(&http_config);
-
-    // // GET
-    // esp_http_client_set_method(client_handle, HTTP_METHOD_GET);
-    // ret = esp_http_client_open(client_handle, 0);
-    // ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to open HTTP connection");
-
-    // // TODO: Get OTA to start
-
-    // // FIXME: automatically enter OTA Mode
-    // if (lvgl_port_lock(0)) {
-    //     // Record the last tile
-    //     last_tile = lv_tileview_get_tile_active(main_tileview);
-
-    //     // Shift to low power tileview
-    //     lv_tileview_set_tile(main_tileview, tile_ota_mode_view, LV_ANIM_OFF);
-    //     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
-    //     lvgl_port_unlock();
-    // }
+    // We're done here
+    // The rest will be handled within the OTA mode
 
     ret = ESP_OK;
 
@@ -323,6 +311,9 @@ finally:
 }
 
 void ota_poller_task(void *p) {
+    // Create OTA event group
+    ESP_ERROR_CHECK(create_ota_event_group());
+
     // Uninitialize the OTA manifest
     memset(&ota_manifest, 0x0, sizeof(ota_manifest));
     ota_manifest.initialized = false;
@@ -331,6 +322,8 @@ void ota_poller_task(void *p) {
     while (true) {
         esp_err_t ret = wifi_wait_for_sta_connected(1000);
         if (ret == ESP_OK) {
+            // Manifest download ready
+            xEventGroupSetBits(ota_event_group, OTA_EVENT_MANIFEST_READY);
             break;
         }
     }
@@ -344,10 +337,36 @@ void ota_poller_task(void *p) {
         }
     }
 
+    ESP_LOGI(TAG, "Manifest downloaded, waiting for OTA update");
+
     vTaskDelete(NULL);   // safely remove this task
  }
 
+
+ void ota_update_task(void *p) {
+    // Create OTA event group
+    ESP_ERROR_CHECK(create_ota_event_group());
+
+    // Disable task watchdog to ensure the OTA is smooth
+    // Also in case the network is down and network stack is deleted. 
+    esp_task_wdt_delete(NULL);
+
+    // Wait for manifest to be downloaded
+    xEventGroupWaitBits(ota_event_group, OTA_EVENT_MANIFEST_READY | OTA_EVENT_USER_CONFIRMED, pdFALSE, pdTRUE, portMAX_DELAY);
+
+    // Shift to OTA view
+    last_tile = lv_tileview_get_tile_active(main_tileview);
+    lv_tileview_set_tile(main_tileview, tile_ota_mode_view, LV_ANIM_OFF);
+    lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+
+
+    // TODO: DO the update here
+    vTaskDelete(NULL);   // safely remove this task
+
+ }
+
  static void on_ota_cancel_button_pressed(lv_event_t *e) {
+    ESP_LOGI(TAG, "Cancel OTA");
     set_ota_prompt_view_visibility(false);
  }
 
@@ -355,14 +374,13 @@ void ota_poller_task(void *p) {
     ESP_LOGI(TAG, "Start Upgrade pressed");
     set_ota_prompt_view_visibility(false);
 
-    // Shift to OTA view
-    last_tile = lv_tileview_get_tile_active(main_tileview);
-    lv_tileview_set_tile(main_tileview, tile_ota_mode_view, LV_ANIM_OFF);
-    lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+    xEventGroupSetBits(ota_event_group, OTA_EVENT_USER_CONFIRMED);
  }
 
 
 void create_ota_mode_view(lv_obj_t * parent) {
+    create_ota_prompt_view(lv_screen_active());
+
     // Draw a container to allow vertical stacking
     lv_obj_t * container = lv_obj_create(parent);
     lv_obj_set_size(container, lv_pct(100), lv_pct(100));
@@ -400,6 +418,20 @@ void create_ota_mode_view(lv_obj_t * parent) {
         ESP_LOGE(TAG, "Failed to allocate memory for ota_poller_task");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
+
+    // Create the task to perform OTA update
+    rtos_return = xTaskCreate(
+        ota_update_task, 
+        "ota_updater",
+        OTA_UPDATE_TASK_STACK,
+        NULL, 
+        OTA_UPDATE_TASK_PRIORITY,
+        &ota_update_task_handle
+    );
+    if (rtos_return != pdPASS) {
+        ESP_LOGE(TAG, "Failed to allocate memory for ota_update_task");
+        ESP_ERROR_CHECK(ESP_FAIL);
+    }
 }
 
 void update_ota_mode_progress(int progress) {
@@ -422,16 +454,21 @@ void enter_ota_mode(bool enable) {
 
 
 void create_ota_prompt_view(lv_obj_t * parent) {
-    lv_obj_set_scroll_dir(parent, LV_DIR_VER);  // only vertical scroll
-    lv_obj_set_style_pad_all(parent, 5, LV_PART_MAIN);
-    lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(parent,
+    ota_prompt_view = lv_obj_create(parent);
+    lv_obj_set_size(ota_prompt_view, lv_pct(100), lv_pct(100));
+    // set hide by default
+    set_ota_prompt_view_visibility(false);
+    
+    lv_obj_set_scroll_dir(ota_prompt_view, LV_DIR_VER);  // only vertical scroll
+    lv_obj_set_style_pad_all(ota_prompt_view, 5, LV_PART_MAIN);
+    lv_obj_set_flex_flow(ota_prompt_view, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(ota_prompt_view,
                     LV_FLEX_ALIGN_START,  // main axis (row) center
                     LV_FLEX_ALIGN_CENTER,  // cross axis center
                     LV_FLEX_ALIGN_CENTER); // track cross axis center
 
     // Add cancel button at top
-    lv_obj_t * ota_cancel_button = lv_button_create(parent);
+    lv_obj_t * ota_cancel_button = lv_button_create(ota_prompt_view);
     lv_obj_add_event_cb(ota_cancel_button, on_ota_cancel_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
 
     lv_obj_t * ota_cancel_button_label = lv_label_create(ota_cancel_button);
@@ -440,14 +477,14 @@ void create_ota_prompt_view(lv_obj_t * parent) {
     lv_obj_set_style_text_font(ota_cancel_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
 
     // Add update description
-    ota_description_label = lv_label_create(parent);
+    ota_description_label = lv_label_create(ota_prompt_view);
     lv_obj_set_width(ota_description_label, lv_pct(100));
     lv_label_set_recolor(ota_description_label, true);  // allow inline colour annotation
     lv_label_set_long_mode(ota_description_label, LV_LABEL_LONG_MODE_WRAP);
     lv_label_set_text(ota_description_label, "OTA Not Ready");
 
     // Add accept button at bottom
-    lv_obj_t * ota_accept_button = lv_button_create(parent);
+    lv_obj_t * ota_accept_button = lv_button_create(ota_prompt_view);
     lv_obj_set_style_bg_color(ota_accept_button, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_add_event_cb(ota_accept_button, on_ota_accept_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
 
@@ -455,5 +492,4 @@ void create_ota_prompt_view(lv_obj_t * parent) {
     lv_label_set_text(ota_accept_button_label, "Start Upgrade");
     lv_obj_center(ota_accept_button_label);
     lv_obj_set_style_text_font(ota_accept_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
-
 }
