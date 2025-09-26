@@ -219,30 +219,30 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
     }
 
     // Read fw_version
-    if (json_obj_get_string(&jctx, "fw_version", ota_manifest.fw_version, sizeof(ota_manifest.fw_version)) != OS_SUCCESS) {
+    if (json_obj_get_string(&jctx, "version", ota_manifest.version, sizeof(ota_manifest.version)) != OS_SUCCESS) {
         ret = ESP_FAIL;
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract fw_version: %s", manifest_json_raw);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract version: %s", manifest_json_raw);
     }
     else {
-        ESP_LOGI(TAG, "fw_version: %s", ota_manifest.fw_version);
+        ESP_LOGI(TAG, "version: %s", ota_manifest.version);
     }
 
     // Read fw_path
-    if (json_obj_get_string(&jctx, "fw_path", ota_manifest.fw_path, sizeof(ota_manifest.fw_path)) != OS_SUCCESS) {
+    if (json_obj_get_string(&jctx, "path", ota_manifest.path, sizeof(ota_manifest.path)) != OS_SUCCESS) {
         ret = ESP_FAIL;
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract fw_path: %s", manifest_json_raw);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract path: %s", manifest_json_raw);
     }
     else {
-        ESP_LOGI(TAG, "fw_path: %s", ota_manifest.fw_path);
+        ESP_LOGI(TAG, "path: %s", ota_manifest.path);
     }
 
     // Read fw_note
-    if (json_obj_get_string(&jctx, "fw_note", ota_manifest.fw_note, sizeof(ota_manifest.fw_note)) != OS_SUCCESS) {
+    if (json_obj_get_string(&jctx, "note", ota_manifest.note, sizeof(ota_manifest.note)) != OS_SUCCESS) {
         ret = ESP_FAIL;
         ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract fw_note: %s", manifest_json_raw);
     }
     else {
-        ESP_LOGI(TAG, "fw_note: %s", ota_manifest.fw_note);
+        ESP_LOGI(TAG, "note: %s", ota_manifest.note);
     }
 
     // Read port number
@@ -261,6 +261,15 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
     }
     else {
         ESP_LOGI(TAG, "ignore_version: %d", ota_manifest.ignore_version);
+    }
+
+    // Read type
+    if (json_obj_get_int(&jctx, "type", (int *) &ota_manifest.type)) {
+        ret = ESP_FAIL;
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract type: %s", manifest_json_raw);
+    }
+    else {
+        ESP_LOGI(TAG, "type: %d", ota_manifest.type);
     }
 
     // Read importance
@@ -287,11 +296,11 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
 
         // Read the target version
         version_t other_version;
-        parse_git_describe_version(ota_manifest.fw_version, &other_version);
+        parse_git_describe_version(ota_manifest.version, &other_version);
 
         // Compare
         if (compare_version(&self_version, &other_version) >= 0) {
-            ESP_LOGI(TAG, "Current running version %s is newer than the target version %s, will skip OTA", app_desc->version, ota_manifest.fw_version);
+            ESP_LOGI(TAG, "Current running version %s is newer than the target version %s, will skip OTA", app_desc->version, ota_manifest.version);
             // don't update
             ret = ESP_OK;
             goto finally;
@@ -305,8 +314,8 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
         "Release Note:\n"
         "------\n"
         "%s",
-        ota_manifest.fw_version, 
-        ota_manifest.fw_note
+        ota_manifest.version, 
+        ota_manifest.note
     );
 
 
@@ -385,7 +394,7 @@ void ota_poller_task(void *p) {
 
     esp_http_client_config_t http_config = {
         .host = ota_manifest.host,
-        .path = ota_manifest.fw_path,
+        .path = ota_manifest.path,
         .port = ota_manifest.port,
         .event_handler = http_client_event_handler,
         .keep_alive_enable = true,
@@ -454,7 +463,7 @@ void ota_poller_task(void *p) {
     }
 
     // We don't need to verify the target app header, 
-    ESP_LOGI(TAG, "Declared image version: %s, actual image version: %s", ota_manifest.fw_version, app_desc.version);
+    ESP_LOGI(TAG, "Declared image version: %s, actual image version: %s", ota_manifest.version, app_desc.version);
 
     if (lvgl_port_lock(0)) {
         lv_label_set_text(ota_title_label, "Applying Update");

@@ -1,13 +1,24 @@
-import os
 import sys
 import socket
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from zeroconf import ServiceInfo, Zeroconf
 import json
+from enum import Enum
 
 
 HOSTNAME = "owmc_update.local"
 PORT = 8080
+
+
+class OtaImportance(Enum):
+    NORMAL = 0
+    CRITICAL = 1
+
+class OtaPackageType(Enum):
+    FIRMWARE = 0
+    DATA = 1
+    PARTITION_TABLE = 2
+    BOOTLOADER = 3
 
 
 class OTARequestHandler(SimpleHTTPRequestHandler):
@@ -18,12 +29,13 @@ class OTARequestHandler(SimpleHTTPRequestHandler):
         if self.path == "/p1/manifest.json":
             manifest = {
                 "manifest_version": 1,
-                "fw_version": "v0.0.1",
-                "fw_path": "/build/OpenWeaponMountComputerFirmware.bin",
-                "fw_note": "This version fixes several stability issues, including the screen shattering, lagging and tearing.",
+                "version": "v0.0.1",
+                "path": "/build/OpenWeaponMountComputerFirmware.bin",
+                "note": "This version fixes several stability issues, including the screen shattering, lagging and tearing.",
                 "port": 8080,
                 "ignore_version": True,
-                "importance": 1
+                "type": OtaPackageType.FIRMWARE.value,
+                "importance": OtaImportance.CRITICAL.value
             }
             body = json.dumps(manifest).encode("utf-8")
             self.send_response(200)

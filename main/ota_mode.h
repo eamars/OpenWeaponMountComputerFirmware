@@ -10,16 +10,24 @@ typedef enum {
     OTA_IMPORTANCE_CRITICAL = 1
 } ota_importance_e;
 
+typedef enum {
+    OTA_PACKAGE_TYPE_FIRMWARE = 0,
+    OTA_PACKAGE_TYPE_DATA = 1,
+    OTA_PACKAGE_TYPE_PARTITION_TABLE = 2,
+    OTA_PACKAGE_TYPE_BOOTLOADER = 3,
+} ota_package_type_e;
+
 
 typedef struct {
     bool initialized;
     char *host;
     int manifest_version;
-    char fw_version[16];
-    char fw_path[128];
-    char fw_note[256];
+    char version[16];
+    char path[128];
+    char note[256];
     int port;
     bool ignore_version;
+    ota_package_type_e type;
     ota_importance_e importance;
 } ota_manifest_t;
 
