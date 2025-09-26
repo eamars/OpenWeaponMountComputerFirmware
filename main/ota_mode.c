@@ -3,6 +3,7 @@
 #include "wifi.h"
 #include "main_tileview.h"
 #include "app_cfg.h"
+#include "common.h"
 
 #include "esp_lvgl_port.h"
 #include "esp_log.h"
@@ -13,6 +14,8 @@
 #include "esp_ota_ops.h"
 #include "esp_task_wdt.h"
 #include "json_parser.h"
+#include "esp_system.h"
+#include "esp_partition.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -42,7 +45,8 @@ static TaskHandle_t ota_update_task_handle;
 static lv_obj_t * last_tile = NULL;  // last tile before entering the OTA mode
 static lv_obj_t * ota_description_label;
 static lv_obj_t * ota_prompt_view;
-
+static lv_obj_t * ota_title_label;
+static lv_obj_t * reboot_button;
 
 HEAPS_CAPS_ATTR ota_manifest_t ota_manifest;
 
@@ -139,6 +143,10 @@ static void ota_event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
+static esp_err_t http_client_init_cb(esp_http_client_handle_t http_client) {
+    return ESP_OK;
+}
+
 
  void set_ota_prompt_view_visibility(bool is_visible) {
     if (is_visible) {
@@ -158,9 +166,9 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
     esp_http_client_config_t http_config = {
         .host = ota_source, 
         .path = manifest_endpoint,
-        .port = 8080,
+        .port = OTA_MANIFEST_PORT,
         .event_handler = http_client_event_handler,
-        .timeout_ms = 20 * 1000,  // longer timeout for slow response servers
+        .timeout_ms = OTA_HTTP_TIMEOUT,  // longer timeout for slow response servers
     };
     esp_http_client_handle_t client_handle = esp_http_client_init(&http_config);
 
@@ -219,15 +227,6 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
         ESP_LOGI(TAG, "fw_version: %s", ota_manifest.fw_version);
     }
 
-    // Read fw_build_hash
-    if (json_obj_get_string(&jctx, "fw_build_hash", ota_manifest.fw_build_hash, sizeof(ota_manifest.fw_build_hash)) != OS_SUCCESS) {
-        ret = ESP_FAIL;
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract fw_build_hash: %s", manifest_json_raw);
-    }
-    else {
-        ESP_LOGI(TAG, "fw_build_hash: %s", ota_manifest.fw_build_hash);
-    }
-
     // Read fw_path
     if (json_obj_get_string(&jctx, "fw_path", ota_manifest.fw_path, sizeof(ota_manifest.fw_path)) != OS_SUCCESS) {
         ret = ESP_FAIL;
@@ -273,12 +272,35 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
         ESP_LOGI(TAG, "importance: %d", ota_manifest.importance);
     }
 
-
+    // Copy other attributes
+    ota_manifest.host = (char *) ota_source;
     ota_manifest.initialized = true;
+
+    // if ignore_version is false then we can compare the version, populate update only if the OTA server has newer version
+    if (!ota_manifest.ignore_version) {
+        // Check the current version
+        const esp_app_desc_t * app_desc = esp_app_get_description();
+        ESP_LOGI(TAG, "Running version: %s", app_desc->version);
+
+        version_t self_version;
+        parse_git_describe_version(app_desc->version, &self_version);
+
+        // Read the target version
+        version_t other_version;
+        parse_git_describe_version(ota_manifest.fw_version, &other_version);
+
+        // Compare
+        if (compare_version(&self_version, &other_version) >= 0) {
+            ESP_LOGI(TAG, "Current running version %s is newer than the target version %s, will skip OTA", app_desc->version, ota_manifest.fw_version);
+            // don't update
+            ret = ESP_OK;
+            goto finally;
+        }
+    }
 
     // Update the description field
     lv_label_set_text_fmt(ota_description_label, 
-        "New Firmware #ff0000 %s # Available\n"
+        "Firmware #ff0000 %s # Available\n"
         "It is recommended to update immediately\n"
         "Release Note:\n"
         "------\n"
@@ -354,13 +376,149 @@ void ota_poller_task(void *p) {
     // Wait for manifest to be downloaded
     xEventGroupWaitBits(ota_event_group, OTA_EVENT_MANIFEST_READY | OTA_EVENT_USER_CONFIRMED, pdFALSE, pdTRUE, portMAX_DELAY);
 
-    // Shift to OTA view
-    last_tile = lv_tileview_get_tile_active(main_tileview);
-    lv_tileview_set_tile(main_tileview, tile_ota_mode_view, LV_ANIM_OFF);
-    lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 
+    // -------------------------------------
+    esp_err_t ret;
 
-    // TODO: DO the update here
+    // Register event
+    ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, ota_event_handler, NULL));
+
+    esp_http_client_config_t http_config = {
+        .host = ota_manifest.host,
+        .path = ota_manifest.fw_path,
+        .port = ota_manifest.port,
+        .event_handler = http_client_event_handler,
+        .keep_alive_enable = true,
+        .timeout_ms = OTA_HTTP_TIMEOUT,
+    };
+
+    // Determine the target partition
+    const esp_partition_t *ota_partition = esp_ota_get_next_update_partition(NULL);
+    ESP_LOGI(TAG, "OTA will be written to partition %s", ota_partition->label);
+
+    esp_https_ota_config_t ota_config = {
+        .http_config = &http_config,
+        .http_client_init_cb = http_client_init_cb,
+        .partition = {
+            .staging = ota_partition,
+            .final = NULL,  // use staging partition
+            .finalize_with_copy = false,
+        },
+    };
+
+    if (lvgl_port_lock(0)) {
+        lv_label_set_text(ota_title_label, "Locating Firmware");
+        lvgl_port_unlock();
+    }
+    esp_https_ota_handle_t https_ota_handle = NULL;
+    ret = esp_https_ota_begin(&ota_config, &https_ota_handle);
+    if (ret != ESP_OK) {
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text(ota_title_label, "OTA Failed - Unable to download firmware");
+            lvgl_port_unlock();
+        }
+
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_begin failed");
+    }
+    else {
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text(ota_title_label, "Locating Firmware -- done");
+            lvgl_port_unlock();
+        }
+    }
+
+    // Read application size
+    int ota_size = esp_https_ota_get_image_size(https_ota_handle);
+    ESP_LOGI(TAG, "OTA Size: %d", ota_size);
+
+    // Download the new application header
+    if (lvgl_port_lock(0)) {
+        lv_label_set_text(ota_title_label, "Downloading Header");
+        lvgl_port_unlock();
+    }
+    esp_app_desc_t app_desc;
+    memset(&app_desc, 0x0, sizeof(app_desc));
+    ret = esp_https_ota_get_img_desc(https_ota_handle, &app_desc);
+    if (ret != ESP_OK) {
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text(ota_title_label, "OTA Failed - Unable to download application header");
+            lvgl_port_unlock();
+        }
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_get_img_desc failed");
+    }
+    else {
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text(ota_title_label, "Downloading Header -- done");
+            lvgl_port_unlock();
+        }
+    }
+
+    // We don't need to verify the target app header, 
+    ESP_LOGI(TAG, "Declared image version: %s, actual image version: %s", ota_manifest.fw_version, app_desc.version);
+
+    if (lvgl_port_lock(0)) {
+        lv_label_set_text(ota_title_label, "Applying Update");
+        lv_label_set_text_fmt(progress_label, "Progress: 0/%d", ota_size);
+        lvgl_port_unlock();
+    }
+
+    while (1) {
+        ret = esp_https_ota_perform(https_ota_handle);
+        if (ret != ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
+            break; 
+        }
+
+        // esp_https_ota_perform returns after every read operation which gives user the ability to
+        // monitor the status of OTA upgrade by calling esp_https_ota_get_image_len_read, which gives length of image
+        // data read so far.
+        int ota_read_size = esp_https_ota_get_image_len_read(https_ota_handle);
+        // ESP_LOGI(TAG, "OTA Read size: %d", ota_read_size);
+
+        int percentage = ota_read_size * 100.0 / ota_size;
+        if (lvgl_port_lock(0)) {
+            // Update progress text and bar
+            lv_label_set_text_fmt(progress_label, "Progress: %dK/%dK", ota_read_size/1024, ota_size/1024);
+            lv_bar_set_value(progress_bar, percentage, LV_ANIM_OFF);
+            lvgl_port_unlock();
+        }
+
+        // Check for the progres
+        if (esp_https_ota_is_complete_data_received(https_ota_handle)) {
+            // Data receive complete
+            ret = esp_https_ota_finish(https_ota_handle);
+            if (ret != ESP_OK) {
+                if (lvgl_port_lock(0)) {
+                    lv_label_set_text_fmt(ota_title_label, "OTA Failed - %d", ret);
+                    lvgl_port_unlock();
+                }
+                ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_finish failed");
+            }
+            else {
+                if (lvgl_port_lock(0)) {
+                    lv_label_set_text(ota_title_label, "OTA Success");
+                    lvgl_port_unlock();
+                }
+
+                // Set the next boot partition
+                ret = esp_ota_set_boot_partition(ota_partition);
+                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to set boot partition");
+                
+                break;
+            }
+        }
+        else {
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+    }
+
+finally:
+    ESP_LOGI(TAG, "OTA Complete");
+    // Display reboot button
+    if (lvgl_port_lock(0)) {
+        lv_obj_clear_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
+        lvgl_port_unlock();
+    }
+
     vTaskDelete(NULL);   // safely remove this task
 
  }
@@ -374,7 +532,17 @@ void ota_poller_task(void *p) {
     ESP_LOGI(TAG, "Start Upgrade pressed");
     set_ota_prompt_view_visibility(false);
 
+    // Shift to OTA view
+    last_tile = lv_tileview_get_tile_active(main_tileview);
+    lv_tileview_set_tile(main_tileview, tile_ota_mode_view, LV_ANIM_OFF);
+    lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+
     xEventGroupSetBits(ota_event_group, OTA_EVENT_USER_CONFIRMED);
+ }
+
+ static void on_reboot_button_pressed(lv_event_t * e) {
+    ESP_LOGI(TAG, "Restarting");
+    esp_restart();
  }
 
 
@@ -393,16 +561,31 @@ void create_ota_mode_view(lv_obj_t * parent) {
 
 
     // Put Title Label
-    lv_obj_t * title_label = lv_label_create(container);
-    lv_label_set_text(title_label, "OTA Update");
+    ota_title_label = lv_label_create(container);
+    lv_obj_set_width(ota_title_label, lv_pct(100));
+    lv_label_set_long_mode(ota_title_label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+    lv_label_set_text(ota_title_label, "OTA Update");
 
     // Put progress label
     progress_label = lv_label_create(container);
-    lv_label_set_text(progress_label, "Progress: 0%");
+    lv_label_set_text(progress_label, "Progress: 0/0");
+    lv_obj_set_width(progress_label, lv_pct(100));
+    lv_label_set_long_mode(progress_label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
 
     // Put progress bar
     progress_bar = lv_bar_create(container);
     lv_obj_set_size(progress_bar, lv_pct(80), 20);
+
+    // Put Exit and Reboot button
+    reboot_button = lv_button_create(container);
+    lv_obj_add_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_bg_color(reboot_button, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(reboot_button, on_reboot_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_t * reboot_button_label = lv_label_create(reboot_button);
+    lv_label_set_text(reboot_button_label, "Reboot");
+    lv_obj_center(reboot_button_label);
+    lv_obj_set_style_text_font(reboot_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
 
     // Create the task to poll for OTA update
     BaseType_t rtos_return;

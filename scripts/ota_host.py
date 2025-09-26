@@ -18,12 +18,11 @@ class OTARequestHandler(SimpleHTTPRequestHandler):
         if self.path == "/p1/manifest.json":
             manifest = {
                 "manifest_version": 1,
-                "fw_version": "1.0.0",
-                "fw_build_hash": "60d0473",
-                "fw_path": "/firmware.bin",
-                "fw_note": "This version fix several stability issues, including the screen shattering, lagging and tearing.",
+                "fw_version": "v0.0.1",
+                "fw_path": "/build/OpenWeaponMountComputerFirmware.bin",
+                "fw_note": "This version fixes several stability issues, including the screen shattering, lagging and tearing.",
                 "port": 8080,
-                "ignore_version": False,
+                "ignore_version": True,
                 "importance": 1
             }
             body = json.dumps(manifest).encode("utf-8")

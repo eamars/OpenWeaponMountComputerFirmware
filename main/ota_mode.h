@@ -13,9 +13,9 @@ typedef enum {
 
 typedef struct {
     bool initialized;
+    char *host;
     int manifest_version;
     char fw_version[16];
-    char fw_build_hash[16];
     char fw_path[128];
     char fw_note[256];
     int port;
@@ -23,6 +23,8 @@ typedef struct {
     ota_importance_e importance;
 } ota_manifest_t;
 
+#define OTA_MANIFEST_PORT 8080
+#define OTA_HTTP_TIMEOUT 20 * 1000  // 20s
 
 #define OTA_POLLER_TASK_STACK 4096
 #define OTA_POLLER_TASK_PRIORITY 4

@@ -52,12 +52,14 @@ lv_obj_t * create_about_config_view_config(lv_obj_t *parent, lv_obj_t * parent_m
     // OTA information
     esp_partition_iterator_t it;
     const esp_partition_t* part;
+    esp_app_desc_t ota_app_desc;
 
     // OTA0
     it = esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
     if (it) {
         part = esp_partition_get(it);
-        create_about_config_line_item(sub_page_config_view, "Partition0", part->label);
+        esp_ota_get_partition_description(part, &ota_app_desc);
+        create_about_config_line_item(sub_page_config_view, "OTA0 Ver", ota_app_desc.version);
         esp_partition_iterator_release(it);
     }
     else {
@@ -68,7 +70,8 @@ lv_obj_t * create_about_config_view_config(lv_obj_t *parent, lv_obj_t * parent_m
     it = esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL);
     if (it) {
         part = esp_partition_get(it);
-        create_about_config_line_item(sub_page_config_view, "Partition1", part->label);
+        esp_ota_get_partition_description(part, &ota_app_desc);
+        create_about_config_line_item(sub_page_config_view, "OTA1 Ver", ota_app_desc.version);
         esp_partition_iterator_release(it);
     }
     else {
