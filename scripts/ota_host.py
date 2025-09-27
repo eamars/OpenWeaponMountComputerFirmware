@@ -29,13 +29,13 @@ class OTARequestHandler(SimpleHTTPRequestHandler):
         if self.path == "/p1/manifest.json":
             manifest = {
                 "manifest_version": 1,
-                "version": "v0.0.1",
+                "version": "v0.0.2",
                 "path": "/build/OpenWeaponMountComputerFirmware.bin",
                 "note": "This version fixes several stability issues, including the screen shattering, lagging and tearing.",
                 "port": 8080,
                 "ignore_version": True,
                 "type": OtaPackageType.FIRMWARE.value,
-                "importance": OtaImportance.CRITICAL.value
+                "importance": OtaImportance.NORMAL.value
             }
             body = json.dumps(manifest).encode("utf-8")
             self.send_response(200)

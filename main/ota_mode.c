@@ -47,6 +47,7 @@ static lv_obj_t * ota_description_label;
 static lv_obj_t * ota_prompt_view;
 static lv_obj_t * ota_title_label;
 static lv_obj_t * reboot_button;
+static lv_obj_t * menu_ota_upgrade_button;
 
 HEAPS_CAPS_ATTR ota_manifest_t ota_manifest;
 
@@ -151,13 +152,13 @@ static esp_err_t http_client_init_cb(esp_http_client_handle_t http_client) {
  void set_ota_prompt_view_visibility(bool is_visible) {
     if (is_visible) {
         // Shift to OTA view
-        lv_obj_clear_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
     }
  }
 
-esp_err_t apply_ota_from_source(const char * ota_source) {
+esp_err_t fetch_manifest_from_source(const char * ota_source) {
     esp_err_t ret;
     char * manifest_json_raw = NULL;
 
@@ -318,7 +319,11 @@ esp_err_t apply_ota_from_source(const char * ota_source) {
         ota_manifest.note
     );
 
+    
+    // Make OTA upgrade button visible
+    lv_obj_remove_flag(menu_ota_upgrade_button, LV_OBJ_FLAG_HIDDEN);
 
+    // If important, then also prompt directly to the user
     if (ota_manifest.importance > OTA_IMPORTANCE_NORMAL) {
         if (lvgl_port_lock(0)) {
             set_ota_prompt_view_visibility(true);
@@ -362,7 +367,7 @@ void ota_poller_task(void *p) {
     ESP_LOGI(TAG, "Network connected, will poll OTA source");
 
     for (int idx = 0; ota_sources[idx] != NULL; idx += 1) {
-        esp_err_t ret = apply_ota_from_source(ota_sources[idx]);
+        esp_err_t ret = fetch_manifest_from_source(ota_sources[idx]);
         if (ret == ESP_OK) {
             break;
         }
@@ -524,7 +529,7 @@ finally:
     ESP_LOGI(TAG, "OTA Complete");
     // Display reboot button
     if (lvgl_port_lock(0)) {
-        lv_obj_clear_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
         lvgl_port_unlock();
     }
 
@@ -554,6 +559,10 @@ finally:
     esp_restart();
  }
 
+ static void on_menu_ota_upgrade_button_pressed(lv_event_t *e) {
+    set_ota_prompt_view_visibility(true);
+ }
+
 
 void create_ota_mode_view(lv_obj_t * parent) {
     create_ota_prompt_view(lv_screen_active());
@@ -572,11 +581,13 @@ void create_ota_mode_view(lv_obj_t * parent) {
     // Put Title Label
     ota_title_label = lv_label_create(container);
     lv_obj_set_width(ota_title_label, lv_pct(100));
+    lv_obj_set_align(ota_title_label, LV_ALIGN_CENTER);
     lv_label_set_long_mode(ota_title_label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
     lv_label_set_text(ota_title_label, "OTA Update");
 
     // Put progress label
     progress_label = lv_label_create(container);
+    lv_obj_set_align(progress_label, LV_ALIGN_CENTER);
     lv_label_set_text(progress_label, "Progress: 0/0");
     lv_obj_set_width(progress_label, lv_pct(100));
     lv_label_set_long_mode(progress_label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
@@ -684,4 +695,21 @@ void create_ota_prompt_view(lv_obj_t * parent) {
     lv_label_set_text(ota_accept_button_label, "Start Upgrade");
     lv_obj_center(ota_accept_button_label);
     lv_obj_set_style_text_font(ota_accept_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
+}
+
+
+lv_obj_t * create_menu_ota_upgrade_button(lv_obj_t * parent) {
+    menu_ota_upgrade_button = lv_button_create(parent);
+    lv_obj_add_event_cb(menu_ota_upgrade_button, on_menu_ota_upgrade_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+    // lv_obj_set_width(menu_ota_upgrade_button, lv_pct(80));
+    // Set invisible by default
+    lv_obj_add_flag(menu_ota_upgrade_button, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t * menu_ota_upgrade_button_label = lv_label_create(menu_ota_upgrade_button);
+    // lv_label_set_long_mode(menu_ota_upgrade_button_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_label_set_text(menu_ota_upgrade_button_label, "Update Available");
+    lv_obj_center(menu_ota_upgrade_button_label);
+    // lv_obj_set_style_text_font(menu_ota_upgrade_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
+
+    return menu_ota_upgrade_button;
 }

@@ -80,10 +80,10 @@ lv_obj_t * create_about_config_view_config(lv_obj_t *parent, lv_obj_t * parent_m
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
-    // lv_obj_t * img = lv_image_create(cont);
+    lv_obj_t * img = lv_image_create(cont);
     lv_obj_t * label = lv_label_create(cont);
 
-    // lv_image_set_src(img, LV_SYMBOL_SETTINGS);
+    lv_image_set_src(img, LV_SYMBOL_SETTINGS);
     lv_label_set_text(label, "About");
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
     lv_obj_set_flex_grow(label, 1);

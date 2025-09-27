@@ -9,6 +9,7 @@
 #include "sensor_config.h"
 #include "about_config.h"
 #include "wifi_config.h"
+#include "ota_mode.h"
 
 #define TAG "ConfigView"
 
@@ -403,6 +404,8 @@ void create_config_view(lv_obj_t *parent) {
 
     /*Create a main page*/
     lv_obj_t * main_page = lv_menu_page_create(config_menu, NULL);
+    lv_obj_set_scroll_dir(main_page, LV_DIR_VER);  // only horizontal scroll
+
 
     create_system_config_view_config(config_menu, main_page);
     create_digital_level_view_config(config_menu, main_page);
@@ -410,7 +413,9 @@ void create_config_view(lv_obj_t *parent) {
     create_wifi_config_view_config(config_menu, main_page);
 
     create_about_config_view_config(config_menu, main_page);
+    create_menu_ota_upgrade_button(main_page);
 
+    // House keeping
     lv_menu_set_page(config_menu, main_page);
 
     // Setup event callback handlers
