@@ -22,7 +22,7 @@ typedef struct {
     bool initialized;
     char *host;
     int manifest_version;
-    char version[16];
+    char version[32];
     char path[128];
     char note[256];
     int port;

@@ -310,8 +310,7 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
 
     // Update the description field
     lv_label_set_text_fmt(ota_description_label, 
-        "Firmware #ff0000 %s # Available\n"
-        "It is recommended to update immediately\n"
+        "Firmware #ff0000 %s # Available.\n"
         "Release Note:\n"
         "------\n"
         "%s",

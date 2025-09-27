@@ -4,6 +4,7 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from zeroconf import ServiceInfo, Zeroconf
 import json
 from enum import Enum
+from pathlib import Path
 
 
 HOSTNAME = "owmc_update.local"
@@ -27,13 +28,20 @@ class OTARequestHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/p1/manifest.json":
+            project_description_path = Path("build") / "project_description.json"
+            with open(project_description_path, "r", encoding='utf-8') as fp:
+                project_description_json = json.load(fp)
+            version = project_description_json.get("project_version")
+            binary_path = "/build/" + project_description_json.get("app_bin")
+
             manifest = {
                 "manifest_version": 1,
-                "version": "v0.0.2",
-                "path": "/build/OpenWeaponMountComputerFirmware.bin",
+                # "version": version,
+                "version": "1.0.0",
+                "path": binary_path,
                 "note": "This version fixes several stability issues, including the screen shattering, lagging and tearing.",
-                "port": 8080,
-                "ignore_version": True,
+                "port": PORT,
+                "ignore_version": False,
                 "type": OtaPackageType.FIRMWARE.value,
                 "importance": OtaImportance.NORMAL.value
             }
