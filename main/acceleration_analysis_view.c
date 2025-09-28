@@ -117,7 +117,7 @@ void create_acceleration_analysis_view(lv_obj_t *parent) {
 
     sensor_task_control = xEventGroupCreate();
     if (sensor_task_control == NULL) {
-        ESP_LOGE(TAG, "Failed to create sensor_poll_event");
+        ESP_LOGE(TAG, "Failed to create sensor_task_control");
         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
     }
 
@@ -131,7 +131,7 @@ void create_acceleration_analysis_view(lv_obj_t *parent) {
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for acceleration_event_poller");
-        ESP_ERROR_CHECK(ESP_FAIL);
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
     }
 }
 

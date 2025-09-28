@@ -16,10 +16,6 @@
 
 #include "esp_check.h"
 #include "esp_err.h"
-#include "esp_wifi.h"
-#include "esp_event.h"
-#include "wifi_provisioning/manager.h"
-#include "wifi_provisioning/scheme_softap.h"
 
 #include "driver/i2c_master.h"
 
@@ -57,21 +53,12 @@ void mem_monitor_task(void *pvParameters) {
         size_t free_heap = esp_get_free_heap_size();
         size_t min_free_heap = esp_get_minimum_free_heap_size();
 
-
         ESP_LOGI(TAG, "Free heap: %u kbytes | Min free heap: %u kbytes",
                 (unsigned)free_heap / 1024, (unsigned)min_free_heap / 1024);
 
         // Optional: Internal RAM only
         ESP_LOGI(TAG, "Free internal heap: %u kbytes",
                 (unsigned)esp_get_free_internal_heap_size() / 1024);
-
-#if CONFIG_IDF_TARGET_ESP32C6
-        lv_mem_monitor_t mon;
-        lv_mem_monitor(&mon); // Fill the monitor struct
-
-        ESP_LOGI(TAG, "LVGL free: %u kbytes | LVGL total: %u kbytes",
-                mon.free_size / 1024, mon.total_size / 1024);
-#endif  // CONFIG_IDF_TARGET_ESP32C6
 
         ESP_LOGI(TAG, "---------------------------");
         vTaskDelay(pdMS_TO_TICKS(2000)); // Every 2 seconds
