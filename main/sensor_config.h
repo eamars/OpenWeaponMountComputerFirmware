@@ -17,6 +17,7 @@ typedef struct {
     trigger_edge_t trigger_edge;
     bool enable_game_rotation_vector_report;
     bool enable_linear_acceleration_report;
+    bool enable_rotation_vector_report;
 } sensor_config_t;
 
 

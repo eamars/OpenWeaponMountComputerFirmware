@@ -35,6 +35,14 @@
 
 
 typedef struct {
+    float real;
+    float i;
+    float j;
+    float k;
+} quaternion_t;
+
+
+typedef struct {
     uint32_t interval_ms;
     QueueHandle_t sensor_value_queue;
 } sensor_report_config_t;
@@ -87,7 +95,7 @@ esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus
 esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, gpio_num_t spi_cs_pin, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin, gpio_num_t ps0_wake_pin);
 
 /**
- * @brief Enable BNO085 report.
+ * @brief Enable Game Rotation Vector Report
  *
  * @param ctx Pointer to the BNO085 context.
  * @param interval_ms Interval in milliseconds for the report. Setting to 0 to disable.
@@ -103,6 +111,14 @@ esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t 
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
 esp_err_t bno085_enable_linear_acceleration_report(bno085_ctx_t *ctx, uint32_t interval_ms);
+
+/**
+ * @brief Enable Rotation Vector Report
+ * @param ctx Pointer to the BNO085 context.
+ * @param interval_ms Interval in milliseconds for the report. Setting to 0 to disable.
+ * @return esp_err_t ESP_OK on success, error code otherwise.
+ */
+esp_err_t bno085_enable_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms);
 
 
 /** 
@@ -144,5 +160,13 @@ esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x
  */
 esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, uint8_t * classification, bool block_wait);
 
+
+/**
+ * @brief Wait for rotation vector roll pitch pan
+ * @param ctx Pointer to the BNO085 context.
+ * @param interval_ms Interval in milliseconds for the report.
+ * @return esp_err_t ESP_OK on success, error code otherwise.
+ */
+esp_err_t bno085_wait_for_rotation_vector_roll_pitch_yaw(bno085_ctx_t * ctx, float *roll, float *pitch, float *yaw, bool block_wait);
 
 #endif // BNO085_H

@@ -139,10 +139,17 @@ void create_acceleration_analysis_view(lv_obj_t *parent) {
 
 void enable_acceleration_analysis_view(bool enable) {
     if (enable) {
+        if (sensor_config.enable_linear_acceleration_report) {
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
+        }
+
         // Allow the poller to run
         xEventGroupSetBits(sensor_task_control, SENSOR_POLL_EVENT_RUN);
-
     } else {
+        if (sensor_config.enable_linear_acceleration_report) {
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
+        }
+
         // Disable the poller
         xEventGroupClearBits(sensor_task_control, SENSOR_POLL_EVENT_RUN);
     }

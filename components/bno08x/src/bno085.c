@@ -321,6 +321,11 @@ esp_err_t bno085_enable_stability_classification_report(bno085_ctx_t *ctx, uint3
     return bno085_enable_report(ctx, SH2_STABILITY_CLASSIFIER, interval_ms);
 }
 
+esp_err_t bno085_enable_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
+    return bno085_enable_report(ctx, SH2_ROTATION_VECTOR, interval_ms);
+}
+
+
 
 esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, float *roll, float *pitch, bool block_wait) {
     TickType_t wait_ticks;
@@ -349,9 +354,62 @@ esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, flo
 
         *pitch = q_to_pitch_sf(r, i, j, k);
         *roll = q_to_roll_sf(r, i, j, k);
+        return ESP_OK;
     }
 
-    return ESP_OK;
+    return ESP_FAIL;
+}
+
+esp_err_t bno085_wait_for_rotation_vector_roll_pitch_yaw(bno085_ctx_t * ctx, float * roll, float * pitch, float * yaw, bool block_wait) {
+    TickType_t wait_ticks;
+    if (block_wait) {
+        wait_ticks = portMAX_DELAY;
+    }
+    else {
+        wait_ticks = 0;
+    }
+
+    sh2_SensorValue_t sensor_value;
+
+    // Wait for the queue from the corresponding report
+    if (xQueueReceive(ctx->enabled_sensor_report_list[SH2_ROTATION_VECTOR].sensor_value_queue, &sensor_value, wait_ticks) != pdPASS) {
+        // ESP_LOGE(TAG, "Failed to receive game rotation vector report");
+        return ESP_FAIL;
+    }
+
+    // Decode sensor envent
+    if (sensor_value.sensorId == SH2_ROTATION_VECTOR) {
+        if (roll) {
+            *roll = q_to_roll_sf(
+                sensor_value.un.rotationVector.real, 
+                sensor_value.un.rotationVector.i, 
+                sensor_value.un.rotationVector.j, 
+                sensor_value.un.rotationVector.k
+            );
+        }
+
+        if (pitch) {
+            *pitch = q_to_pitch_sf(
+                sensor_value.un.rotationVector.real, 
+                sensor_value.un.rotationVector.i, 
+                sensor_value.un.rotationVector.j, 
+                sensor_value.un.rotationVector.k
+            );
+        }
+
+        if (yaw) {
+            *yaw = q_to_yaw_sf(
+                sensor_value.un.rotationVector.real, 
+                sensor_value.un.rotationVector.i, 
+                sensor_value.un.rotationVector.j, 
+                sensor_value.un.rotationVector.k
+            );
+        }
+
+        return ESP_OK;
+    }
+
+    return ESP_FAIL;
 }
 
 esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x, float *y, float *z, bool block_wait) {
@@ -376,9 +434,11 @@ esp_err_t bno085_wait_for_linear_acceleration_report(bno085_ctx_t *ctx, float *x
         *x = sensor_value.un.linearAcceleration.x;
         *y = sensor_value.un.linearAcceleration.y;
         *z = sensor_value.un.linearAcceleration.z;
+
+        return ESP_OK;
     }
 
-    return ESP_OK;
+    return ESP_FAIL;
 }
 
 
@@ -402,9 +462,10 @@ esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, uin
     // Decode sensor event
     if (sensor_value.sensorId == SH2_STABILITY_CLASSIFIER) {
         *classification = sensor_value.un.stabilityClassifier.classification;
+        return ESP_OK;
     }
 
-    return ESP_OK;
+    return ESP_FAIL;
 }
 
 

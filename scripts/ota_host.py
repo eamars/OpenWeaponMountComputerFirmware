@@ -36,12 +36,12 @@ class OTARequestHandler(SimpleHTTPRequestHandler):
 
             manifest = {
                 "manifest_version": 1,
-                # "version": version,
-                "version": "1.0.0",
+                "version": version,
+                # "version": "1.0.0",
                 "path": binary_path,
                 "note": "This version fixes several stability issues, including the screen shattering, lagging and tearing.",
                 "port": PORT,
-                "ignore_version": False,
+                "ignore_version": True,
                 "type": OtaPackageType.FIRMWARE.value,
                 "importance": OtaImportance.NORMAL.value
             }

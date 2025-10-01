@@ -17,7 +17,8 @@ const sensor_config_t sensor_config_default = {
     .recoil_acceleration_trigger_level = 10,
     .trigger_edge = TRIGGER_RISING_EDGE,
     .enable_game_rotation_vector_report = true,
-    .enable_linear_acceleration_report = true
+    .enable_linear_acceleration_report = true,
+    .enable_rotation_vector_report = true,
 };
 
 
@@ -121,13 +122,29 @@ static void toggle_linear_acceleration_report(lv_event_t *e) {
     lv_obj_t * sw = lv_event_get_target_obj(e);
     bool * state = lv_event_get_user_data(e);
     *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
-    ESP_LOGI(TAG, "Linear Acceleration Report toggled: %s", *state ? "Enabled" : "Disabled");
 
-    if (*state) {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
-    }
-    else {
+    if (*state == false) {
         ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
+    }
+}
+
+static void toggle_game_rotation_vector_report(lv_event_t *e) {
+    lv_obj_t * sw = lv_event_get_target_obj(e);
+    bool * state = lv_event_get_user_data(e);
+    *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
+
+    if (*state == false) {
+        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
+    }
+}
+
+static void toggle_rotation_vector_report(lv_event_t *e) {
+    lv_obj_t * sw = lv_event_get_target_obj(e);
+    bool * state = lv_event_get_user_data(e);
+    *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
+
+    if (*state == false) {
+        ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
     }
 }
 
@@ -142,8 +159,17 @@ lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Recoil Trigger Level (m/s^2)");
     config_item = create_spin_box(container, 10, 100, 10, 3, 0, sensor_config.recoil_acceleration_trigger_level, update_uint32_item, &sensor_config.recoil_acceleration_trigger_level);
 
+    // Game rotation vector (for level view)
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Enable Game Rotation Vector Report");
+    config_item = create_switch(container, &sensor_config.enable_game_rotation_vector_report, toggle_game_rotation_vector_report);
+
+    // Acceleration (for level view and acceleration view)
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Enable Linear Accel Report");
     config_item = create_switch(container, &sensor_config.enable_linear_acceleration_report, toggle_linear_acceleration_report);
+
+    // Rotation vector (for POI view)
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Enable Rotation Vector Report");
+    config_item = create_switch(container, &sensor_config.enable_rotation_vector_report, toggle_rotation_vector_report);
 
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");

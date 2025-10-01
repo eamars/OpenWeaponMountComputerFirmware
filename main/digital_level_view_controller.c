@@ -100,8 +100,23 @@ void unified_ensor_poller_task(void *p) {
 
 void enable_digital_level_view_controller(bool enable) {
     if (enable) {
+        // Enable sensor report
+        if (sensor_config.enable_game_rotation_vector_report) {
+            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
+        }
+        if (sensor_config.enable_linear_acceleration_report) {
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
+        }
+
         xEventGroupSetBits(sensor_task_control, SENSOR_POLL_EVENT_RUN);
     } else {
+        // Disable sensor report
+        if (sensor_config.enable_game_rotation_vector_report) {
+            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
+        }
+        if (sensor_config.enable_linear_acceleration_report) {
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
+        }
         xEventGroupClearBits(sensor_task_control, SENSOR_POLL_EVENT_RUN);
     }
 }

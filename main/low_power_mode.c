@@ -222,6 +222,9 @@ void enable_low_power_mode(bool enable) {
         if (sensor_config.enable_linear_acceleration_report) {
             ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_LOW_POWER_MODE_REPORT_PERIOD_MS));
         }
+        if (sensor_config.enable_rotation_vector_report) {
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS));
+        }
 
         // lvgl_port_stop();
         lv_timer_create(delayed_stop_lvgl, 1, NULL);
@@ -236,14 +239,6 @@ void enable_low_power_mode(bool enable) {
 
         // Move the low power mode back to its original index
         lv_obj_move_to_index(main_tileview, low_power_mode_display_index);
-
-        // Enable sensor report
-        if (sensor_config.enable_game_rotation_vector_report) {
-            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
-        }
-        if (sensor_config.enable_linear_acceleration_report) {
-            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
-        }
 
         // Additional actions to take when disabling low power mode
         if (io_handle) {
