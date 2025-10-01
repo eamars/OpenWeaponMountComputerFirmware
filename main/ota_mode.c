@@ -471,7 +471,7 @@ void ota_poller_task(void *p) {
 
     if (lvgl_port_lock(0)) {
         lv_label_set_text(ota_title_label, "Applying Update");
-        lv_label_set_text_fmt(progress_label, "Progress: 0/%d", ota_size);
+        lv_label_set_text_fmt(progress_label, "0/%d", ota_size);
         lvgl_port_unlock();
     }
 
@@ -587,7 +587,7 @@ void create_ota_mode_view(lv_obj_t * parent) {
     // Put progress label
     progress_label = lv_label_create(container);
     lv_obj_set_align(progress_label, LV_ALIGN_CENTER);
-    lv_label_set_text(progress_label, "Progress: 0/0");
+    lv_label_set_text(progress_label, "0/0");
     lv_obj_set_width(progress_label, lv_pct(100));
     lv_label_set_long_mode(progress_label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
 
@@ -633,13 +633,6 @@ void create_ota_mode_view(lv_obj_t * parent) {
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for ota_update_task");
         ESP_ERROR_CHECK(ESP_FAIL);
-    }
-}
-
-void update_ota_mode_progress(int progress) {
-    if (progress_label && progress_bar) {
-        lv_label_set_text_fmt(progress_label, "Progress: %d", progress);
-        lv_bar_set_value(progress_bar, progress, LV_ANIM_OFF);
     }
 }
 

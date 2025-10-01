@@ -327,7 +327,7 @@ esp_err_t bno085_enable_rotation_vector_report(bno085_ctx_t *ctx, uint32_t inter
 
 
 
-esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, float *roll, float *pitch, bool block_wait) {
+esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch_yaw(bno085_ctx_t *ctx, float *roll, float *pitch, float *yaw, bool block_wait) {
     TickType_t wait_ticks;
     if (block_wait) {
         wait_ticks = portMAX_DELAY;
@@ -346,14 +346,33 @@ esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, flo
 
     // Decode sensor event
     if (sensor_value.sensorId == SH2_GAME_ROTATION_VECTOR) {
-        float r, i, j, k;
-        r = sensor_value.un.gameRotationVector.real;
-        i = sensor_value.un.gameRotationVector.i;
-        j = sensor_value.un.gameRotationVector.j;
-        k = sensor_value.un.gameRotationVector.k;
+        if (roll) {
+            *roll = q_to_roll_sf(
+                sensor_value.un.gameRotationVector.real,
+                sensor_value.un.gameRotationVector.i,
+                sensor_value.un.gameRotationVector.j,
+                sensor_value.un.gameRotationVector.k
+            );
+        }
 
-        *pitch = q_to_pitch_sf(r, i, j, k);
-        *roll = q_to_roll_sf(r, i, j, k);
+        if (pitch) {
+            *pitch = q_to_pitch_sf(
+                sensor_value.un.gameRotationVector.real,
+                sensor_value.un.gameRotationVector.i,
+                sensor_value.un.gameRotationVector.j,
+                sensor_value.un.gameRotationVector.k
+            );
+        }
+
+        if (yaw) {
+            *yaw = q_to_yaw_sf(
+                sensor_value.un.gameRotationVector.real,
+                sensor_value.un.gameRotationVector.i,
+                sensor_value.un.gameRotationVector.j,
+                sensor_value.un.gameRotationVector.k
+            );
+        }
+
         return ESP_OK;
     }
 

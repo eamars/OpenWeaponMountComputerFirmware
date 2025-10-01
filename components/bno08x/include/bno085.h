@@ -139,7 +139,7 @@ esp_err_t bno085_enable_stability_classification_report(bno085_ctx_t *ctx, uint3
  * @param block_wait Whether to block wait for the values.
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
-esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch(bno085_ctx_t *ctx, float *roll, float *pitch, bool block_wait);
+esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch_yaw(bno085_ctx_t *ctx, float *roll, float *pitch, float *yaw, bool block_wait);
 
 /**
  * @brief Wait for linear acceleration report

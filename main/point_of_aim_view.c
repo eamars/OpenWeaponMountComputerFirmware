@@ -74,7 +74,8 @@ static void sensor_event_poller_task(void *p) {
         // Block wait for event
         while (xEventGroupGetBits(sensor_task_control) & SENSOR_POLL_EVENT_RUN) {
             // Wait for rotation vector
-            if (bno085_wait_for_rotation_vector_roll_pitch_yaw(bno085_dev, NULL, &sensor_rv_pitch_thread_unsafe, &sensor_rv_yaw_thread_unsafe, false) == ESP_OK) {
+            float roll;
+            if (bno085_wait_for_game_rotation_vector_roll_pitch_yaw(bno085_dev, &roll, &sensor_rv_pitch_thread_unsafe, &sensor_rv_yaw_thread_unsafe, false) == ESP_OK) {
                 // Round angle
                 float pitch, yaw;
                 pitch = wrap_angle(sensor_rv_pitch_thread_unsafe - point_of_aim_view_config.user_pitch_rad_offset);
@@ -104,7 +105,7 @@ void enable_point_of_aim_view(bool enable) {
     if (enable) {
         // Enable rotation vector report
         if (sensor_config.enable_rotation_vector_report) {
-            ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_REPORT_PERIOD_MS));
+            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
         }
 
         // Allow task to run
@@ -114,7 +115,7 @@ void enable_point_of_aim_view(bool enable) {
     else {
         // Disable rotation vector report
         if (sensor_config.enable_rotation_vector_report) {
-            ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
+            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
         }
 
         // Stop task

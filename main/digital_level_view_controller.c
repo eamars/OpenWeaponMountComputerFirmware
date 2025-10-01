@@ -54,7 +54,7 @@ void unified_ensor_poller_task(void *p) {
         while (xEventGroupGetBits(sensor_task_control) & SENSOR_POLL_EVENT_RUN) {
             // Wait for watched sensor ids
             // Game rotation vectors
-            if (bno085_wait_for_game_rotation_vector_roll_pitch(bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, false) == ESP_OK) {
+            if (bno085_wait_for_game_rotation_vector_roll_pitch_yaw(bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, NULL, false) == ESP_OK) {
                 // Roll is calculated based on the base measurement - screen rotation offset + user roll offset
                 float display_roll = get_relative_roll_angle_rad_thread_unsafe();
 
