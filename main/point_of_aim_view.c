@@ -39,7 +39,7 @@ const point_of_aim_view_config_t default_point_of_aim_view_config = {
     .user_yaw_rad_offset = 0.0f,
     .user_pitch_rad_offset = 0.0f,
     
-    .target_distance = 100,     
+    .target_distance = 10,     
     .target_diameter = 1.118,   // 44" target
 };
 

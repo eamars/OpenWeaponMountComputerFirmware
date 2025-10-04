@@ -471,7 +471,7 @@ void ota_poller_task(void *p) {
 
     if (lvgl_port_lock(0)) {
         lv_label_set_text(ota_title_label, "Applying Update");
-        lv_label_set_text_fmt(progress_label, "0/%d", ota_size);
+        lv_label_set_text_fmt(progress_label, "0K/%dK", ota_size);
         lvgl_port_unlock();
     }
 
@@ -490,7 +490,7 @@ void ota_poller_task(void *p) {
         int percentage = ota_read_size * 100.0 / ota_size;
         if (lvgl_port_lock(0)) {
             // Update progress text and bar
-            lv_label_set_text_fmt(progress_label, "Progress: %dK/%dK", ota_read_size/1024, ota_size/1024);
+            lv_label_set_text_fmt(progress_label, "%dK/%dK", ota_read_size/1024, ota_size/1024);
             lv_bar_set_value(progress_bar, percentage, LV_ANIM_OFF);
             lvgl_port_unlock();
         }

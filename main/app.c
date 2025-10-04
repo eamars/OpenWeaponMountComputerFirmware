@@ -199,3 +199,29 @@ void app_main(void)
     // Initialize WiFi and related calls
     ESP_ERROR_CHECK(wifi_init());
 }
+
+
+/**
+ * Moves LVGL memory to PSRAM
+ */
+
+void lv_mem_init(void) {
+    // do nothing
+}
+
+void lv_mem_deinit(void) {
+    // do nothing
+}
+
+void *lv_malloc_core(size_t size) {
+    return heap_caps_malloc(size, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+}
+
+void *lv_realloc_core(void *p, size_t new_size) {
+    return heap_caps_realloc(p, new_size, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+}
+
+void lv_free_core(void *p)
+{
+	heap_caps_free(p);
+}
