@@ -9,62 +9,14 @@
 #include "esp_heap_caps.h"
 
 
-#if CONFIG_IDF_TARGET_ESP32C6
-    // By default the memory will be allocated to internal RAM
-    #define HEAPS_CAPS_ALLOC_DEFAULT_FLAGS MALLOC_CAP_DEFAULT
+// By default the memory will be allocated to PSRAM
+#define HEAPS_CAPS_ALLOC_DEFAULT_FLAGS MALLOC_CAP_SPIRAM
 
-    // By default the heaps static memory will be allocated to internal RAM (no attribute)
-    #define HEAPS_CAPS_ATTR
+// By default the heaps static memory will be allocated to PSRAM
+#define HEAPS_CAPS_ATTR EXT_RAM_BSS_ATTR
 
-    #define USE_LCD_JD9853 1  // Use JD9853 LCD module https://www.waveshare.com/product/displays/lcd-oled/lcd-oled-3/1.47inch-touch-lcd.htm
-    #define USE_TOUCH_AXS5106 1 // Use AXS5106 touch controller
-
-
-    // Define SPI ports
-    #define SPI_HOST (SPI2_HOST)
-    #define SPI_MISO (GPIO_NUM_3)
-    #define SPI_MOSI (GPIO_NUM_2)
-    #define SPI_SCLK (GPIO_NUM_1)
-
-    // Define I2C ports
-    #define I2C_PORT_NUM (I2C_NUM_0)
-    #define I2C_MASTER_SDA (GPIO_NUM_18)
-    #define I2C_MASTER_SCL (GPIO_NUM_19)
-
-    // Define SPI for display
-    #define LCD_CS (GPIO_NUM_14)
-    #define LCD_DC (GPIO_NUM_15)
-    #define LCD_RST (GPIO_NUM_22)
-    #define LCD_BL (GPIO_NUM_23)
-    #define LCD_PIXEL_CLOCK_HZ (80 * 1000 * 1000)
-    #define LCD_BL_LEDC_TIMER LEDC_TIMER_0
-    #define LCD_BL_LEDC_MODE LEDC_LOW_SPEED_MODE
-    #define LCD_BL_LEDC_CHANNEL LEDC_CHANNEL_0
-    #define LCD_BL_LEDC_DUTY_RES LEDC_TIMER_10_BIT // Set duty resolution to 13 bits
-    #define LCD_BL_LEDC_DUTY (1024)                // Set duty to 50%. 1024 * 50% = 4096
-    #define LCD_BL_LEDC_FREQUENCY (5000)          // Frequency in Hertz. Set frequency at 5 kHz
-
-    #define TP_RST (GPIO_NUM_20)
-    #define TP_INT (GPIO_NUM_21)
-
-    #define DISP_H_RES_PIXEL (172)
-    #define DISP_V_RES_PIXEL (320)
-
-    #define DISP_PANEL_H_GAP (34) // Horizontal gap for display panel
-    #define DISP_PANEL_V_GAP (0)  // Vertical gap for display panel
-
-    #define BNO085_INT_PIN (GPIO_NUM_9)
-    
-
-#elif CONFIG_IDF_TARGET_ESP32S3
-    // By default the memory will be allocated to PSRAM
-    #define HEAPS_CAPS_ALLOC_DEFAULT_FLAGS MALLOC_CAP_SPIRAM
-
-    // By default the heaps static memory will be allocated to PSRAM
-    #define HEAPS_CAPS_ATTR EXT_RAM_BSS_ATTR
-
-    #define USE_LCD_JD9853 1  // Use JD9853 LCD module https://www.waveshare.com/product/displays/lcd-oled/lcd-oled-3/1.47inch-touch-lcd.htm
-    #define USE_TOUCH_AXS5106 1 // Use AXS5106 touch controller
+#define USE_LCD_JD9853 1  // Use JD9853 LCD module https://www.waveshare.com/product/displays/lcd-oled/lcd-oled-3/1.47inch-touch-lcd.htm
+#define USE_TOUCH_AXS5106 1 // Use AXS5106 touch controller
 
 #if USE_LCD_CO5300
     // Define SPI ports
@@ -148,11 +100,6 @@
     #define SPI3_SCLK (GPIO_NUM_4)
 
 #endif  // USE_LCD_CO5300
-
-#else
-    #error "Unsupported target platform. Please set the correct target in sdkconfig."
-
-#endif
 
 // Screen related definitions
 #define DISP_ROTATION (0) // 0: 0 degrees, 1: 90 degrees, 2: 180 degrees, 3: 270 degrees

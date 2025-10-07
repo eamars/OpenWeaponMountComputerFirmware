@@ -162,19 +162,12 @@ void app_main(void)
             .mirror_x = false,
             .mirror_y = false
         },
-#if CONFIG_IDF_TARGET_ESP32S3
         .trans_size = 8192,
-#endif  // CONFIG_IDF_TARGET_ESP32S3
         .flags = {
             .swap_bytes = true,
             .sw_rotate = true,
-#if CONFIG_IDF_TARGET_ESP32S3
             .buff_spiram = true,
             .buff_dma = false,
-#else
-            .buff_spiram = false,
-            .buff_dma = true,
-#endif  // CONFIG_TARGET_ESP32S3
         }
     };
 
