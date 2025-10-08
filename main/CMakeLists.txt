@@ -1,8 +1,8 @@
 file(GLOB_RECURSE SRC_FILES "*.c")
 
 set(ALL_DEPS
+    # Base requirements
     freertos
-    bno08x
     lvgl
     driver
     esp_lcd
@@ -11,6 +11,9 @@ set(ALL_DEPS
     esp_lvgl_port
     app_update
     esp_timer
+
+    # Sensor
+    bno08x
 
     # 1.47" LCD display
     esp_lcd_jd9853
@@ -32,6 +35,9 @@ set(ALL_DEPS
 
     # OTA
     esp_https_ota
+
+    # MDNS
+    mdns
 )
 
 

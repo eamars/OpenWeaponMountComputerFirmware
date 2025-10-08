@@ -165,7 +165,7 @@ void create_low_power_mode_view(lv_obj_t * parent) {
         &low_power_monitor_task_handle
     );
     if (rtos_return != pdPASS) {
-        ESP_LOGE(TAG, "Failed to allocate memory for sensor_poller");
+        ESP_LOGE(TAG, "Failed to allocate memory for low_power_monitor_task");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 
@@ -179,7 +179,7 @@ void create_low_power_mode_view(lv_obj_t * parent) {
         &sensor_stability_classifier_poller_task_handle
     );
     if (rtos_return != pdPASS) {
-        ESP_LOGE(TAG, "Failed to allocate memory for sensor_stability_classifier_poller");
+        ESP_LOGE(TAG, "Failed to allocate memory for sensor_stability_classifier_poller_task");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 

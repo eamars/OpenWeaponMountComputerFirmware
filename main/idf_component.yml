@@ -19,3 +19,4 @@ dependencies:
   espressif/esp_lcd_touch: ^1.1.2
   espressif/esp_lcd_co5300: ^1.0.0
   espressif/json_parser: ^1.0.3
+  espressif/mdns: ^1.8.2

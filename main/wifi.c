@@ -17,6 +17,7 @@
 #include "esp_random.h"
 #include "esp_check.h"
 #include "esp_task_wdt.h"
+#include "mdns.h"
 
 
 #include "config_view.h"
@@ -48,6 +49,19 @@ static inline esp_err_t create_wireless_event_group() {
         }
     }
     return ESP_OK;
+}
+
+
+static esp_err_t start_mdns_service() {
+    // Make sure the previous session is terminated
+    mdns_free();
+
+    // Initialize mDNS
+    esp_err_t ret = mdns_init();
+
+    // TODO: Assign mDNS name and service
+
+    return ret;
 }
 
 
@@ -146,11 +160,14 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
                 wireless_state = WIRELESS_STATE_CONNECTED;
                 status_bar_update_wireless_state(wireless_state);
 
-                // Update event too
-                xEventGroupSetBits(wireless_event_group, WIRELESS_STATEFUL_IS_STA_CONNECTED);
-
                 // Stop the timer
                 wifi_expiry_watchdog_stop();
+
+                // Start mDNS service
+                start_mdns_service();
+
+                // Update event to unblock other tasks
+                xEventGroupSetBits(wireless_event_group, WIRELESS_STATEFUL_IS_STA_CONNECTED);
 
                 break;
             }
