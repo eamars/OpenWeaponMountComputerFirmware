@@ -4,6 +4,7 @@
 #include "opentrickler_remote_controller_view.h"
 #include "wifi.h"
 #include "app_cfg.h"
+#include "system_config.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -13,11 +14,24 @@
 #include "esp_err.h"
 #include "esp_check.h"
 #include "mdns.h"
+#include "esp_http_client.h"
+#include "json_parser.h"
+#include "esp_lvgl_port.h"
+
+#include "lvgl.h"
 
 #define TAG "OpenTricklerRemoteControl"
 
 
-
+// Copied from OpenTrickler firmware
+// TODO: Clone opentrickler controller as sub module
+typedef enum {
+    CHARGE_MODE_EXIT = 0,
+    CHARGE_MODE_WAIT_FOR_ZERO = 1,
+    CHARGE_MODE_WAIT_FOR_COMPLETE = 2,
+    CHARGE_MODE_WAIT_FOR_CUP_REMOVAL = 3,
+    CHARGE_MODE_WAIT_FOR_CUP_RETURN = 4,
+} charge_mode_state_t;
 
 
 TaskHandle_t opentrickler_rest_poller_task_handle;
@@ -44,6 +58,17 @@ typedef struct {
     // other modes to be populated
 } opentrickler_server_t;
 HEAPS_CAPS_ATTR opentrickler_server_t opentrickler_server;
+
+extern system_config_t system_config;
+extern esp_err_t http_client_event_handler(esp_http_client_event_t *evt);
+
+// LVGL objects
+lv_obj_t * load_weight_arc;
+lv_obj_t * load_weight_label;
+lv_obj_t * powder_profile_label;
+lv_obj_t * charge_time_secs_label;
+lv_obj_t * center_button;
+
 
 esp_err_t find_opentrickler_mdns_service() {
     // Reset the discovered opentrickler
@@ -140,7 +165,7 @@ static void opentrickler_rest_poller_task(void *p) {
         // indicate the opentrickler is selected
         // FIXME: Prompt user to select the server, or load from NVS
         memcpy(opentrickler_server.address, discovered_opentrickler[0].address, sizeof(opentrickler_server.address));
-        // xEventGroupSetBits(opentrickler_rest_poller_task_control, OPENTRICKLER_REST_POLLER_SERVER_SELECTED);
+        xEventGroupSetBits(opentrickler_rest_poller_task_control, OPENTRICKLER_REST_POLLER_SERVER_SELECTED);
     }
 
     // Start the polling loop
@@ -156,15 +181,208 @@ static void opentrickler_rest_poller_task(void *p) {
             portMAX_DELAY
         );
 
+        esp_http_client_handle_t client = NULL;
+
+        // Maximum buffer length is known, there is no need to dynamically allocate
+        char * charge_mode_state_json_raw = heap_caps_calloc(1, OPENTRICKLER_REST_BUFFER_BYTES, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+        if (!charge_mode_state_json_raw) {
+            ret = ESP_ERR_NO_MEM;
+            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to allocate memory for charge_mode_state_json_raw");
+        }
+
+        // Once allow to run, will keep running until the run bit is cleared. This will
+        // 1. Create HTTP connection to the server
+        // 2. Poll the server at the configured rate
+        esp_http_client_config_t config = {
+            .host = opentrickler_server.address,
+            .path = "/rest/charge_mode_state",
+            .port = 80,
+            .event_handler = http_client_event_handler,
+            .user_data = charge_mode_state_json_raw,
+            .timeout_ms = 5000,
+        };
+        client = esp_http_client_init(&config);
+       
+        // Start the polling loop
         last_poll_tick = xTaskGetTickCount();
         while (xEventGroupGetBits(opentrickler_rest_poller_task_control) & (OPENTRICKLER_REST_POLLER_TASK_RUN | OPENTRICKLER_REST_POLLER_SERVER_SELECTED)) {
-            ESP_LOGI(TAG, "Poll server");
+            // Start HTTP request
+            ret = esp_http_client_perform(client);
+            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to open HTTP connection: %s", esp_err_to_name(ret));
+
+            // Handle chunked transfer (no content length)
+            int total_read = 0;
+            if (esp_http_client_get_content_length(client) == -1) {
+                total_read = esp_http_client_read(client, charge_mode_state_json_raw, OPENTRICKLER_REST_BUFFER_BYTES);
+                if (total_read <= 0) {
+                    ret = ESP_FAIL;
+                    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to read charge_mode_state_json_raw: %d", total_read);
+                }
+                ESP_LOGI(TAG, "Chunk Read %d bytes: %s", total_read, charge_mode_state_json_raw);
+            }
+            else {
+                // error
+                ret = ESP_FAIL;
+                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Content length is known, not expected");
+            }
+
+            // Decode by json parser
+            jparse_ctx_t jctx;
+            if (json_parse_start(&jctx, charge_mode_state_json_raw, OPENTRICKLER_REST_BUFFER_BYTES) != OS_SUCCESS) {
+                ret = ESP_FAIL;
+                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to decode json string: %s", charge_mode_state_json_raw);
+            }
+
+            // All variables
+            float target_charge_weight;             // s0
+            char current_charge_weight_str[16];     // s1
+            charge_mode_state_t charge_mode_state;  // s2
+            uint32_t charge_mode_event;             // s3
+            char profile_name_str[16];              // s4
+            char elapsed_time_str[16];              // s5
+
+            // Read target_charge_weight
+            if (json_obj_get_float(&jctx, "s0", &target_charge_weight)) {
+                ret = ESP_FAIL;
+                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract s0: %s", charge_mode_state_json_raw);
+            }
+
+            // Read current_charge_weight
+            if (json_obj_get_string(&jctx, "s1", current_charge_weight_str, sizeof(current_charge_weight_str))) {
+                ret = ESP_FAIL;
+                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract s1: %s", charge_mode_state_json_raw);
+            }
+
+            // Read charge_mode_state
+            if (json_obj_get_int(&jctx, "s2", (int *) &charge_mode_state)) {
+                ret = ESP_FAIL;
+                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract s2: %s", charge_mode_state_json_raw);
+            }
+
+            // Read charge_mode_event
+            if (json_obj_get_int(&jctx, "s3", (int *)&charge_mode_event)) {
+                ret = ESP_FAIL;
+                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract s3: %s", charge_mode_state_json_raw);
+            }
+
+            // Read profile_name
+            if (json_obj_get_string(&jctx, "s4", profile_name_str, sizeof(profile_name_str))) {
+                ret = ESP_FAIL;
+                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract s4: %s", charge_mode_state_json_raw);
+            }
+
+            // Read clapsed_time
+            if (json_obj_get_string(&jctx, "s5", elapsed_time_str, sizeof(elapsed_time_str))) {
+                ret = ESP_FAIL;
+                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract s5: %s", charge_mode_state_json_raw);
+            }
+
+            // Update the UI
+            if (lvgl_port_lock(0)) {
+                // Update current weight label
+                lv_label_set_text(load_weight_label, current_charge_weight_str);
+
+                // Update profile name
+                lv_label_set_text(powder_profile_label, profile_name_str);
+
+                // Update elapsed time
+                lv_label_set_text(charge_time_secs_label, elapsed_time_str);
+
+                lvgl_port_unlock();
+            }
+
+            vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(OPENTRICKLER_REST_POLLER_TASK_PERIOD_MS));
+        }
+
+finally:
+        if (client) {
+            esp_http_client_cleanup(client);
+        }
+        if (charge_mode_state_json_raw) {
+            heap_caps_free(charge_mode_state_json_raw);
+            charge_mode_state_json_raw = NULL;
         }
     }
 }
 
+
+void set_rotation_opentrickler_remote_controller_view(lv_display_rotation_t rotation) {
+    if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
+        // Portrait
+        lv_obj_align(center_button, LV_ALIGN_CENTER, 0, 5);  // put to the middle
+        lv_obj_align(powder_profile_label, LV_ALIGN_TOP_MID, 0, 10);
+        lv_obj_align(charge_time_secs_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+    }
+    else {
+        // Landscape
+        lv_obj_align(center_button, LV_ALIGN_RIGHT_MID, -5, 0);  // put to the middle
+        lv_obj_align(powder_profile_label, LV_ALIGN_TOP_LEFT, 10, 0);
+        lv_obj_align(charge_time_secs_label, LV_ALIGN_BOTTOM_LEFT, 10, 0);  
+    }
+}
+
+
+static void rotation_event_callback(lv_event_t * e) {
+    set_rotation_opentrickler_remote_controller_view(system_config.rotation);
+}
+
 void create_opentrickler_remote_controller_view(lv_obj_t * parent) {
     // Initialize UI
+    lv_obj_set_style_bg_color(parent, lv_color_black(), LV_PART_MAIN);  // set background colour to black
+    lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, LV_PART_MAIN);
+
+    // Calculate the size of center button/arc
+    lv_coord_t w = lv_obj_get_content_width(parent);
+    lv_coord_t h = lv_obj_get_content_height(parent);
+    lv_coord_t shorter = (lv_coord_t) (LV_MIN(w, h) * 0.9);
+
+    // Set the center label (actually an button)
+    center_button = lv_button_create(parent);
+    lv_obj_set_style_radius(center_button, LV_RADIUS_CIRCLE, LV_PART_MAIN); // Make it fully round
+    lv_obj_set_style_bg_opa(center_button, LV_OPA_TRANSP, LV_PART_MAIN);  // transparent
+    lv_obj_set_style_border_width(center_button, 0, LV_PART_MAIN);  // hide border
+    lv_obj_set_style_shadow_width(center_button, 0, LV_PART_MAIN);  // hide shadow
+    lv_obj_set_size(center_button, shorter, shorter);
+
+
+    // TODO: Add short and long press callback
+
+    // The center gauge (arc)
+    load_weight_arc = lv_arc_create(center_button);
+    lv_obj_set_style_arc_color(load_weight_arc, lv_palette_main(LV_PALETTE_INDIGO), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(load_weight_arc, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
+    lv_obj_remove_style(load_weight_arc, NULL, LV_PART_KNOB);   /*Be sure the knob is not displayed*/
+    lv_obj_remove_flag(load_weight_arc, LV_OBJ_FLAG_CLICKABLE);  /*To not allow adjusting by click*/
+    lv_obj_align(load_weight_arc, LV_ALIGN_CENTER, 0, 0);  // put to the middle
+    lv_obj_set_size(load_weight_arc, lv_pct(100), lv_pct(100));
+
+    lv_arc_set_rotation(load_weight_arc, 270);
+    lv_arc_set_bg_angles(load_weight_arc, 0, 360);
+    lv_arc_set_range(load_weight_arc, 0, 100);  // percentage
+
+    // Weight Label 
+    load_weight_label = lv_label_create(center_button);
+    lv_obj_set_style_text_color(load_weight_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(load_weight_label, &lv_font_montserrat_32, LV_PART_MAIN);
+    lv_obj_align(load_weight_label, LV_ALIGN_CENTER, 0, 0);
+    lv_label_set_text(load_weight_label, "0");
+
+    // Powder profile
+    powder_profile_label = lv_label_create(parent);
+    lv_obj_set_style_text_color(powder_profile_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(powder_profile_label, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_label_set_text(powder_profile_label, "Unknown Profile");
+
+    // Charge time
+    charge_time_secs_label = lv_label_create(parent);
+    lv_obj_set_style_text_color(charge_time_secs_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(charge_time_secs_label, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_label_set_text(charge_time_secs_label, "-1.00 s");
+
+    set_rotation_opentrickler_remote_controller_view(system_config.rotation);
+
+    // Add rotation event to the callback
+    lv_obj_add_event_cb(parent, rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
     // Initialize task control
     opentrickler_rest_poller_task_control = xEventGroupCreate();

@@ -78,6 +78,7 @@ typedef struct {
 } bno085_spi_ctx_t;
 
 
+
 /**
  * @brief Initialize the BNO085 sensor using I2C communication
  *
@@ -93,6 +94,18 @@ esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus
  * @brief Initialize the BNO085 sensor using SPI communication
  */
 esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, gpio_num_t spi_cs_pin, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin, gpio_num_t ps0_wake_pin);
+
+
+/** 
+ * @brief Wait for BNO085 to be intialized successfully
+ */
+esp_err_t bno085_wait_for_initialization_success(bno085_ctx_t *ctx, uint32_t block_wait_ms);
+
+
+/** 
+ * @brief Return the status of sensor initialization state
+ */
+bool bno085_is_initialization_success(bno085_ctx_t *ctx);
 
 /**
  * @brief Enable Game Rotation Vector Report

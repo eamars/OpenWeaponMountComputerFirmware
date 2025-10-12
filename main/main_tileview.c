@@ -129,7 +129,7 @@ void create_main_tileview(lv_obj_t *parent)
     // OpenTrickler remote controller view
     lv_obj_t * tile_opentrickler_controller_view = lv_tileview_add_tile(main_tileview, 6, 1, LV_DIR_HOR);
     lv_obj_set_user_data(tile_opentrickler_controller_view, enable_opentrickler_remote_controller_mode);
-    create_opentrickler_remote_controller_view(tile_point_of_aim_view);
+    create_opentrickler_remote_controller_view(tile_opentrickler_controller_view);
 
     // Tiles at column 0 are reserved for control purposes
     tile_low_power_mode_view = lv_tileview_add_tile(main_tileview, 0, 0, LV_DIR_NONE);  // The tile can only be entered automatically

@@ -9,6 +9,12 @@
 #define BNO085_SOFT_RESET_DELAY_MS 300
 
 
+typedef enum {
+    SENSOR_INIT_SUCCESS_EVENT_BIT = (1 << 0),
+    SENSOR_INTERRUPT_EVENT_BIT = (1 << 1),
+} _sensor_event_bits_e;
+
+
 esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin, gpio_num_t ps0_wake_pin);
 esp_err_t _bno085_sh2_init(bno085_ctx_t *ctx);
 

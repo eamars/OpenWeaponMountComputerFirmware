@@ -176,5 +176,8 @@ esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus
     // Initialize SH2
     ESP_RETURN_ON_ERROR(_bno085_sh2_init(&ctx->parent), TAG, "Failed to initialize SH2 Interface");
 
+    // Set initialization success
+    xEventGroupSetBits(ctx->parent.sensor_event_control, SENSOR_INIT_SUCCESS_EVENT_BIT);
+
     return ESP_OK;
 }

@@ -40,7 +40,7 @@ float get_relative_roll_angle_rad_thread_unsafe() {
 }
 
 
-void unified_ensor_poller_task(void *p) {
+void unified_sensor_poller_task(void *p) {
     // Disable the task watchdog as the task is expected to block indefinitely
     esp_task_wdt_delete(NULL);
 
@@ -132,7 +132,7 @@ esp_err_t digital_level_view_controller_init() {
     BaseType_t rtos_return;
     // Create acceleration poller task
     rtos_return = xTaskCreate(
-        unified_ensor_poller_task,
+        unified_sensor_poller_task,
         "sensor_poller",
         SENSOR_EVENT_POLLER_TASK_STACK,
         NULL,

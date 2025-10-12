@@ -108,6 +108,9 @@ void sensor_stability_classifier_poller_task(void *p) {
     // Disable the task watchdog as the task is expected to block indefinitely
     esp_task_wdt_delete(NULL);
 
+    // Wait for sensor to be initialized
+    
+
     while (1) {
         uint8_t stability_classification = STABILITY_CLASSIFIER_UNKNOWN;
         esp_err_t err = bno085_wait_for_stability_classification_report(bno085_dev, &stability_classification, true);

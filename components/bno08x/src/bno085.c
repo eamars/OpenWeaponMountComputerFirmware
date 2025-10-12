@@ -8,10 +8,9 @@
 
 #include "bno085.h"
 #include "sh2_err.h"
-
+#include "bno085_private.h"
 
 #define TAG "BNO085"
-#define SENSOR_INTERRUPT_EVENT_BIT (1 << 0)
 
 // Forward declaration
 float q_to_roll_sf(float dqw, float dqx, float dqy, float dqz);
@@ -68,7 +67,7 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     }
 
     // Send it to the corresponding queue
-    // ESP_LOGI(TAG, "Event REceived %p", sensor_value.sensorId);
+    ESP_LOGI(TAG, "Event Received %p", sensor_value.sensorId);
     xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
 }
 
@@ -164,18 +163,18 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
     // Initialize the context structure
     memset(ctx, 0, sizeof(bno085_ctx_t));
 
-    // Reset all pin assignments
-    ctx->interrupt_pin = interrupt_pin;
-    ctx->reset_pin = reset_pin;
-    ctx->boot_pin = boot_pin;
-    ctx->ps0_wake_pin = ps0_wake_pin;
-
     // Initialize the sensor event control
     ctx->sensor_event_control = xEventGroupCreate();
     if (ctx->sensor_event_control == NULL) {
         ESP_LOGE(TAG, "Failed to create sensor_event_control");
         return ESP_FAIL;
     }
+
+    // Reset all pin assignments
+    ctx->interrupt_pin = interrupt_pin;
+    ctx->reset_pin = reset_pin;
+    ctx->boot_pin = boot_pin;
+    ctx->ps0_wake_pin = ps0_wake_pin;
 
     // Configure interrupt
     if (ctx->interrupt_pin != GPIO_NUM_NC) {
@@ -281,6 +280,30 @@ esp_err_t _bno085_sh2_init(bno085_ctx_t *ctx) {
     }
 
     return ESP_OK;
+}
+
+
+esp_err_t bno085_wait_for_initialization_success(bno085_ctx_t *ctx, uint32_t block_wait_ms) {
+    EventBits_t asserted_bits = xEventGroupWaitBits(
+        ctx->sensor_event_control, 
+        SENSOR_INIT_SUCCESS_EVENT_BIT, 
+        pdFALSE, 
+        pdTRUE, 
+        pdMS_TO_TICKS(block_wait_ms)
+    );
+
+    if (asserted_bits & SENSOR_INIT_SUCCESS_EVENT_BIT) {
+        return ESP_OK;
+    }
+
+    return ESP_ERR_TIMEOUT;
+}
+
+
+bool bno085_is_initialization_success(bno085_ctx_t *ctx) {
+    EventBits_t asserted_bits = xEventGroupGetBits(ctx->sensor_event_control);
+
+    return (asserted_bits & SENSOR_INIT_SUCCESS_EVENT_BIT) != 0;
 }
 
 
