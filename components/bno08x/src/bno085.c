@@ -17,6 +17,18 @@ float q_to_roll_sf(float dqw, float dqx, float dqy, float dqz);
 float q_to_pitch_sf(float dqw, float dqx, float dqy, float dqz);
 float q_to_yaw_sf(float dqw, float dqx, float dqy, float dqz);
 
+static inline esp_err_t create_sensor_event_group(bno085_ctx_t *ctx) {
+    // If not created, then create the event group. This function may be called before the `bno085_init()`. 
+    if (ctx->sensor_event_control == NULL) {
+        ctx->sensor_event_control = xEventGroupCreate();
+        if (ctx->sensor_event_control == NULL) {
+            ESP_LOGE(TAG, "Failed to create sensor_event_control");
+            return ESP_FAIL;
+        }
+    }
+    return ESP_OK;
+}
+
 
 esp_err_t _bno085_wait_for_interrupt(bno085_ctx_t *ctx) {
     if (xEventGroupWaitBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT, pdTRUE, pdTRUE, pdMS_TO_TICKS(500)) == pdTRUE) {
@@ -33,6 +45,8 @@ uint32_t get_time_us(sh2_Hal_t *self) {
 
 
 void _bno085_disable_interrupt(bno085_ctx_t *ctx) {
+    ESP_ERROR_CHECK(create_sensor_event_group(ctx));
+
     if (ctx->interrupt_pin != GPIO_NUM_NC) {
         // Clear event bit prior to the disable
         xEventGroupClearBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT);
@@ -41,6 +55,8 @@ void _bno085_disable_interrupt(bno085_ctx_t *ctx) {
 }
 
 void _bno085_enable_interrupt(bno085_ctx_t *ctx) {
+    ESP_ERROR_CHECK(create_sensor_event_group(ctx));
+
     if (ctx->interrupt_pin != GPIO_NUM_NC) {
         // Clear event bit prior to the enable
         xEventGroupClearBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT);
@@ -67,7 +83,7 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     }
 
     // Send it to the corresponding queue
-    ESP_LOGI(TAG, "Event Received %p", sensor_value.sensorId);
+    // ESP_LOGI(TAG, "Event Received %p", sensor_value.sensorId);
     xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
 }
 
@@ -88,6 +104,8 @@ void IRAM_ATTR bno085_interrupt_handler(void *arg) {
 
 void sensor_poller_task(void *self) {
     bno085_ctx_t *ctx = (bno085_ctx_t *) self;
+
+    ESP_ERROR_CHECK(create_sensor_event_group(ctx));
 
     while (1) {
         // Wait until the interrupt happens
@@ -160,15 +178,7 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Initialize the context structure
-    memset(ctx, 0, sizeof(bno085_ctx_t));
-
-    // Initialize the sensor event control
-    ctx->sensor_event_control = xEventGroupCreate();
-    if (ctx->sensor_event_control == NULL) {
-        ESP_LOGE(TAG, "Failed to create sensor_event_control");
-        return ESP_FAIL;
-    }
+    ESP_ERROR_CHECK(create_sensor_event_group(ctx));
 
     // Reset all pin assignments
     ctx->interrupt_pin = interrupt_pin;
