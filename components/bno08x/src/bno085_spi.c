@@ -175,8 +175,5 @@ esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, gpio_num_t spi_cs_pin, gpio_num
     // Initialize SH2
     ESP_RETURN_ON_ERROR(_bno085_sh2_init(&ctx->parent), TAG, "Failed to initialize SH2 Interface");
 
-    // Set initialization success
-    xEventGroupSetBits(ctx->parent.sensor_event_control, SENSOR_INIT_SUCCESS_EVENT_BIT);
-
     return ESP_OK;
 }

@@ -7,8 +7,9 @@
 #include "driver/gpio.h"
 
 #include "bno085.h"
-#include "sh2_err.h"
 #include "bno085_private.h"
+#include "sh2_err.h"
+
 
 #define TAG "BNO085"
 
@@ -84,6 +85,7 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
 
     // Send it to the corresponding queue
     // ESP_LOGI(TAG, "Event Received %p", sensor_value.sensorId);
+
     xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
 }
 
@@ -178,13 +180,17 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
         return ESP_ERR_INVALID_ARG;
     }
 
-    ESP_ERROR_CHECK(create_sensor_event_group(ctx));
+    // Initialize the context structure
+    memset(ctx, 0, sizeof(bno085_ctx_t));
 
     // Reset all pin assignments
     ctx->interrupt_pin = interrupt_pin;
     ctx->reset_pin = reset_pin;
     ctx->boot_pin = boot_pin;
     ctx->ps0_wake_pin = ps0_wake_pin;
+
+    // Create sensor event group if not created before
+    ESP_ERROR_CHECK(create_sensor_event_group(ctx));
 
     // Configure interrupt
     if (ctx->interrupt_pin != GPIO_NUM_NC) {
@@ -290,30 +296,6 @@ esp_err_t _bno085_sh2_init(bno085_ctx_t *ctx) {
     }
 
     return ESP_OK;
-}
-
-
-esp_err_t bno085_wait_for_initialization_success(bno085_ctx_t *ctx, uint32_t block_wait_ms) {
-    EventBits_t asserted_bits = xEventGroupWaitBits(
-        ctx->sensor_event_control, 
-        SENSOR_INIT_SUCCESS_EVENT_BIT, 
-        pdFALSE, 
-        pdTRUE, 
-        pdMS_TO_TICKS(block_wait_ms)
-    );
-
-    if (asserted_bits & SENSOR_INIT_SUCCESS_EVENT_BIT) {
-        return ESP_OK;
-    }
-
-    return ESP_ERR_TIMEOUT;
-}
-
-
-bool bno085_is_initialization_success(bno085_ctx_t *ctx) {
-    EventBits_t asserted_bits = xEventGroupGetBits(ctx->sensor_event_control);
-
-    return (asserted_bits & SENSOR_INIT_SUCCESS_EVENT_BIT) != 0;
 }
 
 
