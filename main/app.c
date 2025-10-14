@@ -79,22 +79,6 @@ i2c_master_bus_handle_t i2c_master_init() {
     return i2c_bus_handle;
 }
 
-
-esp_err_t spi3_master_init() {
-    spi_bus_config_t buscfg = {
-        .miso_io_num = SPI3_MISO,
-        .mosi_io_num = SPI3_MOSI,
-        .sclk_io_num = SPI3_SCLK,
-        .quadwp_io_num = GPIO_NUM_NC,
-        .quadhd_io_num = GPIO_NUM_NC,
-    };
-
-    // Initialize SPI3
-    ESP_ERROR_CHECK(spi_bus_initialize(SPI3_HOST,&buscfg, SPI_DMA_CH_AUTO));
-
-    return ESP_OK;
-}
-
 esp_err_t storage_init() {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {

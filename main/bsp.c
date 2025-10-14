@@ -1,6 +1,8 @@
 #include "bsp.h"
 #include "app_cfg.h"
+#include "esp_check.h"
 
+#define TAG "BSP"
 
 
 #if USE_LCD_JD9853
@@ -88,6 +90,7 @@ esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handl
 #elif USE_LCD_CO5300
 #include "esp_lcd_co5300.h"
 #include "esp_lcd_touch_ft3168.h"
+#include "esp_lcd_panel_ops.h"
 
 
 esp_err_t set_display_brightness(esp_lcd_panel_io_handle_t *io_handle, uint8_t brightness_pct) {
@@ -137,7 +140,7 @@ esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handl
     ESP_ERROR_CHECK(esp_lcd_panel_init(*panel_handle));
 
     // Set brightness
-    set_display_brightness(brightness_pct);
+    set_display_brightness(io_handle, brightness_pct);
 
     // Set lcd gap
     ESP_ERROR_CHECK(esp_lcd_panel_set_gap(*panel_handle, DISP_PANEL_H_GAP, DISP_PANEL_V_GAP));
