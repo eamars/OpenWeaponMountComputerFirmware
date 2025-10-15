@@ -95,6 +95,11 @@ void create_main_tileview(lv_obj_t *parent)
     // Add callback to the scroll event
     lv_obj_add_event_cb(main_tileview, tile_change_callback, LV_EVENT_VALUE_CHANGED, NULL);
 
+    // Configuration view (Swiped right from digital level view)
+    lv_obj_t * tile_config_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
+    create_config_view(tile_config_view);
+
+#if USE_BNO085
     // Timer config view (swiped up from digital level view)
     lv_obj_t * tile_countdown_timer_config_view = lv_tileview_add_tile(main_tileview, 2, 0, LV_DIR_BOTTOM);
     lv_obj_set_user_data(tile_countdown_timer_config_view, enable_countdown_timer_config_view);
@@ -112,19 +117,17 @@ void create_main_tileview(lv_obj_t *parent)
     create_dope_config_view(tile_dope_config_view);
     lv_obj_add_event_cb(tile_dope_config_view, dope_config_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
-    // Configuration view (Swiped right from digital level view)
-    lv_obj_t * tile_config_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
-    create_config_view(tile_config_view);
-
     // Acceleration analysis view (swiped right from configuration view)
     lv_obj_t * tile_acceleration_analysis_view = lv_tileview_add_tile(main_tileview, 4, 1, LV_DIR_HOR);
     lv_obj_set_user_data(tile_acceleration_analysis_view, enable_acceleration_analysis_view);
     create_acceleration_analysis_view(tile_acceleration_analysis_view);
 
+
     // Point of aim view
     lv_obj_t * tile_point_of_aim_view = lv_tileview_add_tile(main_tileview, 5, 1, LV_DIR_HOR);
     lv_obj_set_user_data(tile_point_of_aim_view, enable_point_of_aim_view);
     create_point_of_aim_view(tile_point_of_aim_view);
+#endif  // USE_BNO085
 
     // OpenTrickler remote controller view
     lv_obj_t * tile_opentrickler_controller_view = lv_tileview_add_tile(main_tileview, 6, 1, LV_DIR_HOR);
@@ -142,7 +145,12 @@ void create_main_tileview(lv_obj_t *parent)
     create_ota_mode_view(tile_ota_mode_view);
 
     // Switch to the default view
+#if USE_BNO085
     default_tile = tile_digital_level_view;
+#else
+    default_tile = tile_config_view;
+#endif  // USE_BNO085
+
     lv_tileview_set_tile(main_tileview, default_tile, LV_ANIM_OFF);
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 

@@ -155,8 +155,10 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     lv_obj_set_style_text_color(label, lv_color_white(), LV_PART_MAIN);
     lv_obj_center(label);
 
+#if USE_BNO085
     // Enable sensor stability classification report
     ESP_ERROR_CHECK(bno085_enable_stability_classification_report(bno085_dev, SENSOR_STABILITY_CLASSIFIER_REPORT_PERIOD_MS));
+#endif  // USE_BNO085
 
     // Create user event poller task
     BaseType_t rtos_return = xTaskCreate(
@@ -172,6 +174,7 @@ void create_low_power_mode_view(lv_obj_t * parent) {
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 
+#if USE_BNO085
     // Create sensor stability classifier task
     rtos_return = xTaskCreate(
         sensor_stability_classifier_poller_task,
@@ -185,6 +188,7 @@ void create_low_power_mode_view(lv_obj_t * parent) {
         ESP_LOGE(TAG, "Failed to allocate memory for sensor_stability_classifier_poller_task");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
+#endif  // USE_BNO085
 
     // Inject the wrapper to the pointer input
     original_read_cb = lv_indev_get_read_cb(lvgl_touch_handle);
@@ -218,6 +222,7 @@ void enable_low_power_mode(bool enable) {
             set_display_brightness(&io_handle, 1);
         }
 
+#if USE_BNO085
         // Lower the report period
         if (sensor_config.enable_game_rotation_vector_report) {
             ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS));
@@ -228,6 +233,7 @@ void enable_low_power_mode(bool enable) {
         if (sensor_config.enable_rotation_vector_report) {
             ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS));
         }
+#endif  // USE_BNO085
 
         // lvgl_port_stop();
         lv_timer_create(delayed_stop_lvgl, 1, NULL);
