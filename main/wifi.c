@@ -130,9 +130,9 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
                 // Update event too
                 xEventGroupClearBits(wireless_event_group, WIRELESS_STATEFUL_IS_STA_CONNECTED);
 
-                // Restart the expiry timer after disconnected from Wifi (exclude the intentional state change)
+                // Start the expiry timer after disconnected from Wifi (exclude the intentional state change)
                 if (wifi_user_config.wifi_enable) {
-                    wifi_expiry_watchdog_restart();
+                    wifi_expiry_watchdog_start();
                     esp_wifi_connect();
                 }
 
@@ -315,6 +315,13 @@ esp_err_t wifi_init() {
 void wifi_expiry_watchdog_restart() {
     xTimerReset(wifi_expiry_timeout_timer, 0);
     ESP_LOGW(TAG, "Restart Wifi expiry timer as disconnected from WiFi hotspot");
+}
+
+void wifi_expiry_watchdog_start() {
+    if (xTimerIsTimerActive(wifi_expiry_timeout_timer) == pdFALSE) {
+        xTimerReset(wifi_expiry_timeout_timer, 0);
+        ESP_LOGW(TAG, "Start Wifi expiry timer as disconnected from WiFi hotspot");
+    }
 }
 
 void wifi_expiry_watchdog_stop() {

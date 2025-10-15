@@ -31,8 +31,9 @@ esp_err_t esp_lcd_touch_ft3168_read_data(esp_lcd_touch_handle_t ctx) {
     touch_points = (touch_points > 2 ? 2 : touch_points);  // make sure we are not reading more than needed
 
     // Enter critical section to protect data
-    // portENTER_CRITICAL(&ctx->data.lock);
+    portENTER_CRITICAL(&ctx->data.lock);
     ctx->data.points = touch_points;
+    portEXIT_CRITICAL(&ctx->data.lock);
 
     uint8_t read_buf[4];
 
@@ -48,11 +49,14 @@ esp_err_t esp_lcd_touch_ft3168_read_data(esp_lcd_touch_handle_t ctx) {
             -1), TAG, "Failed to read touch coordinates %d", i);
 
         // Write data to the handle
+        portENTER_CRITICAL(&ctx->data.lock);
         ctx->data.coords[i].y = (((uint16_t)read_buf[0] & 0x0f)<<8) | (uint16_t)read_buf[1];
         ctx->data.coords[i].x = (((uint16_t)read_buf[2] & 0x0f)<<8) | (uint16_t)read_buf[3];
-    }
-    // portEXIT_CRITICAL(&ctx->data.lock);
+        portEXIT_CRITICAL(&ctx->data.lock);
 
+        ESP_LOGI(TAG, "Touch %d: x=%d, y=%d", i, ctx->data.coords[i].x, ctx->data.coords[i].y);
+    }
+    
     return ESP_OK;
 }
 
@@ -88,6 +92,16 @@ bool esp_lcd_touch_ft3168_get_xy(esp_lcd_touch_handle_t ctx, uint16_t *x, uint16
     return (*point_num > 0);
 }
 
+
+esp_err_t esp_lcd_touch_ft3168_del(esp_lcd_touch_handle_t ctx) {
+    assert(ctx != NULL);
+
+    // Free resources
+    free(ctx);
+
+    return ESP_OK;
+}
+
 esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch_handle_t *out_touch) {
 
     esp_lcd_touch_handle_t touch_handle = heap_caps_calloc(1, sizeof(esp_lcd_touch_t), MALLOC_CAP_DEFAULT);
@@ -105,6 +119,9 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
     // Assign callbacks
     touch_handle->read_data = esp_lcd_touch_ft3168_read_data;
     touch_handle->get_xy = esp_lcd_touch_ft3168_get_xy;
+    touch_handle->del = esp_lcd_touch_ft3168_del;
+    touch_handle->set_swap_xy = NULL;
+    touch_handle->get_swap_xy = NULL;
 
     /* Mutex */
     touch_handle->data.lock.owner = portMUX_FREE_VAL;

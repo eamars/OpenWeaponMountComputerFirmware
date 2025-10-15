@@ -225,8 +225,8 @@ esp_err_t touchscreen_init(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_
 
     if (90 == rotation)
     {
-        tp_cfg.flags.swap_xy = 1;
-        tp_cfg.flags.mirror_x = 0;
+        tp_cfg.flags.swap_xy = 0;
+        tp_cfg.flags.mirror_x = 1;
         tp_cfg.flags.mirror_y = 0;
     }
     else if (180 == rotation)
@@ -243,8 +243,8 @@ esp_err_t touchscreen_init(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_
     }
     else
     {
-        tp_cfg.flags.swap_xy = 0;
-        tp_cfg.flags.mirror_x = 1;
+        tp_cfg.flags.swap_xy = 1;
+        tp_cfg.flags.mirror_x = 0;
         tp_cfg.flags.mirror_y = 0;
     }
 

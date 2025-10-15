@@ -64,6 +64,7 @@ bool wifi_is_provisioned();
 esp_err_t wifi_wait_for_sta_connected(uint32_t block_wait_ms);
 bool wifi_is_sta_connected();
 
+void wifi_expiry_watchdog_start();
 void wifi_expiry_watchdog_restart();
 void wifi_expiry_watchdog_stop();
 
