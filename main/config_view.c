@@ -396,6 +396,12 @@ void create_config_view(lv_obj_t *parent) {
     lv_obj_t * back_button_label = lv_label_create(back_button);
     lv_label_set_text(back_button_label, "Back");
 
+#if CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20
+    lv_obj_set_style_text_font(back_button_label, &lv_font_montserrat_28, 0);
+#elif CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14
+    lv_obj_set_style_text_font(back_button_label, &lv_font_montserrat_20, 0);
+#endif
+
     // Set overall layout based on rotation
     set_rotation_config_view(system_config.rotation);
 
