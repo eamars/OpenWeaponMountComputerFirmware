@@ -54,7 +54,7 @@ esp_err_t esp_lcd_touch_ft3168_read_data(esp_lcd_touch_handle_t ctx) {
         ctx->data.coords[i].x = (((uint16_t)read_buf[2] & 0x0f)<<8) | (uint16_t)read_buf[3];
         portEXIT_CRITICAL(&ctx->data.lock);
 
-        ESP_LOGI(TAG, "Touch %d: x=%d, y=%d", i, ctx->data.coords[i].x, ctx->data.coords[i].y);
+        // ESP_LOGI(TAG, "Touch %d: x=%d, y=%d", i, ctx->data.coords[i].x, ctx->data.coords[i].y);
     }
     
     return ESP_OK;
