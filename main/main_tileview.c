@@ -2,6 +2,7 @@
 
 #include "esp_log.h"
 
+#include "app_cfg.h"
 #include "main_tileview.h"
 #include "digital_level_view.h"
 #include "digital_level_view_controller.h"
