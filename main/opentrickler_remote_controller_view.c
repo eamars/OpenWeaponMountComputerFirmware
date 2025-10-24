@@ -153,8 +153,6 @@ static esp_err_t http_client_event_handler(esp_http_client_event_t *evt)
                     // Copy the data to the buffer
                     memcpy(evt->user_data + output_len, evt->data, evt->data_len);
                     output_len += evt->data_len;
-
-                    ESP_LOGI(TAG, "Copied %d bytes", output_len);
                 }
             }
 
@@ -401,20 +399,20 @@ void create_opentrickler_remote_controller_view(lv_obj_t * parent) {
     // Weight Label 
     load_weight_label = lv_label_create(center_button);
     lv_obj_set_style_text_color(load_weight_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(load_weight_label, &lv_font_montserrat_32, LV_PART_MAIN);
+    // lv_obj_set_style_text_font(load_weight_label, &lv_font_montserrat_32, LV_PART_MAIN);
     lv_obj_align(load_weight_label, LV_ALIGN_CENTER, 0, 0);
     lv_label_set_text(load_weight_label, "0");
 
     // Powder profile
     powder_profile_label = lv_label_create(parent);
     lv_obj_set_style_text_color(powder_profile_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(powder_profile_label, &lv_font_montserrat_14, LV_PART_MAIN);
+    // lv_obj_set_style_text_font(powder_profile_label, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(powder_profile_label, "Unknown Profile");
 
     // Charge time
     charge_time_secs_label = lv_label_create(parent);
     lv_obj_set_style_text_color(charge_time_secs_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(charge_time_secs_label, &lv_font_montserrat_14, LV_PART_MAIN);
+    // lv_obj_set_style_text_font(charge_time_secs_label, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_text(charge_time_secs_label, "-1.00 s");
 
     set_rotation_opentrickler_remote_controller_view(system_config.rotation);

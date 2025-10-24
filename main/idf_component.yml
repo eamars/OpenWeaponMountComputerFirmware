@@ -17,6 +17,6 @@ dependencies:
   lvgl/lvgl: ^9.3.0
   espressif/esp_lvgl_port: ^2.6.0
   espressif/esp_lcd_touch: ^1.1.2
-  espressif/esp_lcd_co5300: ^1.0.1
   espressif/json_parser: ^1.0.3
   espressif/mdns: ^1.8.2
+  espressif/esp_lcd_sh8601: ^1.0.0

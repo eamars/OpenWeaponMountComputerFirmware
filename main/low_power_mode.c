@@ -236,7 +236,7 @@ void enable_low_power_mode(bool enable) {
 #endif  // USE_BNO085
 
         // lvgl_port_stop();
-        lv_timer_create(delayed_stop_lvgl, 1, NULL);
+        // lv_timer_create(delayed_stop_lvgl, 1, NULL);
 
     } 
     else {
@@ -244,7 +244,7 @@ void enable_low_power_mode(bool enable) {
         update_low_power_mode_last_activity_event();
         xEventGroupClearBits(low_power_control_event, IN_LOW_POWER_MODE);
 
-        lvgl_port_resume();
+        // lvgl_port_resume();
 
         // Move the low power mode back to its original index
         lv_obj_move_to_index(main_tileview, low_power_mode_display_index);

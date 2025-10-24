@@ -15,11 +15,15 @@
 // By default the heaps static memory will be allocated to PSRAM
 #define HEAPS_CAPS_ATTR EXT_RAM_BSS_ATTR
 
-#define USE_BNO085 1  // Use BNO085 IMU sensor
+#define USE_BNO085 1
 #define USE_LCD_JD9853 1  // Use JD9853 LCD module https://www.waveshare.com/product/displays/lcd-oled/lcd-oled-3/1.47inch-touch-lcd.htm
 #define USE_TOUCH_AXS5106 1 // Use AXS5106 touch controller
 
-#if USE_LCD_CO5300
+// #define USE_LCD_SH8601 1  // Use SH8601 LCD module
+// #define USE_TOUCH_FT3168 1 // Use FT3168 touch controller
+
+
+#if USE_LCD_SH8601
     // Define SPI ports
     #define SPI_HOST (SPI2_HOST)
     #define SPI_MISO (GPIO_NUM_40)

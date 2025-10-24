@@ -87,8 +87,8 @@ esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handl
 
     return ESP_OK;
 }
-#elif USE_LCD_CO5300
-#include "esp_lcd_co5300.h"
+#elif USE_LCD_SH8601
+#include "esp_lcd_sh8601.h"
 #include "esp_lcd_touch_ft3168.h"
 #include "esp_lcd_panel_ops.h"
 
@@ -104,25 +104,42 @@ esp_err_t set_display_brightness(esp_lcd_panel_io_handle_t *io_handle, uint8_t b
     return ESP_OK;
 }
 
+static const sh8601_lcd_init_cmd_t lcd_init_cmds[] = {
+    {0x11, (uint8_t []){0x00}, 0, 80},   
+    {0xC4, (uint8_t []){0x80}, 1, 0},
+   
+    {0x35, (uint8_t []){0x00}, 1, 0},
+
+    {0x53, (uint8_t []){0x20}, 1, 1},
+    {0x63, (uint8_t []){0xFF}, 1, 1},
+    {0x51, (uint8_t []){0x00}, 1, 1},
+
+    {0x29, (uint8_t []){0x00}, 0, 10},
+
+    {0x51, (uint8_t []){0xFF}, 1, 0},    //亮度
+};
+
 esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle, uint8_t brightness_pct) {
     // Initialize QSPI Host
-    spi_bus_config_t buscfg = CO5300_PANEL_BUS_QSPI_CONFIG(
+    spi_bus_config_t buscfg = SH8601_PANEL_BUS_QSPI_CONFIG(
         LCD_PCLK, 
         LCD_DATA0,
         LCD_DATA1,
         LCD_DATA2, 
         LCD_DATA3,
-        DISP_H_RES_PIXEL * 80 * sizeof(uint16_t)
+        4096
     );
     ESP_ERROR_CHECK(spi_bus_initialize(SPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
-    esp_lcd_panel_io_spi_config_t io_config = CO5300_PANEL_IO_QSPI_CONFIG(LCD_CS, NULL, NULL);
+    esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(LCD_CS, NULL, NULL);
 
     // Attach LCD to QSPI
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t) SPI_HOST, &io_config, io_handle));
 
     // Initialize LCD display
-    co5300_vendor_config_t vendor_config = {
+    sh8601_vendor_config_t vendor_config = {
+        .init_cmds = lcd_init_cmds,
+        .init_cmds_size = sizeof(lcd_init_cmds) / sizeof(lcd_init_cmds[0]),
         .flags = {
             .use_qspi_interface = 1,
         },
@@ -135,7 +152,7 @@ esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handl
         .vendor_config = &vendor_config,
     };
 
-    ESP_ERROR_CHECK(esp_lcd_new_panel_co5300(*io_handle, &panel_config, panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_new_panel_sh8601(*io_handle, &panel_config, panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(*panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(*panel_handle));
 

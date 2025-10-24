@@ -20,7 +20,7 @@ set(ALL_DEPS
     esp_lcd_touch_axs5106
 
     # 1.64" AMOLED display
-    esp_lcd_co5300
+    esp_lcd_sh8601
     esp_lcd_touch_ft3168
 
     # Wifi part

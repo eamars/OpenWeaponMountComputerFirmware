@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include "lvgl.h"
-
+#include "esp_err.h"
 
 typedef enum {
     TRIGGER_RISING_EDGE,
