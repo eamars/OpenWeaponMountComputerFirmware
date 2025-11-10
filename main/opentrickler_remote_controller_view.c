@@ -213,8 +213,16 @@ static void opentrickler_rest_poller_task(void *p) {
         xEventGroupSetBits(opentrickler_rest_poller_task_control, OPENTRICKLER_REST_POLLER_SERVER_SELECTED);
     }
 
+    // Maximum buffer length is known, there is no need to dynamically allocate
+    char * charge_mode_state_json_raw = heap_caps_calloc(1, OPENTRICKLER_REST_BUFFER_BYTES, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+    if (!charge_mode_state_json_raw) {
+        ret = ESP_ERR_NO_MEM;
+        ESP_LOGE(TAG, "Failed to allocate memory for charge_mode_state_json_raw");
+        ESP_ERROR_CHECK(ret);
+    }
+
     // Start the polling loop
-    TickType_t last_poll_tick;
+    TickType_t last_poll_tick = 0;
 
     while (true) {
         // Wait for bits to be asserted
@@ -227,13 +235,6 @@ static void opentrickler_rest_poller_task(void *p) {
         );
 
         esp_http_client_handle_t client = NULL;
-
-        // Maximum buffer length is known, there is no need to dynamically allocate
-        char * charge_mode_state_json_raw = heap_caps_calloc(1, OPENTRICKLER_REST_BUFFER_BYTES, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
-        if (!charge_mode_state_json_raw) {
-            ret = ESP_ERR_NO_MEM;
-            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to allocate memory for charge_mode_state_json_raw");
-        }
 
         // Once allow to run, will keep running until the run bit is cleared. This will
         // 1. Create HTTP connection to the server
@@ -334,10 +335,11 @@ finally:
         if (client) {
             esp_http_client_cleanup(client);
         }
-        if (charge_mode_state_json_raw) {
-            heap_caps_free(charge_mode_state_json_raw);
-            charge_mode_state_json_raw = NULL;
-        }
+    }
+
+    if (charge_mode_state_json_raw) {
+        heap_caps_free(charge_mode_state_json_raw);
+        charge_mode_state_json_raw = NULL;
     }
 }
 
