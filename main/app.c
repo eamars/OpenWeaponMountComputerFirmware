@@ -149,7 +149,6 @@ void app_main(void)
             .mirror_x = false,
             .mirror_y = false
         },
-        .trans_size = 4096,
         .flags = {
             .swap_bytes = true,
             .sw_rotate = true,
@@ -204,4 +203,9 @@ void *lv_realloc_core(void *p, size_t new_size) {
 void lv_free_core(void *p)
 {
 	heap_caps_free(p);
+}
+
+void esp_task_wdt_isr_user_handler(void) {
+    // Reboot
+    esp_restart();
 }
