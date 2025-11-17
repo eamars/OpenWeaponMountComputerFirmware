@@ -29,6 +29,10 @@
 #endif  // BNO085_EVENT_QUEUE_DEPTH
 
 
+#ifndef BNO085_USE_SOFTWARE_CONTROLLED_CS_PIN
+    #define BNO085_USE_SOFTWARE_CONTROLLED_CS_PIN 0
+#endif  // BNO085_USE_SOFTWARE_CONTROLLED_CS_PIN
+
 
 #define DEG_TO_RAD(deg) ((deg) * M_PI / 180.0f)
 #define RAD_TO_DEG(rad) ((rad) * 180.0f / M_PI)
@@ -92,7 +96,7 @@ esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus
 /**
  * @brief Initialize the BNO085 sensor using SPI communication
  */
-esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, gpio_num_t spi_cs_pin, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin, gpio_num_t ps0_wake_pin);
+esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, spi_host_device_t spi_host, gpio_num_t spi_cs_pin, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin, gpio_num_t ps0_wake_pin);
 
 /**
  * @brief Enable Game Rotation Vector Report

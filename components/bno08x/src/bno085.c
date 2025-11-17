@@ -205,6 +205,8 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
 
         // Setup interrupt handler
         ESP_ERROR_CHECK(gpio_isr_handler_add(ctx->interrupt_pin, bno085_interrupt_handler, (void *) ctx));
+
+        ESP_LOGI(TAG, "Configured interrupt on pin %d", ctx->interrupt_pin);
     }
 
     // Configure reset pin
@@ -220,6 +222,8 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
 
         // Set reset pin to high
         gpio_set_level(ctx->reset_pin, 1);
+
+        ESP_LOGI(TAG, "Configured reset on pin %d", ctx->reset_pin);
     }
 
     // Configure boot pin
@@ -235,6 +239,8 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
 
         // Set boot pin to high (normal mode)
         gpio_set_level(ctx->boot_pin, 1);
+
+        ESP_LOGI(TAG, "Configured boot on pin %d", ctx->boot_pin);
     }
 
     // Configure ps0_wake pin
@@ -248,7 +254,7 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
         };
         ESP_ERROR_CHECK(gpio_config(&io_conf));
 
-        // NOTE: Do not configure the default value
+        ESP_LOGI(TAG, "Configured ps0_wake on pin %d", ctx->ps0_wake_pin);
     }
 
     return ESP_OK;

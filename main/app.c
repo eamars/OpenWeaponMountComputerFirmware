@@ -92,6 +92,8 @@ esp_err_t storage_init() {
 
 void app_main(void)
 {
+    esp_err_t ret;
+
     // Create task to monitor memory usage
     xTaskCreate(mem_monitor_task, "mem_monitor_task", 4096, NULL, 3, NULL);
 
@@ -112,26 +114,48 @@ void app_main(void)
     i2c_master_bus_handle_t i2c_bus_handle = i2c_master_init();
     
     // Initialize display modules
-    ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, 100));
-    ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
+    // ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, 100));
+    // ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
 
-#if USE_BNO085
-    // Initialize BNO085 sensor
-    bno085_i2c_ctx_t * bno085_i2c_dev = heap_caps_malloc(sizeof(bno085_i2c_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);    
-    if (bno085_i2c_dev == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate memory for BNO085 I2C device");
+// #if USE_BNO085
+//     // Initialize BNO085 sensor
+//     bno085_i2c_ctx_t * bno085_i2c_dev = heap_caps_malloc(sizeof(bno085_i2c_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);    
+//     if (bno085_i2c_dev == NULL) {
+//         ESP_LOGE(TAG, "Failed to allocate memory for BNO085 I2C device");
+//         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+//     }
+//     memset(bno085_i2c_dev, 0, sizeof(bno085_i2c_ctx_t));
+//     ESP_ERROR_CHECK(bno085_init_i2c(bno085_i2c_dev, i2c_bus_handle, BNO085_INT_PIN));
+//     bno085_dev = (bno085_ctx_t *) bno085_i2c_dev;
+// #endif  // USE_BNO085
+
+#if USE_BNO085_SPI
+    // Initialize SPI BUS
+    spi_bus_config_t buscfg = {
+        .miso_io_num = SPI_MISO,
+        .mosi_io_num = SPI_MOSI,
+        .sclk_io_num = SPI_SCLK,
+        .quadwp_io_num = GPIO_NUM_NC,
+        .quadhd_io_num = GPIO_NUM_NC,
+    };
+    ESP_ERROR_CHECK(spi_bus_initialize(SPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
+
+    // Initialize BNO085 SPI interface
+    bno085_spi_ctx_t * bno085_spi_dev = heap_caps_malloc(sizeof(bno085_spi_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+    if (bno085_spi_dev == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for BNO085 SPI device");
         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
     }
-    memset(bno085_i2c_dev, 0, sizeof(bno085_i2c_ctx_t));
-    ESP_ERROR_CHECK(bno085_init_i2c(bno085_i2c_dev, i2c_bus_handle, BNO085_INT_PIN));
-    bno085_dev = (bno085_ctx_t *) bno085_i2c_dev;
-#endif  // USE_BNO085
+    memset(bno085_spi_dev, 0, sizeof(bno085_spi_ctx_t));
+    ESP_ERROR_CHECK(bno085_init_spi(bno085_spi_dev, SPI_HOST, BNO085_CS_PIN, BNO085_INT_PIN, BNO085_RESET_PIN, BNO085_BOOT_PIN, BNO085_PS0_WAKE_PIN));
+    bno085_dev = (bno085_ctx_t *) bno085_spi_dev;
+#endif // USE_BNO085_SPI
 
     // Initialize LVGL
     lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
     lvgl_cfg.task_stack = 8192;
     
-    esp_err_t ret = lvgl_port_init(&lvgl_cfg);
+    ret = lvgl_port_init(&lvgl_cfg);
     ESP_ERROR_CHECK(ret);
 
     // Add display to LVGL
@@ -205,7 +229,7 @@ void lv_free_core(void *p)
 	heap_caps_free(p);
 }
 
-void esp_task_wdt_isr_user_handler(void) {
-    // Reboot
-    esp_restart();
-}
+// void esp_task_wdt_isr_user_handler(void) {
+//     // Reboot
+//     esp_restart();
+// }
