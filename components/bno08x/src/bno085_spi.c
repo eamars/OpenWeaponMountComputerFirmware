@@ -56,11 +56,9 @@ void bno085_spi_hard_reset(bno085_ctx_t *ctx) {
 }
 
 int bno085_hal_spi_open(sh2_Hal_t *self) {
-    // if (_bno085_wait_for_interrupt((bno085_ctx_t *) self) != ESP_OK) {
-    //     bno085_spi_hard_reset((bno085_ctx_t *) self);
-    // }
-
-    bno085_spi_hard_reset((bno085_ctx_t *) self);
+    if (_bno085_wait_for_interrupt((bno085_ctx_t *) self) != ESP_OK) {
+        bno085_spi_hard_reset((bno085_ctx_t *) self);
+    }
 
     return 0;
 } 
@@ -72,7 +70,7 @@ int bno085_hal_spi_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_
     esp_err_t err;
 
     if (_bno085_wait_for_interrupt((bno085_ctx_t *) self) != ESP_OK) {
-        ESP_LOGI(TAG, "spi_read() timeout waiting for interrupt");
+        ESP_LOGW(TAG, "spi_read() timeout waiting for interrupt");
         return 0;
     }
 
@@ -146,6 +144,17 @@ int bno085_hal_spi_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
     bno085_spi_ctx_t * ctx = (bno085_spi_ctx_t *) self;
     esp_err_t err;
 
+    if (_bno085_wait_for_interrupt((bno085_ctx_t *) self) != ESP_OK) {
+        ESP_LOGW(TAG, "spi_write() timeout waiting for interrupt");
+        return 0;
+    }
+    
+    ESP_LOGI(TAG, "spi_write() write %d bytes", len);
+    for (int i = 0; i < len; i++) {
+        printf("%02x ", pBuffer[i]);
+    }
+    printf("\n"); 
+
     ESP_LOGI(TAG, "spi_write() writing %d bytes", len);
 
 #if BNO085_USE_SOFTWARE_CONTROLLED_CS_PIN
@@ -198,6 +207,7 @@ esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, spi_host_device_t spi_host, gpi
         .pull_up_en = GPIO_PULLUP_DISABLE,
     };
     ESP_ERROR_CHECK(gpio_config(&io_conf));
+    gpio_set_level(ctx->spi_cs_pin, 1);  // de-assert CS
 
     ESP_LOGI(TAG, "Configured spi_cs pin on pin %d", ctx->spi_cs_pin);
 

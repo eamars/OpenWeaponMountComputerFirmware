@@ -154,21 +154,22 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
             for (uint8_t i = 0; i < SH2_MAX_SENSOR_EVENT_LEN; i += 1) {
                 // Re-enable reports
                 if (ctx->enabled_sensor_report_list[i].interval_ms != 0) {
+                    ESP_LOGI(TAG, "Re-enabling report for sensor ID %d with interval %d ms", i, ctx->enabled_sensor_report_list[i].interval_ms);
                     sh2_enable_report(i, ctx->enabled_sensor_report_list[i].interval_ms);
                 }
             }
             break;
         }
         case SH2_SHTP_EVENT: {
-            // ESP_LOGI(TAG, "EventHandler  id:SHTP, %d\n", pEvent->shtpEvent);
+            ESP_LOGI(TAG, "EventHandler id:SHTP, %d", pEvent->shtpEvent);
             break;
         }
         case SH2_GET_FEATURE_RESP: {
-            // ESP_LOGI(TAG, "EventHandler Sensor Config, %d\n", pEvent->sh2SensorConfigResp.sensorId);
+            ESP_LOGI(TAG, "EventHandler Sensor Config, %d", pEvent->sh2SensorConfigResp.sensorId);
             break;
         }
         default: {
-            ESP_LOGW(TAG, "EventHandler, unknown event Id: %d\n", pEvent->eventId);
+            ESP_LOGW(TAG, "EventHandler, unknown event Id: %d", pEvent->eventId);
         }
     }
 
