@@ -30,6 +30,8 @@
 #include "bsp.h"
 #include "wifi.h"
 #include "wifi_provision.h"
+#include "axp2101.h"
+
 
 #define TAG "App"
 
@@ -112,6 +114,9 @@ void app_main(void)
 
     // Initialize I2C
     i2c_master_bus_handle_t i2c_bus_handle = i2c_master_init();
+
+    // Initialize PMU
+    ESP_ERROR_CHECK(axp2101_init());
     
     // Initialize display modules
     ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, 100));

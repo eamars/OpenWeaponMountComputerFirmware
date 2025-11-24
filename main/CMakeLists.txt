@@ -38,6 +38,9 @@ set(ALL_DEPS
 
     # MDNS
     mdns
+
+    # PMIC
+    esp_pmic_axp2101
 )
 
 
