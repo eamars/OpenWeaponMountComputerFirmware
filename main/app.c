@@ -116,7 +116,10 @@ void app_main(void)
     i2c_master_bus_handle_t i2c_bus_handle = i2c_master_init();
 
     // Initialize PMU
-    ESP_ERROR_CHECK(axp2101_init());
+    axp2101_ctx_t * axp2101_dev = heap_caps_malloc(sizeof(axp2101_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+    ESP_ERROR_CHECK(axp2101_init(axp2101_dev, i2c_bus_handle, PMIC_AXP2101_INT_PIN));
+
+    return;
     
     // Initialize display modules
     ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, 100));
