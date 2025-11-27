@@ -1,5 +1,5 @@
-#include "axp2101.h"
-#include "axp2101_priv.h"
+#include "pmic_axp2101.h"
+#include "esp_err.h"
 
 #define TAG "AXP2101CPP"
 
@@ -13,6 +13,12 @@ static XPowersPMU PMU;
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+
+typedef enum {
+    PMIC_INTERRUPT_EVENT_BIT = (1 << 0),
+    PMIC_INIT_SUCCESS_EVENT_BIT = (1 << 1),
+} pmic_event_control_bit_e;
 
 
 static void IRAM_ATTR axp2101_interrupt_handler(void * args) {
@@ -34,7 +40,7 @@ void axp2101_monitor_task(void * args) {
 
     while (1) {
         // Wait until the interrupt happens
-        if (xEventGroupWaitBits(ctx->pmic_event_control, PMIC_INTERRUPT_EVENT_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(500)) == pdTRUE) {
+        if (xEventGroupWaitBits(ctx->pmic_event_control, PMIC_INTERRUPT_EVENT_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(2000)) == pdTRUE) {
             // Handle PMIC interrupt
             PMU.getIrqStatus();
 
@@ -110,6 +116,18 @@ void axp2101_monitor_task(void * args) {
             // Clear PMU Interrupt Status Register
             PMU.clearIrqStatus();
         }
+
+        // Read status
+        ctx->status.charge_status = PMU.getChargerStatus();
+        ctx->status.battery_percentage = PMU.getBatteryPercent();
+        ctx->status.ts_temperature = PMU.getTsTemperature();
+
+        // Print it out
+        ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",
+            ctx->status.charge_status,
+            ctx->status.battery_percentage,
+            ctx->status.ts_temperature
+        );
     }
 }
 

@@ -1,5 +1,5 @@
-#ifndef AXP2101_H
-#define AXP2101_H
+#ifndef PMIC_AXP2101_H
+#define PMIC_AXP2101_H
 
 
 #include "esp_err.h"
@@ -35,14 +35,23 @@
 extern "C" {
 #endif
 
+typedef struct {
+    int charge_status;
+    int battery_percentage;
+    float ts_temperature;
+
+} axp2101_status_t;
+
 
 typedef struct {
     EventGroupHandle_t pmic_event_control;
     i2c_master_dev_handle_t dev_handle;
     TaskHandle_t pmic_monitor_task_handle;
+    axp2101_status_t status;
 
     gpio_num_t interrupt_pin;
 } axp2101_ctx_t;
+
 
 esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, gpio_num_t interrupt_pin);
 
@@ -50,4 +59,4 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
 }
 #endif
 
-#endif  // AXP2101_H
+#endif  // PMIC_AXP2101_H

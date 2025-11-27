@@ -30,7 +30,7 @@
 #include "bsp.h"
 #include "wifi.h"
 #include "wifi_provision.h"
-#include "axp2101.h"
+#include "pmic_axp2101.h"
 
 
 #define TAG "App"

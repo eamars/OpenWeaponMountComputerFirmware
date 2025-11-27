@@ -1,4 +1,4 @@
-file(GLOB_RECURSE SRC_FILES "*.c")
+file(GLOB_RECURSE SRC_FILES "*.c" "*.cpp")
 
 set(ALL_DEPS
     # Base requirements
@@ -40,7 +40,7 @@ set(ALL_DEPS
     mdns
 
     # PMIC
-    esp_pmic_axp2101
+    XPowersLib
 )
 
 
