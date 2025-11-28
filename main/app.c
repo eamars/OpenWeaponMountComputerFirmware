@@ -31,6 +31,7 @@
 #include "wifi.h"
 #include "wifi_provision.h"
 #include "pmic_axp2101.h"
+#include "usb.h"
 
 
 #define TAG "App"
@@ -115,15 +116,17 @@ void app_main(void)
     // Initialize I2C
     i2c_master_bus_handle_t i2c_bus_handle = i2c_master_init();
 
+    // Initialize USB
+    // ESP_ERROR_CHECK(usb_init());
+
     // Initialize PMU
     axp2101_ctx_t * axp2101_dev = heap_caps_malloc(sizeof(axp2101_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
     ESP_ERROR_CHECK(axp2101_init(axp2101_dev, i2c_bus_handle, PMIC_AXP2101_INT_PIN));
 
-    return;
     
     // Initialize display modules
     ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, 100));
-    ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
+    // ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
 
 // #if USE_BNO085
 //     // Initialize BNO085 sensor
@@ -198,7 +201,7 @@ void app_main(void)
         .disp = lvgl_disp, 
         .handle = touch_handle
     };
-    lvgl_touch_handle = lvgl_port_add_touch(&touch_cfg);
+    // lvgl_touch_handle = lvgl_port_add_touch(&touch_cfg);
 
     // Create LVGL application
     if (lvgl_port_lock(0)) {

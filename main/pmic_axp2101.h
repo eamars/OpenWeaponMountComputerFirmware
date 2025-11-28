@@ -36,9 +36,17 @@ extern "C" {
 #endif
 
 typedef struct {
+
+} pmic_config_t;
+
+typedef struct {
     int charge_status;
     int battery_percentage;
     float ts_temperature;
+    
+    uint16_t vbus_voltage_mv;
+    uint16_t vbatt_voltage_mv;
+    uint16_t vsys_voltage_mv;
 
 } axp2101_status_t;
 

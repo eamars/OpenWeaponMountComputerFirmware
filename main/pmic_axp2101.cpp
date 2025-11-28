@@ -1,13 +1,15 @@
 #include "pmic_axp2101.h"
 #include "esp_err.h"
 
-#define TAG "AXP2101CPP"
-
-#define XPOWERS_CHIP_AXP2101
-#define CONFIG_XPOWERS_ESP_IDF_NEW_API
+// Configuration is included in sdkconfig
+#include "app_cfg.h"
+#include "sdkconfig.h"
 #include "XPowersLib.h"
 
 static XPowersPMU PMU;
+
+
+#define TAG "AXP2101CPP"
 
 // C Function region
 #ifdef __cplusplus
@@ -122,11 +124,20 @@ void axp2101_monitor_task(void * args) {
         ctx->status.battery_percentage = PMU.getBatteryPercent();
         ctx->status.ts_temperature = PMU.getTsTemperature();
 
+        ctx->status.vbus_voltage_mv = PMU.getVbusVoltage();
+        ctx->status.vbatt_voltage_mv = PMU.getBattVoltage();
+        ctx->status.vsys_voltage_mv = PMU.getSystemVoltage();
+
         // Print it out
         ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",
             ctx->status.charge_status,
             ctx->status.battery_percentage,
             ctx->status.ts_temperature
+        );
+        ESP_LOGI(TAG, "VBUS: %dmV, VBATT: %dmV, VSYS: %dmV",
+            ctx->status.vbus_voltage_mv,
+            ctx->status.vbatt_voltage_mv,
+            ctx->status.vsys_voltage_mv
         );
     }
 }
@@ -220,13 +231,13 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setVbusVoltageLimit(XPOWERS_AXP2101_VBUS_VOL_LIM_3V88);  // allow extremely low voltage input
 
     // Set maximum current per VBUS input
-    PMU.setVbusCurrentLimit(XPOWERS_AXP2101_VBUS_CUR_LIM_1500MA);
+    PMU.setVbusCurrentLimit(XPOWERS_AXP2101_VBUS_CUR_LIM_500MA);
 
     // Set VSYS shutdown voltage
     PMU.setSysPowerDownVoltage(2600);
 
     // Configure LED behavior (by the charger)
-    PMU.setChargingLedMode(XPOWERS_CHG_LED_BLINK_1HZ);
+    PMU.setChargingLedMode(XPOWERS_CHG_LED_CTRL_CHG);
 
     // Configure IQR
     PMU.disableIRQ(XPOWERS_AXP2101_ALL_IRQ);
@@ -244,7 +255,7 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_25MA);
 
     // Set constant charge current limit
-    PMU.setChargerConstantCurr(XPOWERS_AXP2101_CHG_CUR_500MA);
+    PMU.setChargerConstantCurr(XPOWERS_AXP2101_CHG_CUR_1000MA);
 
     // Set charge cut off voltage
     PMU.setChargeTargetVoltage(XPOWERS_AXP2101_CHG_VOL_4V1);
@@ -252,19 +263,6 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     // set low battery warning levels
     PMU.setLowBatWarnThreshold(10);
     PMU.setLowBatShutdownThreshold(5);
-
-
-    // Read basic system input sources
-    ESP_LOGI(TAG, "VBUS Voltage: %d mV", PMU.getVbusVoltage());
-    ESP_LOGI(TAG, "VBATT Voltage: %d mV", PMU.getBattVoltage());
-    ESP_LOGI(TAG, "SYS Voltage: %d mV", PMU.getSystemVoltage());
-    ESP_LOGI(TAG, "DC1 Voltage: %d mV", PMU.getDC1Voltage());
-
-
-    // Perform a voltage measurement on DC1 (load circuit for main power supply)
-    PMU.enableTSPinMeasure();
-    float battery_temp = PMU.getTsTemperature();
-    ESP_LOGI(TAG, "AXP2101 Battery Temperature: %.2f C", battery_temp);
 
     // Create task to handle PMIC interrupt
     BaseType_t rtos_return = xTaskCreate(

@@ -20,3 +20,4 @@ dependencies:
   espressif/json_parser: ^1.0.3
   espressif/mdns: ^1.8.2
   espressif/esp_lcd_sh8601: ^1.0.0
+  espressif/esp_tinyusb: ^2.0.0

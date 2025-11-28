@@ -57,6 +57,7 @@
 #define BUZZER_OUT_PIN           (GPIO_NUM_21)
 
 // AXP2101 power management
+#define XPOWERS_CHIP_AXP2101
 #define I2C_ADDR_AXP2101         0x34
 #define PMIC_AXP2101_INT_PIN     (GPIO_NUM_47)
 
