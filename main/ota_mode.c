@@ -553,7 +553,7 @@ finally:
     xEventGroupSetBits(ota_event_group, OTA_EVENT_USER_CONFIRMED);
  }
 
- static void on_reboot_button_pressed(lv_event_t * e) {
+ void on_reboot_button_pressed(lv_event_t * e) {
     ESP_LOGI(TAG, "Restarting");
     esp_restart();
  }

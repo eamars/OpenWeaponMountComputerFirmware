@@ -38,6 +38,7 @@
 
 
 bno085_ctx_t * bno085_dev;
+axp2101_ctx_t * axp2101_dev;
 extern system_config_t system_config;
 extern sensor_config_t sensor_config;
 
@@ -125,7 +126,7 @@ void app_main(void)
     // ESP_ERROR_CHECK(usb_init());
 
     // Initialize PMIC
-    axp2101_ctx_t * axp2101_dev = heap_caps_malloc(sizeof(axp2101_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+    axp2101_dev = heap_caps_malloc(sizeof(axp2101_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
     ESP_ERROR_CHECK(axp2101_init(axp2101_dev, i2c_bus_handle, PMIC_AXP2101_INT_PIN));
     ESP_ERROR_CHECK(axp2101_deinit(axp2101_dev));
 

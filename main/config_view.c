@@ -211,7 +211,7 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, lv_
 
 lv_obj_t * create_dropdown_list(lv_obj_t * container, const char * options, int32_t current_selection, lv_event_cb_t event_cb, void * event_cb_args) {
     lv_obj_t * dropdown_list_option = lv_dropdown_create(container);
-    lv_obj_set_size(dropdown_list_option, lv_pct(100), lv_pct(100));
+    lv_obj_set_size(dropdown_list_option, lv_pct(100), 36);
     lv_obj_add_flag(dropdown_list_option, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
     lv_dropdown_set_options(dropdown_list_option, options);
     lv_dropdown_set_selected(dropdown_list_option, current_selection);

@@ -322,6 +322,15 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setLowBatWarnThreshold(10);
     PMU.setLowBatShutdownThreshold(5);
 
+    // Define button behavior
+    // Configure threshold
+    PMU.setOnLevel(0);  // 128ms
+    PMU.setOffLevel(0);  // 4s
+    PMU.setIrqLevel(0);  // 1s
+    // FIXME: For the production unit the long press should be reverted to restart
+    PMU.enableLongPressShutdown();
+    PMU.setLongPressPowerOFF();
+
     // Print configured items
     ESP_LOGI(TAG, "PMIC Configuration Applied:");
     ESP_LOGI(TAG, "  VBUS Current Limit: %d", PMU.getVbusCurrentLimit());
@@ -394,7 +403,8 @@ esp_err_t axp2101_deinit(axp2101_ctx_t *ctx) {
     }
     ESP_LOGI(TAG, "Event group deleted");
 
-    heap_caps_free(ctx);
+    // FIXME: Don't free the CTX for now. 
+    // heap_caps_free(ctx);
 
     // Remove I2C device from master bus
     PMU.deinit();

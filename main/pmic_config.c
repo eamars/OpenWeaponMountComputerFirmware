@@ -28,6 +28,13 @@ const power_management_config_t default_power_management_config_t = {
     .battery_charge_voltage = PMIC_BATTERY_CHARGE_VOLTAGE_4V2,
 };
 
+// from app.c
+extern axp2101_ctx_t * axp2101_dev;
+
+
+HEAPS_CAPS_ATTR static char status_str_l1[64] = {0};
+HEAPS_CAPS_ATTR static char status_str_l2[64] = {0};
+
 
 esp_err_t save_pmic_config() {
     esp_err_t ret;
@@ -170,6 +177,14 @@ lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * pare
     lv_obj_t * config_item;
 
     lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
+
+    // FIXME: Update status once PMIC is working
+    snprintf(status_str_l1, sizeof(status_str_l1), "SoC:%d,VBAT:%dmV", axp2101_dev->status.battery_percentage, axp2101_dev->status.vbatt_voltage_mv);
+    snprintf(status_str_l2, sizeof(status_str_l2), "VBUS:%dmV,VSYS:%dmV", axp2101_dev->status.vbus_voltage_mv, axp2101_dev->status.vsys_voltage_mv);
+
+    // Battery status label
+    lv_obj_t * status_label_1 = create_config_label_static(sub_page_config_view, status_str_l1);
+    lv_obj_t * status_label_2 = create_config_label_static(sub_page_config_view, status_str_l2);
 
     // VBUS current limit
     container = create_menu_container_with_text(sub_page_config_view, NULL, "VBUS Current Limit");
