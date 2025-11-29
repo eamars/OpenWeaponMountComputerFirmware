@@ -124,6 +124,22 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
         return ESP_ERR_NO_MEM;
     }
 
+    // Prepare pin for touch controller reset
+    if (touch_handle->config.rst_gpio_num != GPIO_NUM_NC)
+    {
+        const gpio_config_t rst_gpio_config = {
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = BIT64(touch_handle->config.rst_gpio_num)
+        };
+        ESP_RETURN_ON_ERROR(gpio_config(&rst_gpio_config), TAG, "GPIO config failed");
+
+        // Perform a reset
+        gpio_set_level(touch_handle->config.rst_gpio_num, touch_handle->config.levels.reset);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        gpio_set_level(touch_handle->config.rst_gpio_num, !touch_handle->config.levels.reset);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
     // Initialize touch screen
     uint8_t write_buf[2] = {0x0, 0x0};  // write 0x0 to addr 0x0 to switch to working mode
     ESP_RETURN_ON_ERROR(i2c_master_transmit(config->driver_data, write_buf, 2, -1), TAG, "Failed to initialize touch screen");
@@ -159,22 +175,6 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
         {
             esp_lcd_touch_register_interrupt_callback(touch_handle, touch_handle->config.interrupt_callback);
         }
-    }
-
-    // Prepare pin for touch controller reset
-    if (touch_handle->config.rst_gpio_num != GPIO_NUM_NC)
-    {
-        const gpio_config_t rst_gpio_config = {
-            .mode = GPIO_MODE_OUTPUT,
-            .pin_bit_mask = BIT64(touch_handle->config.rst_gpio_num)
-        };
-        ESP_RETURN_ON_ERROR(gpio_config(&rst_gpio_config), TAG, "GPIO config failed");
-
-        // Perform a reset
-        gpio_set_level(touch_handle->config.rst_gpio_num, touch_handle->config.levels.reset);
-        vTaskDelay(pdMS_TO_TICKS(10));
-        gpio_set_level(touch_handle->config.rst_gpio_num, !touch_handle->config.levels.reset);
-        vTaskDelay(pdMS_TO_TICKS(100));
     }
 
     *out_touch = touch_handle;
