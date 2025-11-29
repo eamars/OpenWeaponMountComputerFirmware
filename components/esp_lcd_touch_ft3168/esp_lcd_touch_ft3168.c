@@ -96,6 +96,20 @@ bool esp_lcd_touch_ft3168_get_xy(esp_lcd_touch_handle_t ctx, uint16_t *x, uint16
 esp_err_t esp_lcd_touch_ft3168_del(esp_lcd_touch_handle_t ctx) {
     assert(ctx != NULL);
 
+    // Reset GPIO pin settings
+    if (ctx->config.int_gpio_num != GPIO_NUM_NC)
+    {
+        gpio_reset_pin(ctx->config.int_gpio_num);
+        if (ctx->config.interrupt_callback)
+        {
+            esp_lcd_touch_register_interrupt_callback(ctx, NULL);
+        }
+    }
+    if (ctx->config.rst_gpio_num != GPIO_NUM_NC)
+    {
+        gpio_reset_pin(ctx->config.rst_gpio_num);
+    }
+
     // Free resources
     free(ctx);
 
@@ -128,6 +142,40 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
 
     /* Save config */
     memcpy(&touch_handle->config, config, sizeof(esp_lcd_touch_config_t));
+
+    // Prepare pin for touch interrupt
+    if (touch_handle->config.int_gpio_num != GPIO_NUM_NC)
+    {
+        const gpio_config_t int_gpio_config = {
+            .mode = GPIO_MODE_INPUT,
+            .intr_type = (touch_handle->config.levels.interrupt ? GPIO_INTR_POSEDGE : GPIO_INTR_NEGEDGE),
+            .pin_bit_mask = BIT64(touch_handle->config.int_gpio_num)
+        };
+        
+        ESP_RETURN_ON_ERROR(gpio_config(&int_gpio_config), TAG, "GPIO config failed");
+
+        /* Register interrupt callback */
+        if (touch_handle->config.interrupt_callback)
+        {
+            esp_lcd_touch_register_interrupt_callback(touch_handle, touch_handle->config.interrupt_callback);
+        }
+    }
+
+    // Prepare pin for touch controller reset
+    if (touch_handle->config.rst_gpio_num != GPIO_NUM_NC)
+    {
+        const gpio_config_t rst_gpio_config = {
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = BIT64(touch_handle->config.rst_gpio_num)
+        };
+        ESP_RETURN_ON_ERROR(gpio_config(&rst_gpio_config), TAG, "GPIO config failed");
+
+        // Perform a reset
+        gpio_set_level(touch_handle->config.rst_gpio_num, touch_handle->config.levels.reset);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        gpio_set_level(touch_handle->config.rst_gpio_num, !touch_handle->config.levels.reset);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 
     *out_touch = touch_handle;
 

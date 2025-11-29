@@ -179,6 +179,9 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
         ESP_LOGI(TAG, "Configured AXP2101 interrupt on pin %d", ctx->interrupt_pin);
     }
 
+    // Send an probe command to verify if the device is available
+    // ESP_ERROR_CHECK(i2c_master_probe(i2c_bus_handle, AXP2101_I2C_SLAVE_ADDRESS, AXP2101_I2C_WRITE_TIMEOUT_MS));
+
     // Configure I2C interface for PMIC
     // i2c_device_config_t dev_cfg = {
     //     .dev_addr_length = I2C_ADDR_BIT_LEN_7,
@@ -186,12 +189,6 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     //     .scl_speed_hz = 100000,
     // };
     // ESP_ERROR_CHECK(i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, &ctx->dev_handle));
-
-
-    // Send an probe command to verify if the device is available
-    ESP_ERROR_CHECK(i2c_master_probe(i2c_bus_handle, AXP2101_I2C_SLAVE_ADDRESS, AXP2101_I2C_WRITE_TIMEOUT_MS));
-
-    // Add I2C slave to the master
 
     // Initialize PMU object
     if (PMU.begin(i2c_bus_handle, AXP2101_I2C_SLAVE_ADDRESS)) {
@@ -264,6 +261,27 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setLowBatWarnThreshold(10);
     PMU.setLowBatShutdownThreshold(5);
 
+    // Read status
+    ctx->status.charge_status = PMU.getChargerStatus();
+    ctx->status.battery_percentage = PMU.getBatteryPercent();
+    ctx->status.ts_temperature = PMU.getTsTemperature();
+
+    ctx->status.vbus_voltage_mv = PMU.getVbusVoltage();
+    ctx->status.vbatt_voltage_mv = PMU.getBattVoltage();
+    ctx->status.vsys_voltage_mv = PMU.getSystemVoltage();
+
+    // Print it out
+    ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",
+        ctx->status.charge_status,
+        ctx->status.battery_percentage,
+        ctx->status.ts_temperature
+    );
+    ESP_LOGI(TAG, "VBUS: %dmV, VBATT: %dmV, VSYS: %dmV",
+        ctx->status.vbus_voltage_mv,
+        ctx->status.vbatt_voltage_mv,
+        ctx->status.vsys_voltage_mv
+    );
+
     // Create task to handle PMIC interrupt
     BaseType_t rtos_return = xTaskCreate(
         axp2101_monitor_task,
@@ -277,6 +295,43 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
         ESP_LOGE(TAG, "Failed to create axp2101_monitor_task");
         return ESP_FAIL;
     }
+
+    ESP_LOGI(TAG, "AXP2101 Initialization complete");
+
+    return ESP_OK;
+}
+
+
+esp_err_t axp2101_deinit(axp2101_ctx_t *ctx) {
+    if (ctx == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Delete monitor task
+    if (ctx->pmic_monitor_task_handle != NULL) {
+        vTaskDelete(ctx->pmic_monitor_task_handle);
+        ctx->pmic_monitor_task_handle = NULL;
+    }
+    ESP_LOGI(TAG, "Monitor task deleted");
+
+    // Remove interrupt handler
+    if (ctx->interrupt_pin != GPIO_NUM_NC) {
+        ESP_ERROR_CHECK(gpio_isr_handler_remove(ctx->interrupt_pin));
+    }
+    ESP_LOGI(TAG, "Interrupt handler removed");
+
+    // Delete event group
+    if (ctx->pmic_event_control != NULL) {
+        vEventGroupDelete(ctx->pmic_event_control);
+        ctx->pmic_event_control = NULL;
+    }
+    ESP_LOGI(TAG, "Event group deleted");
+
+    heap_caps_free(ctx);
+
+    // Remove I2C device from master bus
+    PMU.deinit();
+    ESP_LOGI(TAG, "I2C device removed from master bus");
 
     return ESP_OK;
 }

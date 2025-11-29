@@ -68,13 +68,18 @@ void mem_monitor_task(void *pvParameters) {
     }
 }
 
-i2c_master_bus_handle_t i2c_master_init() {
+i2c_master_bus_handle_t i2c_master_init(bool toggled) {
     i2c_master_bus_handle_t i2c_bus_handle;
     i2c_master_bus_config_t i2c_mst_config = {};
     i2c_mst_config.clk_source = I2C_CLK_SRC_DEFAULT;
     i2c_mst_config.i2c_port = (i2c_port_num_t) I2C_PORT_NUM;
-    i2c_mst_config.scl_io_num = I2C_MASTER_SCL;
-    i2c_mst_config.sda_io_num = I2C_MASTER_SDA;
+    if (toggled) {
+        i2c_mst_config.scl_io_num = I2C_MASTER_SDA;
+        i2c_mst_config.sda_io_num = I2C_MASTER_SCL;
+    } else {
+        i2c_mst_config.scl_io_num = I2C_MASTER_SCL;
+        i2c_mst_config.sda_io_num = I2C_MASTER_SDA;
+    }
     i2c_mst_config.glitch_ignore_cnt = 7;
     i2c_mst_config.flags.enable_internal_pullup = 1;
 
@@ -114,19 +119,23 @@ void app_main(void)
     ESP_ERROR_CHECK(load_sensor_config());
 
     // Initialize I2C
-    i2c_master_bus_handle_t i2c_bus_handle = i2c_master_init();
+    i2c_master_bus_handle_t i2c_bus_handle = i2c_master_init(true);
 
     // Initialize USB
     // ESP_ERROR_CHECK(usb_init());
 
-    // Initialize PMU
+    // Initialize PMIC
     axp2101_ctx_t * axp2101_dev = heap_caps_malloc(sizeof(axp2101_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
     ESP_ERROR_CHECK(axp2101_init(axp2101_dev, i2c_bus_handle, PMIC_AXP2101_INT_PIN));
+    ESP_ERROR_CHECK(axp2101_deinit(axp2101_dev));
 
+    // PMIC is initialized, we can re-initialize i2c with correct pin assignment if needed
+    ESP_ERROR_CHECK(i2c_del_master_bus(i2c_bus_handle));
+    i2c_bus_handle = i2c_master_init(false);
     
     // Initialize display modules
     ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, 100));
-    // ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
+    ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
 
 // #if USE_BNO085
 //     // Initialize BNO085 sensor
@@ -201,7 +210,7 @@ void app_main(void)
         .disp = lvgl_disp, 
         .handle = touch_handle
     };
-    // lvgl_touch_handle = lvgl_port_add_touch(&touch_cfg);
+    lvgl_touch_handle = lvgl_port_add_touch(&touch_cfg);
 
     // Create LVGL application
     if (lvgl_port_lock(0)) {

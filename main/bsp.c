@@ -227,9 +227,6 @@ esp_err_t touchscreen_init(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_
         .scl_speed_hz = 300000,
     };
 
-    // Detect the presence of device
-    ESP_RETURN_ON_ERROR(i2c_master_probe(bus_handle, I2C_ADDR_FT3168, -1), TAG, "Failed to probe FT3168");
-
     ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle), TAG, "Failed to add FT3168");
 
     // Add touch driver
@@ -237,8 +234,9 @@ esp_err_t touchscreen_init(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_
     tp_cfg.x_max = xmax < ymax ? xmax : ymax;
     tp_cfg.y_max = xmax < ymax ? ymax : xmax;
     tp_cfg.driver_data = dev_handle;
-    tp_cfg.rst_gpio_num = GPIO_NUM_NC;
-    tp_cfg.int_gpio_num = GPIO_NUM_NC;
+    tp_cfg.rst_gpio_num = TOUCHSCREEN_RST_PIN;
+    tp_cfg.int_gpio_num = TOUCHSCREEN_INT_PIN;
+    tp_cfg.levels.reset = 0;
 
     if (90 == rotation)
     {

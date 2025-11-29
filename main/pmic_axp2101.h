@@ -62,6 +62,7 @@ typedef struct {
 
 
 esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, gpio_num_t interrupt_pin);
+esp_err_t axp2101_deinit(axp2101_ctx_t *ctx);
 
 #ifdef __cplusplus
 }
