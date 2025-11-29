@@ -10,6 +10,7 @@
 #include "about_config.h"
 #include "wifi_config.h"
 #include "ota_mode.h"
+#include "pmic_axp2101.h"
 
 #define TAG "ConfigView"
 
@@ -412,12 +413,12 @@ void create_config_view(lv_obj_t *parent) {
     lv_obj_t * main_page = lv_menu_page_create(config_menu, NULL);
     lv_obj_set_scroll_dir(main_page, LV_DIR_VER);  // only horizontal scroll
 
-
+    // All top level menu items
     create_system_config_view_config(config_menu, main_page);
     create_digital_level_view_config(config_menu, main_page);
     create_sensor_config_view_config(config_menu, main_page);
     create_wifi_config_view_config(config_menu, main_page);
-
+    create_power_management_view_config(config_menu, main_page);
     create_about_config_view_config(config_menu, main_page);
     create_menu_ota_upgrade_button(main_page);
 

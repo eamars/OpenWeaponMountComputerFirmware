@@ -45,8 +45,8 @@
 #define I2C_ADDR_FT3168          0x38
 
 // BNO085 Sensor
-#define USE_BNO085 1
-#define USE_BNO085_SPI 1
+#define USE_BNO085 0
+#define USE_BNO085_SPI 0
 #define BNO085_INT_PIN           (GPIO_NUM_5)
 #define BNO085_CS_PIN            (GPIO_NUM_6)
 #define BNO085_PS0_WAKE_PIN      (GPIO_NUM_7)

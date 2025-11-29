@@ -41,7 +41,7 @@ set(ALL_DEPS
 
     # PMIC
     XPowersLib
-
+    
     # USB driver
     esp_tinyusb
 )

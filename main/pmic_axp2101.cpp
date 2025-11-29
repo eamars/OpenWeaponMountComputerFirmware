@@ -1,5 +1,6 @@
 #include "pmic_axp2101.h"
 #include "esp_err.h"
+#include "esp_log.h"
 
 // Configuration is included in sdkconfig
 #include "app_cfg.h"
@@ -11,16 +12,12 @@ static XPowersPMU PMU;
 
 #define TAG "AXP2101CPP"
 
+
 // C Function region
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-
-typedef enum {
-    PMIC_INTERRUPT_EVENT_BIT = (1 << 0),
-    PMIC_INIT_SUCCESS_EVENT_BIT = (1 << 1),
-} pmic_event_control_bit_e;
 
 
 static void IRAM_ATTR axp2101_interrupt_handler(void * args) {
@@ -34,6 +31,70 @@ static void IRAM_ATTR axp2101_interrupt_handler(void * args) {
     }
 }
 
+
+static xpowers_axp2101_vbus_cur_limit_t pmic_vbus_current_limit_to_xpowers(pmic_vbus_current_limit_e limit) {
+    switch (limit) {
+        case PMIC_VBUS_CURRENT_LIMIT_100MA:
+            return XPOWERS_AXP2101_VBUS_CUR_LIM_100MA;
+        case PMIC_VBUS_CURRENT_LIMIT_500MA:
+            return XPOWERS_AXP2101_VBUS_CUR_LIM_500MA;
+        case PMIC_VBUS_CURRENT_LIMIT_900MA:
+            return XPOWERS_AXP2101_VBUS_CUR_LIM_900MA;
+        case PMIC_VBUS_CURRENT_LIMIT_1000MA:
+            return XPOWERS_AXP2101_VBUS_CUR_LIM_1000MA;
+        case PMIC_VBUS_CURRENT_LIMIT_1500MA:
+            return XPOWERS_AXP2101_VBUS_CUR_LIM_1500MA;
+        case PMIC_VBUS_CURRENT_LIMIT_2000MA:
+            return XPOWERS_AXP2101_VBUS_CUR_LIM_2000MA;
+        default:
+            return XPOWERS_AXP2101_VBUS_CUR_LIM_500MA;
+    }
+}
+
+static xpowers_axp2101_chg_curr_t pmic_battery_charge_current_to_xpowers(pmic_battery_charge_current_e current) {
+    switch (current) {
+        case PMIC_BATTERY_CHARGE_CURRENT_100MA:
+            return XPOWERS_AXP2101_CHG_CUR_100MA;
+        case PMIC_BATTERY_CHARGE_CURRENT_200MA:
+            return XPOWERS_AXP2101_CHG_CUR_200MA;
+        case PMIC_BATTERY_CHARGE_CURRENT_300MA:
+            return XPOWERS_AXP2101_CHG_CUR_300MA;
+        case PMIC_BATTERY_CHARGE_CURRENT_400MA:
+            return XPOWERS_AXP2101_CHG_CUR_400MA;
+        case PMIC_BATTERY_CHARGE_CURRENT_500MA:
+            return XPOWERS_AXP2101_CHG_CUR_500MA;
+        case PMIC_BATTERY_CHARGE_CURRENT_600MA:
+            return XPOWERS_AXP2101_CHG_CUR_600MA;
+        case PMIC_BATTERY_CHARGE_CURRENT_700MA:
+            return XPOWERS_AXP2101_CHG_CUR_700MA;
+        case PMIC_BATTERY_CHARGE_CURRENT_800MA:
+            return XPOWERS_AXP2101_CHG_CUR_800MA;
+        case PMIC_BATTERY_CHARGE_CURRENT_900MA:
+            return XPOWERS_AXP2101_CHG_CUR_900MA;
+        case PMIC_BATTERY_CHARGE_CURRENT_1000MA:
+            return XPOWERS_AXP2101_CHG_CUR_1000MA;
+        default:
+            return XPOWERS_AXP2101_CHG_CUR_500MA;
+    }
+}
+
+
+static xpowers_axp2101_chg_vol_t pmic_battery_charge_voltage_to_xpowers(pmic_battery_charge_voltage_e voltage) {
+    switch (voltage) {
+        case PMIC_BATTERY_CHARGE_VOLTAGE_4V:
+            return XPOWERS_AXP2101_CHG_VOL_4V;
+        case PMIC_BATTERY_CHARGE_VOLTAGE_4V1:
+            return XPOWERS_AXP2101_CHG_VOL_4V1;
+        case PMIC_BATTERY_CHARGE_VOLTAGE_4V2:
+            return XPOWERS_AXP2101_CHG_VOL_4V2;
+        case PMIC_BATTERY_CHARGE_VOLTAGE_4V35:
+            return XPOWERS_AXP2101_CHG_VOL_4V35;
+        case PMIC_BATTERY_CHARGE_VOLTAGE_4V4:
+            return XPOWERS_AXP2101_CHG_VOL_4V4;
+        default:
+            return XPOWERS_AXP2101_CHG_VOL_4V2;
+    }
+}
 
 void axp2101_monitor_task(void * args) {
     axp2101_ctx_t *ctx = (axp2101_ctx_t *) args;
@@ -148,6 +209,9 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
         return ESP_ERR_INVALID_ARG;
     }
 
+    // Read configuration
+    ESP_ERROR_CHECK(load_pmic_config());
+
     // Initialize the context structure
     memset(ctx, 0, sizeof(axp2101_ctx_t));
 
@@ -228,7 +292,7 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setVbusVoltageLimit(XPOWERS_AXP2101_VBUS_VOL_LIM_3V88);  // allow extremely low voltage input
 
     // Set maximum current per VBUS input
-    PMU.setVbusCurrentLimit(XPOWERS_AXP2101_VBUS_CUR_LIM_500MA);
+    PMU.setVbusCurrentLimit(pmic_vbus_current_limit_to_xpowers(power_management_config.vbus_current_limit));
 
     // Set VSYS shutdown voltage
     PMU.setSysPowerDownVoltage(2600);
@@ -247,19 +311,22 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
         XPOWERS_AXP2101_WARNING_LEVEL1_IRQ | XPOWERS_AXP2101_WARNING_LEVEL2_IRQ     //Low battery warning
     );
 
-    // Set Precharge and stop charging current
+    // Set charge current limits
     PMU.setPrechargeCurr(XPOWERS_AXP2101_PRECHARGE_200MA);
-    PMU.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_25MA);
+    PMU.setChargerConstantCurr(pmic_battery_charge_current_to_xpowers(power_management_config.battery_charge_current));
+    PMU.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_100MA);
 
-    // Set constant charge current limit
-    PMU.setChargerConstantCurr(XPOWERS_AXP2101_CHG_CUR_1000MA);
-
-    // Set charge cut off voltage
-    PMU.setChargeTargetVoltage(XPOWERS_AXP2101_CHG_VOL_4V1);
-
+    // Set charge voltage
+    PMU.setChargeTargetVoltage(pmic_battery_charge_voltage_to_xpowers(power_management_config.battery_charge_voltage));
     // set low battery warning levels
     PMU.setLowBatWarnThreshold(10);
     PMU.setLowBatShutdownThreshold(5);
+
+    // Print configured items
+    ESP_LOGI(TAG, "PMIC Configuration Applied:");
+    ESP_LOGI(TAG, "  VBUS Current Limit: %d", PMU.getVbusCurrentLimit());
+    ESP_LOGI(TAG, "  Battery Charge Current: %d", PMU.getChargerConstantCurr());
+    ESP_LOGI(TAG, "  Battery Charge Voltage: %d", PMU.getChargeTargetVoltage());
 
     // Read status
     ctx->status.charge_status = PMU.getChargerStatus();

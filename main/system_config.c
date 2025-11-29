@@ -4,6 +4,7 @@
 #include "nvs.h"
 #include "config_view.h"
 #include "app_cfg.h"
+#include "pmic_axp2101.h"
 
 #include "common.h"
 
