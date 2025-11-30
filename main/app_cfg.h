@@ -6,6 +6,7 @@
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 #include "esp_heap_caps.h"
+#include "driver/ledc.h"
 
 
 // By default the memory will be allocated to PSRAM
@@ -55,6 +56,8 @@
 
 // Other hardware
 #define BUZZER_OUT_PIN           (GPIO_NUM_21)
+#define BUZZER_LEDC_DRIVER       (LEDC_TIMER_0)
+
 
 // AXP2101 power management
 #define XPOWERS_CHIP_AXP2101

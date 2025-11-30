@@ -84,6 +84,7 @@ typedef struct {
     pmic_vbus_current_limit_e vbus_current_limit;
     pmic_battery_charge_current_e battery_charge_current;
     pmic_battery_charge_voltage_e battery_charge_voltage;
+    bool shutdown_on_next_boot;  // FIXME: Remove this once PCB v2 is available. 
 
 } power_management_config_t;
 
@@ -114,6 +115,8 @@ esp_err_t axp2101_deinit(axp2101_ctx_t *ctx);
 
 esp_err_t save_pmic_config();
 esp_err_t load_pmic_config();
+
+void pmic_power_off();
 
 
 lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page);

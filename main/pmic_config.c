@@ -26,6 +26,7 @@ const power_management_config_t default_power_management_config_t = {
     .vbus_current_limit = PMIC_VBUS_CURRENT_LIMIT_500MA,
     .battery_charge_current = PMIC_BATTERY_CHARGE_CURRENT_500MA,
     .battery_charge_voltage = PMIC_BATTERY_CHARGE_VOLTAGE_4V2,
+    .shutdown_on_next_boot = false,
 };
 
 // from app.c

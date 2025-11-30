@@ -337,6 +337,17 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     ESP_LOGI(TAG, "  Battery Charge Current: %d", PMU.getChargerConstantCurr());
     ESP_LOGI(TAG, "  Battery Charge Voltage: %d", PMU.getChargeTargetVoltage());
 
+    // If configured to shutdown, then clear the flag and perform the shutdown routine
+    if (power_management_config.shutdown_on_next_boot) {
+        power_management_config.shutdown_on_next_boot = false;
+        save_pmic_config();
+
+        vTaskDelay(pdMS_TO_TICKS(500));  // Wait some time to ensure the NVS is written
+
+        // Perform the shutdown
+        PMU.shutdown();
+    }
+
     // Read status
     ctx->status.charge_status = PMU.getChargerStatus();
     ctx->status.battery_percentage = PMU.getBatteryPercent();
@@ -411,6 +422,14 @@ esp_err_t axp2101_deinit(axp2101_ctx_t *ctx) {
     ESP_LOGI(TAG, "I2C device removed from master bus");
 
     return ESP_OK;
+}
+
+
+void pmic_power_off() {
+    power_management_config.shutdown_on_next_boot = true;
+    save_pmic_config();
+    vTaskDelay(pdMS_TO_TICKS(500));  // Wait some time to ensure the NVS is written
+    esp_restart();
 }
 
 

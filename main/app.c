@@ -135,7 +135,7 @@ void app_main(void)
     i2c_bus_handle = i2c_master_init(false);
     
     // Initialize display modules
-    ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, 100));
+    ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, system_config.screen_brightness_normal_pct));
     ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
 
 // #if USE_BNO085

@@ -13,6 +13,7 @@
 #include "bsp.h"
 #include "sensor_config.h"
 #include "bno085.h"
+#include "pmic_axp2101.h"
 
 #define TAG "LowPowerMode"
 
@@ -34,9 +35,12 @@ lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
 TaskHandle_t low_power_monitor_task_handle;
 TaskHandle_t sensor_stability_classifier_poller_task_handle;
 TickType_t last_activity_tick = 0;
+TickType_t last_low_power_mode_tick = 0;
 int32_t low_power_mode_display_index = 0;
 static EventGroupHandle_t low_power_control_event;
 static lv_obj_t * last_tile = NULL;  // last tile before entering the low power mode
+lv_obj_t * low_power_mode_label = NULL;
+
 
 void IRAM_ATTR update_low_power_mode_last_activity_event() {
     last_activity_tick = xTaskGetTickCount();
@@ -75,17 +79,18 @@ void low_power_monitor_task(void *p) {
     TickType_t last_poll_tick = xTaskGetTickCount();
 
     while (1) {
+        // Low power mode checks
         if (system_config.idle_timeout != IDLE_TIMEOUT_NEVER &&                                     // Low power mode enabled
             !(xEventGroupGetBits(low_power_control_event) & IN_LOW_POWER_MODE) &&                   // Not already in low power mode
             !(xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_LOW_POWER_MODE) &&        // Low power mode is not temporarily blocked
             main_tileview && tile_low_power_mode_view)                                              // Main tile view is already initialized
         {                                            
-            uint32_t idle_timeout_secs_ms = idle_timeout_to_secs(system_config.idle_timeout) * 1000;
+            uint32_t idle_timeout_ms = idle_timeout_to_secs(system_config.idle_timeout) * 1000;
             TickType_t current_tick = xTaskGetTickCount();
             uint32_t idle_duration_ms = pdTICKS_TO_MS(current_tick - last_activity_tick);
-            ESP_LOGI(TAG, "Idle duration: %d ms, threshold: %d ms", idle_duration_ms, idle_timeout_secs_ms);
+            ESP_LOGI(TAG, "Idle duration: %d ms, threshold: %d ms", idle_duration_ms, idle_timeout_ms);
 
-            if (idle_duration_ms > idle_timeout_secs_ms) {
+            if (idle_duration_ms > idle_timeout_ms) {
                 if (lvgl_port_lock(0)) {
                     // Record the last tile
                     last_tile = lv_tileview_get_tile_active(main_tileview);
@@ -96,6 +101,24 @@ void low_power_monitor_task(void *p) {
                     lvgl_port_unlock();
                 }
                 ESP_LOGI(TAG, "Entering low power mode due to inactivity");
+            }
+        }
+
+        // Auto power off checks
+        if (system_config.power_off_timeout != POWER_OFF_TIMEOUT_NEVER &&                       // Auto power off enabled
+            (xEventGroupGetBits(low_power_control_event) & IN_LOW_POWER_MODE)) {                // Already in low power mode
+                                                                                                // TODO: Not on VBUS power (need to refresh the last low power mode time)
+
+            // The system is already in the sleep mode, then start the timer
+            uint32_t power_off_timeout_ms = power_off_timeout_to_secs(system_config.power_off_timeout) * 1000;
+            TickType_t current_tick = xTaskGetTickCount();
+            uint32_t low_power_mode_duration_ms = pdTICKS_TO_MS(current_tick - last_low_power_mode_tick);
+            ESP_LOGI(TAG, "Low power mode duration: %d ms, threshold: %d ms", low_power_mode_duration_ms, power_off_timeout_ms);
+
+            if (low_power_mode_duration_ms > power_off_timeout_ms) {
+                ESP_LOGI(TAG, "Powering off the system...");
+
+                pmic_power_off();
             }
         }
 
@@ -150,10 +173,10 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, LV_PART_MAIN);
 
     // Put a simple label to indicate low power mode
-    lv_obj_t * label = lv_label_create(parent);
-    lv_label_set_text(label, "Low Power Mode");
-    lv_obj_set_style_text_color(label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_center(label);
+    lv_obj_t * low_power_mode_label = lv_label_create(parent);
+    lv_label_set_text(low_power_mode_label, "Low Power Mode");
+    lv_obj_set_style_text_color(low_power_mode_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_center(low_power_mode_label);
 
 #if USE_BNO085
     // Enable sensor stability classification report
@@ -212,6 +235,10 @@ void enable_low_power_mode(bool enable) {
     if (enable) {
         xEventGroupSetBits(low_power_control_event, IN_LOW_POWER_MODE);
 
+        // Record the last time the system enters the low power mode
+        last_low_power_mode_tick = xTaskGetTickCount();
+        ESP_LOGI(TAG, "System entered low power mode at tick %ld", last_activity_tick);
+
         // Bring the low power mode to the front of the screen
         low_power_mode_display_index = lv_obj_get_index(main_tileview);
         lv_obj_move_foreground(main_tileview);  // make sure the touch event can trigger
@@ -219,7 +246,7 @@ void enable_low_power_mode(bool enable) {
 
         // Dim the display
         if (io_handle) {
-            set_display_brightness(&io_handle, 1);
+            set_display_brightness(&io_handle, system_config.screen_brightness_idle_pct);
         }
 
 #if USE_BNO085
@@ -251,9 +278,14 @@ void enable_low_power_mode(bool enable) {
 
         // Additional actions to take when disabling low power mode
         if (io_handle) {
-            set_display_brightness(&io_handle, 100);
+            set_display_brightness(&io_handle, system_config.screen_brightness_normal_pct);
         }
     }
+}
+
+
+bool is_low_power_mode_activated() {
+    return xEventGroupGetBits(low_power_control_event) & IN_LOW_POWER_MODE;
 }
 
 
