@@ -7,6 +7,7 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 
+#include "app_cfg.h"
 #include "pmic_axp2101.h"
 
 #define TAG "AboutConfig"
@@ -60,6 +61,7 @@ lv_obj_t * create_about_config_view_config(lv_obj_t *parent, lv_obj_t * parent_m
     lv_obj_set_style_text_font(reboot_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
 
     // Add a power off button
+#if USE_PMIC
     lv_obj_t * power_off_button = lv_button_create(sub_page_config_view);
     lv_obj_set_style_bg_color(power_off_button, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_size(power_off_button, LV_PCT(80), LV_PCT(20));
@@ -69,6 +71,7 @@ lv_obj_t * create_about_config_view_config(lv_obj_t *parent, lv_obj_t * parent_m
     lv_label_set_text(power_off_button_label, "Power Off");
     lv_obj_center(power_off_button_label);
     lv_obj_set_style_text_font(power_off_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
+#endif  // USE_PMIC
 
     // Get current app version information
     const esp_app_desc_t * app_desc = esp_app_get_description();

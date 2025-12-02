@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 
+#include "app_cfg.h"
 #include "digital_level_view.h"
 #include "system_config.h"
 #include "sensor_config.h"
@@ -415,10 +416,14 @@ void create_config_view(lv_obj_t *parent) {
 
     // All top level menu items
     create_system_config_view_config(config_menu, main_page);
+#if USE_BNO085
     create_digital_level_view_config(config_menu, main_page);
     create_sensor_config_view_config(config_menu, main_page);
+#endif  // USE_BNO085
     create_wifi_config_view_config(config_menu, main_page);
+#if USE_PMIC
     create_power_management_view_config(config_menu, main_page);
+#endif // USE_PMIC
     create_about_config_view_config(config_menu, main_page);
     create_menu_ota_upgrade_button(main_page);
 

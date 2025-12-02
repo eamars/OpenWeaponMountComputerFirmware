@@ -60,6 +60,7 @@
 
 
 // AXP2101 power management
+#define USE_PMIC 1
 #define XPOWERS_CHIP_AXP2101
 #define I2C_ADDR_AXP2101         0x34
 #define PMIC_AXP2101_INT_PIN     (GPIO_NUM_47)

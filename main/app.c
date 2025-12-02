@@ -120,11 +120,13 @@ void app_main(void)
     ESP_ERROR_CHECK(load_sensor_config());
 
     // Initialize I2C
-    i2c_master_bus_handle_t i2c_bus_handle = i2c_master_init(true);
+    i2c_master_bus_handle_t i2c_bus_handle;
 
     // Initialize USB
     // ESP_ERROR_CHECK(usb_init());
 
+#if USE_PMIC
+    i2c_bus_handle = i2c_master_init(true);
     // Initialize PMIC
     axp2101_dev = heap_caps_malloc(sizeof(axp2101_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
     ESP_ERROR_CHECK(axp2101_init(axp2101_dev, i2c_bus_handle, PMIC_AXP2101_INT_PIN));
@@ -132,6 +134,7 @@ void app_main(void)
 
     // PMIC is initialized, we can re-initialize i2c with correct pin assignment if needed
     ESP_ERROR_CHECK(i2c_del_master_bus(i2c_bus_handle));
+#endif  // USE_PMIC
     i2c_bus_handle = i2c_master_init(false);
     
     // Initialize display modules
