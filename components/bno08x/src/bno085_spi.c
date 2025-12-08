@@ -42,23 +42,32 @@ void bno085_spi_hard_reset(bno085_ctx_t *ctx) {
         gpio_set_level(ctx->reset_pin, 0);
         vTaskDelay(pdMS_TO_TICKS(BNO085_HARD_RESET_DELAY_MS));
 
+        // Make sure the PS0 is in the right state (high)
+        if (ctx->ps0_wake_pin != GPIO_NUM_NC) {
+            // Set ps0_wake pin to high (to assert SPI mode)
+            gpio_set_level(ctx->ps0_wake_pin, 1);
+        }
+
+        // make sure the BOOTN is pulled to high to enter non-DFU mode
+        if (ctx->boot_pin != GPIO_NUM_NC) {
+            gpio_set_level(ctx->boot_pin, 1);
+        }
+        
         // Set reset pin to high
         gpio_set_level(ctx->reset_pin, 1);
-        vTaskDelay(pdMS_TO_TICKS(90));  // As per Figure 6-9
 
         // Enable interrupt
         _bno085_enable_interrupt(ctx);
 
+        // Wait for INTN to be asserted
+        vTaskDelay(pdMS_TO_TICKS(2000));  // As per Figure 6-9
+
         ESP_LOGI(TAG, "BNO085 hard reset complete");
-
-
     }
 }
 
 int bno085_hal_spi_open(sh2_Hal_t *self) {
-    if (_bno085_wait_for_interrupt((bno085_ctx_t *) self) != ESP_OK) {
-        bno085_spi_hard_reset((bno085_ctx_t *) self);
-    }
+    bno085_spi_hard_reset((bno085_ctx_t *) self);
 
     return 0;
 } 
@@ -69,9 +78,18 @@ int bno085_hal_spi_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_
     bno085_spi_ctx_t * ctx = (bno085_spi_ctx_t *) self;
     esp_err_t err;
 
+    // Wake the processor
+    if (ctx->parent.ps0_wake_pin != GPIO_NUM_NC) {
+        gpio_set_level(ctx->parent.ps0_wake_pin, 0);
+    }
+
     if (_bno085_wait_for_interrupt((bno085_ctx_t *) self) != ESP_OK) {
         ESP_LOGW(TAG, "spi_read() timeout waiting for interrupt");
         return 0;
+    }
+
+    if (ctx->parent.ps0_wake_pin != GPIO_NUM_NC) {
+        gpio_set_level(ctx->parent.ps0_wake_pin, 1);
     }
 
 #if BNO085_USE_SOFTWARE_CONTROLLED_CS_PIN
@@ -102,7 +120,7 @@ int bno085_hal_spi_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_
     // Parse the return header to determine the packet size
     uint16_t packet_size = ((uint16_t)rx_headers[0] + ((uint16_t)rx_headers[1] << 8)) & ~0x8000;
 
-    ESP_LOGI(TAG, "spi_read() received header: %02x %02x %02x %02x, packet size: %d", rx_headers[0], rx_headers[1], rx_headers[2], rx_headers[3], packet_size);
+    // ESP_LOGI(TAG, "spi_read() received header: %02x %02x %02x %02x, packet size: %d", rx_headers[0], rx_headers[1], rx_headers[2], rx_headers[3], packet_size);
 
     // Check the buffer size
     if (len < packet_size) {
@@ -137,25 +155,32 @@ int bno085_hal_spi_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_
     gpio_set_level(((bno085_spi_ctx_t *) ctx)->spi_cs_pin, 1);  // de-assert CS
 #endif
     
-
     return packet_size;
 }
 int bno085_hal_spi_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
     bno085_spi_ctx_t * ctx = (bno085_spi_ctx_t *) self;
     esp_err_t err;
 
+    // Wake the processor
+    if (ctx->parent.ps0_wake_pin != GPIO_NUM_NC) {
+        gpio_set_level(ctx->parent.ps0_wake_pin, 0);
+    }
+
     if (_bno085_wait_for_interrupt((bno085_ctx_t *) self) != ESP_OK) {
         ESP_LOGW(TAG, "spi_write() timeout waiting for interrupt");
+        bno085_spi_hard_reset((bno085_ctx_t *) self);
         return 0;
     }
-    
-    ESP_LOGI(TAG, "spi_write() write %d bytes", len);
-    for (int i = 0; i < len; i++) {
-        printf("%02x ", pBuffer[i]);
-    }
-    printf("\n"); 
 
-    ESP_LOGI(TAG, "spi_write() writing %d bytes", len);
+    if (ctx->parent.ps0_wake_pin != GPIO_NUM_NC) {
+        gpio_set_level(ctx->parent.ps0_wake_pin, 1);
+    }
+    
+    // ESP_LOGI(TAG, "spi_write() write %d bytes", len);
+    // for (int i = 0; i < len; i++) {
+    //     printf("%02x ", pBuffer[i]);
+    // }
+    // printf("\n"); 
 
 #if BNO085_USE_SOFTWARE_CONTROLLED_CS_PIN
     // Assert chip select for full duplex transfer
@@ -191,12 +216,6 @@ esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, spi_host_device_t spi_host, gpi
     // Initialize configuration
     ESP_RETURN_ON_ERROR(_bno085_ctx_init(&ctx->parent, interrupt_pin, reset_pin, boot_pin, ps0_wake_pin), TAG, "Failed to initialize ctx object");
 
-    // Set ps0/wake pin to high by default
-    if (ctx->parent.ps0_wake_pin != GPIO_NUM_NC) {
-        // Set ps0_wake pin to high (to assert SPI mode)
-        gpio_set_level(ctx->parent.ps0_wake_pin, 1);
-    }
-
     // Configure CS as output pin
     ctx->spi_cs_pin = spi_cs_pin;
     gpio_config_t io_conf = {
@@ -222,7 +241,7 @@ esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, spi_host_device_t spi_host, gpi
 #else
         .spics_io_num = ctx->spi_cs_pin,
 #endif  // BNO085_USE_SOFTWARE_CONTROLLED_CS_PIN
-        .queue_size = 5,
+        .queue_size = 1,
         .mode = 0x3,    // CPOL=1, CPHA=1, MODE=SPI_MODE3
     };
 
