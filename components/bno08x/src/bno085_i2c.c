@@ -45,6 +45,7 @@ int i2c_soft_reset(bno085_i2c_ctx_t *ctx) {
     return 0;
 }
 
+
 int bno085_hal_i2c_open(sh2_Hal_t *self) {
     // ESP_LOGI(TAG, "i2c_open() called");
 
@@ -137,9 +138,9 @@ int bno085_hal_i2c_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
     return len;
 }
 
-esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, gpio_num_t interrupt_pin) {
+esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin) {
     // Initialize configuration
-    ESP_RETURN_ON_ERROR(_bno085_ctx_init(&ctx->parent, interrupt_pin, GPIO_NUM_NC, GPIO_NUM_NC, GPIO_NUM_NC), TAG, "Failed to initialize ctx object");
+    ESP_RETURN_ON_ERROR(_bno085_ctx_init(&ctx->parent, interrupt_pin, reset_pin, boot_pin, GPIO_NUM_NC), TAG, "Failed to initialize ctx object");
 
     // Configure I2C
     i2c_device_config_t dev_cfg = {

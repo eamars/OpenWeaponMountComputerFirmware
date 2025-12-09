@@ -90,7 +90,7 @@ typedef struct {
  * @param interrupt_pin GPIO pin for the interrupt.
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
-esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, gpio_num_t interrupt_pin);
+esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin);
 
 
 /**
