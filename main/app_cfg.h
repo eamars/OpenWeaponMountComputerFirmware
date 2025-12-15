@@ -17,27 +17,46 @@
 
 
 // Define SPI ports
+// #define SPI_HOST (SPI3_HOST)
+// #define SPI_MISO (GPIO_NUM_3)
+// #define SPI_MOSI (GPIO_NUM_2)
+// #define SPI_SCLK (GPIO_NUM_4)
+
 #define SPI_HOST (SPI3_HOST)
 #define SPI_MISO (GPIO_NUM_3)
 #define SPI_MOSI (GPIO_NUM_2)
-#define SPI_SCLK (GPIO_NUM_4)
+#define SPI_SCLK (GPIO_NUM_1)
 
 // Define I2C ports
 #define I2C_PORT_NUM (I2C_NUM_0)
-#define I2C_MASTER_SDA (GPIO_NUM_42)  // MTMS pin
-#define I2C_MASTER_SCL (GPIO_NUM_41)  // MTDI pin
+#define I2C_MASTER_SDA (GPIO_NUM_47)
+#define I2C_MASTER_SCL (GPIO_NUM_48)
+
+#define I2C1_PORT_NUM (I2C_NUM_1)
+#define I2C1_MASTER_SDA (GPIO_NUM_7)
+#define I2C1_MASTER_SCL (GPIO_NUM_6)
 
 // Define QSPI for display
 #define USE_LCD_SH8601 1  // Use SH8601 LCD module
 #define LCD_QSPI_HOST            (SPI2_HOST)
-#define LCD_CS                   (GPIO_NUM_10)
-#define LCD_PCLK                 (GPIO_NUM_12) 
-#define LCD_DATA0                (GPIO_NUM_13)
-#define LCD_DATA1                (GPIO_NUM_11)
-#define LCD_DATA2                (GPIO_NUM_9)
-#define LCD_DATA3                (GPIO_NUM_14)
-#define LCD_RST                  (GPIO_NUM_17)
-#define LCD_TE_OUT               (GPIO_NUM_18)
+// #define LCD_CS                   (GPIO_NUM_10)
+// #define LCD_PCLK                 (GPIO_NUM_12) 
+// #define LCD_DATA0                (GPIO_NUM_13)
+// #define LCD_DATA1                (GPIO_NUM_11)
+// #define LCD_DATA2                (GPIO_NUM_9)
+// #define LCD_DATA3                (GPIO_NUM_14)
+// #define LCD_RST                  (GPIO_NUM_17)
+// #define LCD_TE_OUT               (GPIO_NUM_18)
+
+
+#define LCD_CS            (GPIO_NUM_9)
+#define LCD_PCLK          (GPIO_NUM_10) 
+#define LCD_DATA0         (GPIO_NUM_11)
+#define LCD_DATA1         (GPIO_NUM_12)
+#define LCD_DATA2         (GPIO_NUM_13)
+#define LCD_DATA3         (GPIO_NUM_14)
+#define LCD_RST           (GPIO_NUM_21)
+
 
 // Touchscreen
 #define USE_TOUCH_FT3168 1 // Use FT3168 touch controller
@@ -46,12 +65,13 @@
 #define I2C_ADDR_FT3168          0x38
 
 // BNO085 Sensor
-#define USE_BNO085 0
+#define USE_BNO085 1
 #define USE_BNO085_SPI 0
 #define BNO085_INT_PIN           (GPIO_NUM_5)
 #define BNO085_CS_PIN            (GPIO_NUM_6)
 #define BNO085_PS0_WAKE_PIN      (GPIO_NUM_7)
-#define BNO085_BOOT_PIN          (GPIO_NUM_1)
+// #define BNO085_BOOT_PIN          (GPIO_NUM_1)
+#define BNO085_BOOT_PIN          (GPIO_NUM_15)
 #define BNO085_RESET_PIN         (GPIO_NUM_8)
 
 // Other hardware
@@ -60,7 +80,7 @@
 
 
 // AXP2101 power management
-#define USE_PMIC 1
+#define USE_PMIC 0
 #define XPOWERS_CHIP_AXP2101
 #define I2C_ADDR_AXP2101         0x34
 #define PMIC_AXP2101_INT_PIN     (GPIO_NUM_47)

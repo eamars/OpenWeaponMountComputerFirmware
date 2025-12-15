@@ -69,7 +69,7 @@ void mem_monitor_task(void *pvParameters) {
     }
 }
 
-i2c_master_bus_handle_t i2c_master_init(bool toggled) {
+i2c_master_bus_handle_t i2c0_master_init(bool toggled) {
     i2c_master_bus_handle_t i2c_bus_handle;
     i2c_master_bus_config_t i2c_mst_config = {};
     i2c_mst_config.clk_source = I2C_CLK_SRC_DEFAULT;
@@ -87,6 +87,21 @@ i2c_master_bus_handle_t i2c_master_init(bool toggled) {
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &i2c_bus_handle));
     return i2c_bus_handle;
 }
+
+i2c_master_bus_handle_t i2c1_master_init() {
+    i2c_master_bus_handle_t i2c_bus_handle;
+    i2c_master_bus_config_t i2c_mst_config = {};
+    i2c_mst_config.clk_source = I2C_CLK_SRC_DEFAULT;
+    i2c_mst_config.i2c_port = (i2c_port_num_t) I2C1_PORT_NUM;
+    i2c_mst_config.scl_io_num = I2C1_MASTER_SCL;
+    i2c_mst_config.sda_io_num = I2C1_MASTER_SDA;
+    i2c_mst_config.glitch_ignore_cnt = 7;
+    i2c_mst_config.flags.enable_internal_pullup = 1;
+
+    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &i2c_bus_handle));
+    return i2c_bus_handle;
+}
+
 
 esp_err_t storage_init() {
     esp_err_t ret = nvs_flash_init();
@@ -120,38 +135,40 @@ void app_main(void)
     ESP_ERROR_CHECK(load_sensor_config());
 
     // Initialize I2C
-    i2c_master_bus_handle_t i2c_bus_handle;
+    i2c_master_bus_handle_t i2c0_bus_handle;
+    i2c_master_bus_handle_t i2c1_bus_handle;
 
     // Initialize USB
     // ESP_ERROR_CHECK(usb_init());
 
 #if USE_PMIC
-    i2c_bus_handle = i2c_master_init(true);
+    i2c_bus_handle = i2c0_master_init(true);
     // Initialize PMIC
     axp2101_dev = heap_caps_malloc(sizeof(axp2101_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
-    ESP_ERROR_CHECK(axp2101_init(axp2101_dev, i2c_bus_handle, PMIC_AXP2101_INT_PIN));
+    ESP_ERROR_CHECK(axp2101_init(axp2101_dev, i2c0_bus_handle, PMIC_AXP2101_INT_PIN));
     ESP_ERROR_CHECK(axp2101_deinit(axp2101_dev));
 
     // PMIC is initialized, we can re-initialize i2c with correct pin assignment if needed
-    ESP_ERROR_CHECK(i2c_del_master_bus(i2c_bus_handle));
+    ESP_ERROR_CHECK(i2c_del_master_bus(i2c0_bus_handle));
 #endif  // USE_PMIC
-    i2c_bus_handle = i2c_master_init(false);
+    i2c0_bus_handle = i2c0_master_init(false);
+    i2c1_bus_handle = i2c1_master_init();
     
     // Initialize display modules
     ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, system_config.screen_brightness_normal_pct));
-    ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
+    // ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c0_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
 
-// #if USE_BNO085
-//     // Initialize BNO085 sensor
-//     bno085_i2c_ctx_t * bno085_i2c_dev = heap_caps_malloc(sizeof(bno085_i2c_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);    
-//     if (bno085_i2c_dev == NULL) {
-//         ESP_LOGE(TAG, "Failed to allocate memory for BNO085 I2C device");
-//         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
-//     }
-//     memset(bno085_i2c_dev, 0, sizeof(bno085_i2c_ctx_t));
-//     ESP_ERROR_CHECK(bno085_init_i2c(bno085_i2c_dev, i2c_bus_handle, BNO085_INT_PIN));
-//     bno085_dev = (bno085_ctx_t *) bno085_i2c_dev;
-// #endif  // USE_BNO085
+#if USE_BNO085
+    // Initialize BNO085 sensor
+    bno085_i2c_ctx_t * bno085_i2c_dev = heap_caps_malloc(sizeof(bno085_i2c_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);    
+    if (bno085_i2c_dev == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for BNO085 I2C device");
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
+    memset(bno085_i2c_dev, 0, sizeof(bno085_i2c_ctx_t));
+    ESP_ERROR_CHECK(bno085_init_i2c(bno085_i2c_dev, i2c1_bus_handle, BNO085_INT_PIN, BNO085_RESET_PIN, BNO085_BOOT_PIN));
+    bno085_dev = (bno085_ctx_t *) bno085_i2c_dev;
+#endif  // USE_BNO085
 
 #if USE_BNO085_SPI
     // Initialize SPI BUS
@@ -210,11 +227,11 @@ void app_main(void)
     lvgl_disp = lvgl_port_add_disp(&disp_cfg);
 
     // Add touch input to LVGL
-    const lvgl_port_touch_cfg_t touch_cfg = {
-        .disp = lvgl_disp, 
-        .handle = touch_handle
-    };
-    lvgl_touch_handle = lvgl_port_add_touch(&touch_cfg);
+    // const lvgl_port_touch_cfg_t touch_cfg = {
+    //     .disp = lvgl_disp, 
+    //     .handle = touch_handle
+    // };
+    // lvgl_touch_handle = lvgl_port_add_touch(&touch_cfg);
 
     // Create LVGL application
     if (lvgl_port_lock(0)) {

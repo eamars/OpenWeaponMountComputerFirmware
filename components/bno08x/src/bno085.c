@@ -161,7 +161,7 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
             break;
         }
         case SH2_SHTP_EVENT: {
-            ESP_LOGI(TAG, "EventHandler id:SHTP, %d", pEvent->shtpEvent);
+            // ESP_LOGI(TAG, "EventHandler id:SHTP, %d", pEvent->shtpEvent);
             break;
         }
         case SH2_GET_FEATURE_RESP: {
