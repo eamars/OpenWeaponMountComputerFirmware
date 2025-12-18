@@ -64,6 +64,7 @@ void mem_monitor_task(void *pvParameters) {
         ESP_LOGI(TAG, "Free internal heap: %u kbytes",
                 (unsigned)esp_get_free_internal_heap_size() / 1024);
 
+
         ESP_LOGI(TAG, "---------------------------");
         vTaskDelay(pdMS_TO_TICKS(2000)); // Every 2 seconds
     }
@@ -194,6 +195,7 @@ void app_main(void)
 
     // Initialize LVGL
     lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_cfg.task_stack_caps = HEAPS_CAPS_ALLOC_DEFAULT_FLAGS;
     lvgl_cfg.task_stack = 8192;
     
     ret = lvgl_port_init(&lvgl_cfg);
@@ -204,6 +206,7 @@ void app_main(void)
         .io_handle = io_handle,
         .panel_handle = panel_handle,
         .buffer_size = DISP_H_RES_PIXEL * DISP_V_RES_PIXEL,
+        .trans_size = 16384,
         .double_buffer = true,
         .hres = DISP_H_RES_PIXEL,
         .vres = DISP_V_RES_PIXEL,
