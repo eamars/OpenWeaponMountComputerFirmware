@@ -206,7 +206,7 @@ void app_main(void)
         .io_handle = io_handle,
         .panel_handle = panel_handle,
         .buffer_size = DISP_H_RES_PIXEL * DISP_V_RES_PIXEL,
-        .trans_size = 16384,
+        .trans_size = 8192,
         .double_buffer = true,
         .hres = DISP_H_RES_PIXEL,
         .vres = DISP_V_RES_PIXEL,
