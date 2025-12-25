@@ -157,7 +157,7 @@ void app_main(void)
     
     // Initialize display modules
     ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, system_config.screen_brightness_normal_pct));
-    // ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c0_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
+    ESP_ERROR_CHECK(touchscreen_init(&touch_handle, i2c0_bus_handle, DISP_H_RES_PIXEL, DISP_V_RES_PIXEL, DISP_ROTATION));
 
 #if USE_BNO085
     // Initialize BNO085 sensor
