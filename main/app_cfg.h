@@ -29,8 +29,8 @@
 
 // Define I2C ports
 #define I2C_PORT_NUM (I2C_NUM_0)
-#define I2C_MASTER_SDA (GPIO_NUM_47)
-#define I2C_MASTER_SCL (GPIO_NUM_48)
+#define I2C_MASTER_SDA (GPIO_NUM_40)
+#define I2C_MASTER_SCL (GPIO_NUM_39)
 
 #define I2C1_PORT_NUM (I2C_NUM_1)
 #define I2C1_MASTER_SDA (GPIO_NUM_7)
@@ -60,18 +60,20 @@
 
 // Touchscreen
 #define USE_TOUCH_FT3168 1 // Use FT3168 touch controller
-#define TOUCHSCREEN_INT_PIN      (GPIO_NUM_15)
-#define TOUCHSCREEN_RST_PIN      (GPIO_NUM_16)
+// #define TOUCHSCREEN_INT_PIN      (GPIO_NUM_15)
+#define TOUCHSCREEN_INT_PIN      (GPIO_NUM_NC)
+// #define TOUCHSCREEN_RST_PIN      (GPIO_NUM_16)
+#define TOUCHSCREEN_RST_PIN      (GPIO_NUM_NC)
 #define I2C_ADDR_FT3168          0x38
 
 // BNO085 Sensor
 #define USE_BNO085 1
 #define USE_BNO085_SPI 0
 #define BNO085_INT_PIN           (GPIO_NUM_5)
-#define BNO085_CS_PIN            (GPIO_NUM_6)
-#define BNO085_PS0_WAKE_PIN      (GPIO_NUM_7)
+// #define BNO085_CS_PIN            (GPIO_NUM_6)
+// #define BNO085_PS0_WAKE_PIN      (GPIO_NUM_7)
 // #define BNO085_BOOT_PIN          (GPIO_NUM_1)
-#define BNO085_BOOT_PIN          (GPIO_NUM_15)
+#define BNO085_BOOT_PIN          (GPIO_NUM_1)
 #define BNO085_RESET_PIN         (GPIO_NUM_8)
 
 // Other hardware

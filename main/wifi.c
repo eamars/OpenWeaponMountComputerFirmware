@@ -117,12 +117,19 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
         switch (event_id)
         {
             case WIFI_EVENT_STA_START:
+            {
                 ESP_LOGI(TAG, "Starting STA connection");
 
-                esp_wifi_connect();
+                esp_err_t ret = esp_wifi_connect();
+                if (ret != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to connect to AP: %s", esp_err_to_name(ret));
+                }
                 break;
+            }
+                
 
             case WIFI_EVENT_STA_DISCONNECTED:
+            {
                 ESP_LOGI(TAG, "Disconnected. Connecting to the AP again...");
                 wireless_state = WIRELESS_STATE_DISCONNECTED;
                 status_bar_update_wireless_state(wireless_state);
@@ -133,11 +140,15 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
                 // Start the expiry timer after disconnected from Wifi (exclude the intentional state change)
                 if (wifi_user_config.wifi_enable) {
                     wifi_expiry_watchdog_start();
-                    esp_wifi_connect();
+                    
+                    esp_err_t ret = esp_wifi_start();
+                    if (ret != ESP_OK) {
+                        ESP_LOGE(TAG, "Failed to start WiFi: %s", esp_err_to_name(ret));
+                    }
                 }
 
                 break;
-
+            }
             case WIFI_EVENT_AP_STACONNECTED:
                 ESP_LOGI(TAG, "SoftAP transport: Connected");
                 break;
@@ -242,7 +253,7 @@ esp_err_t wifi_init() {
     // Setup a watchdog timer to check provisioning status after the configured time
     wifi_expiry_timeout_timer = xTimerCreate(
         "expiry_timer", 
-        pdMS_TO_TICKS(wifi_user_config.wifi_expiry_timeout_s * 1000), 
+        pdMS_TO_TICKS(wifi_user_config.wifi_expiry_timeout_s * 1000),
         pdFALSE, 
         NULL,
         wifi_provision_timeout_cb);
