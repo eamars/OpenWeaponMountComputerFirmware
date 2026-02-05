@@ -15,22 +15,10 @@
 // By default the heaps static memory will be allocated to PSRAM
 #define HEAPS_CAPS_ATTR EXT_RAM_BSS_ATTR
 
-
-// Define SPI ports
-// #define SPI_HOST (SPI3_HOST)
-// #define SPI_MISO (GPIO_NUM_3)
-// #define SPI_MOSI (GPIO_NUM_2)
-// #define SPI_SCLK (GPIO_NUM_4)
-
-#define SPI_HOST (SPI3_HOST)
-#define SPI_MISO (GPIO_NUM_3)
-#define SPI_MOSI (GPIO_NUM_2)
-#define SPI_SCLK (GPIO_NUM_1)
-
 // Define I2C ports
-#define I2C_PORT_NUM (I2C_NUM_0)
-#define I2C_MASTER_SDA (GPIO_NUM_40)
-#define I2C_MASTER_SCL (GPIO_NUM_39)
+#define I2C0_PORT_NUM (I2C_NUM_0)
+#define I2C0_MASTER_SDA (GPIO_NUM_40)
+#define I2C0_MASTER_SCL (GPIO_NUM_39)
 
 #define I2C1_PORT_NUM (I2C_NUM_1)
 #define I2C1_MASTER_SDA (GPIO_NUM_7)
@@ -39,54 +27,14 @@
 // Define QSPI for display
 #define USE_LCD_SH8601 1  // Use SH8601 LCD module
 #define LCD_QSPI_HOST            (SPI2_HOST)
-// #define LCD_CS                   (GPIO_NUM_10)
-// #define LCD_PCLK                 (GPIO_NUM_12) 
-// #define LCD_DATA0                (GPIO_NUM_13)
-// #define LCD_DATA1                (GPIO_NUM_11)
-// #define LCD_DATA2                (GPIO_NUM_9)
-// #define LCD_DATA3                (GPIO_NUM_14)
-// #define LCD_RST                  (GPIO_NUM_17)
-// #define LCD_TE_OUT               (GPIO_NUM_18)
-
-
-#define LCD_CS            (GPIO_NUM_9)
-#define LCD_PCLK          (GPIO_NUM_10) 
-#define LCD_DATA0         (GPIO_NUM_11)
-#define LCD_DATA1         (GPIO_NUM_12)
-#define LCD_DATA2         (GPIO_NUM_13)
-#define LCD_DATA3         (GPIO_NUM_14)
-#define LCD_RST           (GPIO_NUM_21)
-
-
-// Touchscreen
-#define USE_TOUCH_FT3168 1 // Use FT3168 touch controller
-// #define TOUCHSCREEN_INT_PIN      (GPIO_NUM_15)
-#define TOUCHSCREEN_INT_PIN      (GPIO_NUM_NC)
-// #define TOUCHSCREEN_RST_PIN      (GPIO_NUM_16)
-#define TOUCHSCREEN_RST_PIN      (GPIO_NUM_NC)
-#define I2C_ADDR_FT3168          0x38
-
-// BNO085 Sensor
-#define USE_BNO085 1
-#define USE_BNO085_SPI 0
-#define BNO085_INT_PIN           (GPIO_NUM_5)
-// #define BNO085_CS_PIN            (GPIO_NUM_6)
-// #define BNO085_PS0_WAKE_PIN      (GPIO_NUM_7)
-// #define BNO085_BOOT_PIN          (GPIO_NUM_1)
-#define BNO085_BOOT_PIN          (GPIO_NUM_1)
-#define BNO085_RESET_PIN         (GPIO_NUM_8)
-
-// Other hardware
-#define BUZZER_OUT_PIN           (GPIO_NUM_21)
-#define BUZZER_LEDC_DRIVER       (LEDC_TIMER_0)
-
-
-// AXP2101 power management
-#define USE_PMIC 0
-#define XPOWERS_CHIP_AXP2101
-#define I2C_ADDR_AXP2101         0x34
-#define PMIC_AXP2101_INT_PIN     (GPIO_NUM_47)
-
+#define LCD_CS                   (GPIO_NUM_10)
+#define LCD_PCLK                 (GPIO_NUM_12) 
+#define LCD_DATA0                (GPIO_NUM_13)
+#define LCD_DATA1                (GPIO_NUM_11)
+#define LCD_DATA2                (GPIO_NUM_9)
+#define LCD_DATA3                (GPIO_NUM_14)
+#define LCD_RST                  (GPIO_NUM_17)
+#define LCD_TE_OUT               (GPIO_NUM_18)
 
 #if USE_LCD_SH8601
     #if CONFIG_LV_COLOR_DEPTH == 32
@@ -104,6 +52,32 @@
     #define DISP_ROTATION (0) // 0: 0 degrees, 1: 90 degrees, 2: 180 degrees, 3: 270 degrees
 
 #endif  // USE_LCD_SH8601
+
+
+// Touchscreen
+#define USE_TOUCH_FT3168 1 // Use FT3168 touch controller
+#define TOUCHSCREEN_INT_PIN      (GPIO_NUM_15)
+#define TOUCHSCREEN_RST_PIN      (GPIO_NUM_16)
+#define I2C_ADDR_FT3168          0x38
+
+// BNO085 Sensor
+#define USE_BNO085 1
+#define BNO085_INT_PIN           (GPIO_NUM_5)
+#define BNO085_BOOT_PIN          (GPIO_NUM_1)
+#define BNO085_RESET_PIN         (GPIO_NUM_8)
+
+// Other hardware
+#define BUZZER_OUT_PIN           (GPIO_NUM_47)
+#define BUZZER_LEDC_DRIVER       (LEDC_TIMER_0)
+#define BUZZER_TIMER             (LEDC_TIMER_0)
+#define BUZZER_CHANNEL           (LEDC_CHANNEL_0)
+
+
+// AXP2101 power management
+#define USE_PMIC 1
+#define XPOWERS_CHIP_AXP2101
+#define I2C_ADDR_AXP2101         0x34
+#define PMIC_AXP2101_INT_PIN     (GPIO_NUM_21)
 
 
 // Other software configurations
