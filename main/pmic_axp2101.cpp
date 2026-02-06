@@ -7,6 +7,9 @@
 #include "sdkconfig.h"
 #include "XPowersLib.h"
 
+#include "config_view.h"
+#include "lvgl_display.h"
+
 static XPowersPMU PMU;
 
 
@@ -189,6 +192,28 @@ void axp2101_monitor_task(void * args) {
         ctx->status.vbatt_voltage_mv = PMU.getBattVoltage();
         ctx->status.vsys_voltage_mv = PMU.getSystemVoltage();
 
+        // On VBUS insert, we will update the config view battery status
+        bool is_usb_connected = PMU.isVbusIn();
+
+        // Update LVGL
+        if (lvgl_display_is_ready()) {
+
+            if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
+                if (is_usb_connected) {
+                    status_bar_update_battery_level(101);  // USB power
+                }
+                else {
+                    status_bar_update_battery_level(ctx->status.battery_percentage);
+                }
+
+
+                lvgl_port_unlock();
+            }
+        }
+
+        // Update status
+        power_management_view_update_status(ctx);
+
         // Print it out
         ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",
             ctx->status.charge_status,
@@ -298,7 +323,7 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setSysPowerDownVoltage(2600);
 
     // Configure LED behavior (by the charger)
-    PMU.setChargingLedMode(XPOWERS_CHG_LED_CTRL_CHG);
+    PMU.setChargingLedMode(XPOWERS_CHG_LED_BLINK_1HZ);
 
     // Configure IQR
     PMU.disableIRQ(XPOWERS_AXP2101_ALL_IRQ);
@@ -306,7 +331,7 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.enableIRQ(
         XPOWERS_AXP2101_BAT_INSERT_IRQ | XPOWERS_AXP2101_BAT_REMOVE_IRQ |    // BATTERY
         XPOWERS_AXP2101_VBUS_INSERT_IRQ | XPOWERS_AXP2101_VBUS_REMOVE_IRQ |  // VBUS
-        XPOWERS_AXP2101_PKEY_SHORT_IRQ | XPOWERS_AXP2101_PKEY_LONG_IRQ |     // POWER KEY
+        // XPOWERS_AXP2101_PKEY_SHORT_IRQ | XPOWERS_AXP2101_PKEY_LONG_IRQ |     // POWER KEY
         XPOWERS_AXP2101_BAT_CHG_DONE_IRQ | XPOWERS_AXP2101_BAT_CHG_START_IRQ |// CHARGE
         XPOWERS_AXP2101_WARNING_LEVEL1_IRQ | XPOWERS_AXP2101_WARNING_LEVEL2_IRQ     //Low battery warning
     );
@@ -324,29 +349,17 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
 
     // Define button behavior
     // Configure threshold
-    PMU.setOnLevel(0);  // 128ms
+    PMU.setOnLevel(0);  // 512ms
     PMU.setOffLevel(0);  // 4s
     PMU.setIrqLevel(0);  // 1s
-    // FIXME: For the production unit the long press should be reverted to restart
     PMU.enableLongPressShutdown();
-    PMU.setLongPressPowerOFF();
+    PMU.setLongPressRestart();
 
     // Print configured items
     ESP_LOGI(TAG, "PMIC Configuration Applied:");
     ESP_LOGI(TAG, "  VBUS Current Limit: %d", PMU.getVbusCurrentLimit());
     ESP_LOGI(TAG, "  Battery Charge Current: %d", PMU.getChargerConstantCurr());
     ESP_LOGI(TAG, "  Battery Charge Voltage: %d", PMU.getChargeTargetVoltage());
-
-    // If configured to shutdown, then clear the flag and perform the shutdown routine
-    if (power_management_config.shutdown_on_next_boot) {
-        power_management_config.shutdown_on_next_boot = false;
-        save_pmic_config();
-
-        vTaskDelay(pdMS_TO_TICKS(500));  // Wait some time to ensure the NVS is written
-
-        // Perform the shutdown
-        PMU.shutdown();
-    }
 
     // Read status
     ctx->status.charge_status = PMU.getChargerStatus();
@@ -426,10 +439,8 @@ esp_err_t axp2101_deinit(axp2101_ctx_t *ctx) {
 
 
 void pmic_power_off() {
-    power_management_config.shutdown_on_next_boot = true;
-    save_pmic_config();
-    vTaskDelay(pdMS_TO_TICKS(500));  // Wait some time to ensure the NVS is written
-    esp_restart();
+    // Perform the shutdown
+    PMU.shutdown();
 }
 
 

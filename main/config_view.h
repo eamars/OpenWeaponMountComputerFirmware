@@ -3,11 +3,18 @@
 
 
 #include <lvgl.h>
+#include "esp_lvgl_port.h"
 
 #include "wifi.h"
 
 #define MAX_NUM_COLOURS 20  // 19 preset colours from lv_palette_t
 #define LV_PALETTE_BLACK LV_PALETTE_LAST
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 void create_config_view(lv_obj_t *parent);
 
@@ -33,5 +40,10 @@ void status_bar_update_wireless_state(wireless_state_e state);
 void status_bar_update_battery_level(int level_percentage);
 
 void update_info_msg_box(const char * text);
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // CONFIG_VIEW_H_

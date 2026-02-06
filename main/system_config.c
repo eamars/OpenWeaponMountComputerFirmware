@@ -93,14 +93,14 @@ uint32_t power_off_timeout_to_secs(power_off_timeout_t timeout) {
 
 
 esp_err_t load_system_config() {
-    esp_err_t err;
+    esp_err_t ret;
 
     // Read configuration fron NVS
     nvs_handle_t handle;
     ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
     size_t required_size = sizeof(system_config_t);
-    err = nvs_get_blob(handle, "cfg", &system_config, &required_size);
-    if (err == ESP_ERR_NVS_NOT_FOUND) {
+    ret = nvs_get_blob(handle, "cfg", &system_config, &required_size);
+    if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
         ESP_LOGI(TAG, "Initialize system_config with default values");
 
         // Initialize with default values
@@ -112,7 +112,7 @@ esp_err_t load_system_config() {
         ESP_RETURN_ON_ERROR(nvs_set_blob(handle, "cfg", &system_config, required_size), TAG, "Failed to write NVS blob");
         ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
     } else {
-        ESP_RETURN_ON_ERROR(err, TAG, "Failed to read NVS blob");
+        ESP_RETURN_ON_ERROR(ret, TAG, "Failed to read NVS blob");
     }
 
     // Verify CRC

@@ -197,7 +197,7 @@ esp_err_t load_countdown_timer_config() {
         snprintf(preset_name, sizeof(preset_name), "T%d", preset_idx);
 
         ret = nvs_get_blob(handle, preset_name, &presets[preset_idx].timer_config, &required_size);
-        if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
             // No record, will initialize with new values
             ESP_LOGI(TAG, "Initialize countdown_timer_config[%d] with default values", preset_idx);
             memcpy(&presets[preset_idx].timer_config, &timer_config_default, sizeof(timer_config_default));

@@ -6,6 +6,7 @@
 #include "common.h"
 #include "app_cfg.h"
 #include "config_view.h"
+#include "ota_mode.h"
 
 #include "lvgl.h"
 
@@ -26,7 +27,6 @@ const power_management_config_t default_power_management_config_t = {
     .vbus_current_limit = PMIC_VBUS_CURRENT_LIMIT_500MA,
     .battery_charge_current = PMIC_BATTERY_CHARGE_CURRENT_500MA,
     .battery_charge_voltage = PMIC_BATTERY_CHARGE_VOLTAGE_4V2,
-    .shutdown_on_next_boot = false,
 };
 
 // from app.c
@@ -70,7 +70,7 @@ esp_err_t load_pmic_config() {
     size_t required_size = sizeof(power_management_config);
     ret = nvs_get_blob(handle, "cfg", &power_management_config, &required_size);
 
-    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+    if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
         ESP_LOGI(TAG, "Initialize wifi_user_config with default values");
 
         // Copy default values
@@ -172,6 +172,21 @@ static void on_reset_button_pressed(lv_event_t * e) {
 }
 
 
+// FIXME: Make it generic (this is imported from ota_mode.c)
+void on_reboot_button_pressed(lv_event_t * e);
+
+ void on_power_off_button_pressed(lv_event_t * e) {
+    ESP_LOGI(TAG, "Shutting down");
+
+    pmic_power_off();
+ }
+
+
+void power_management_view_update_status(axp2101_ctx_t *ctx) {
+    snprintf(status_str_l1, sizeof(status_str_l1), "SoC:%d,VBAT:%dmV", ctx->status.battery_percentage, ctx->status.vbatt_voltage_mv);
+    snprintf(status_str_l2, sizeof(status_str_l2), "VBUS:%dmV,VSYS:%dmV", ctx->status.vbus_voltage_mv, ctx->status.vsys_voltage_mv);
+}
+
 
 lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
     lv_obj_t * container;
@@ -179,9 +194,32 @@ lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * pare
 
     lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
-    // FIXME: Update status once PMIC is working
-    snprintf(status_str_l1, sizeof(status_str_l1), "SoC:%d,VBAT:%dmV", axp2101_dev->status.battery_percentage, axp2101_dev->status.vbatt_voltage_mv);
-    snprintf(status_str_l2, sizeof(status_str_l2), "VBUS:%dmV,VSYS:%dmV", axp2101_dev->status.vbus_voltage_mv, axp2101_dev->status.vsys_voltage_mv);
+    // Add a reboot button
+    lv_obj_t * reboot_button = lv_button_create(sub_page_config_view);
+    lv_obj_set_style_bg_color(reboot_button, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_size(reboot_button, LV_PCT(80), LV_PCT(20));
+    lv_obj_add_event_cb(reboot_button, on_reboot_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_t * reboot_button_label = lv_label_create(reboot_button);
+    lv_label_set_text(reboot_button_label, "Reboot");
+    lv_obj_center(reboot_button_label);
+    lv_obj_set_style_text_font(reboot_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
+
+    // Add a power off button
+#if USE_PMIC
+    lv_obj_t * power_off_button = lv_button_create(sub_page_config_view);
+    lv_obj_set_style_bg_color(power_off_button, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_size(power_off_button, LV_PCT(80), LV_PCT(20));
+    lv_obj_add_event_cb(power_off_button, on_power_off_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_t * power_off_button_label = lv_label_create(power_off_button);
+    lv_label_set_text(power_off_button_label, "Power Off");
+    lv_obj_center(power_off_button_label);
+    lv_obj_set_style_text_font(power_off_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
+#endif  // USE_PMIC
+
+    // Set initial status
+    power_management_view_update_status(axp2101_dev);
 
     // Battery status label
     lv_obj_t * status_label_1 = create_config_label_static(sub_page_config_view, status_str_l1);

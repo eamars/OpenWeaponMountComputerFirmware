@@ -178,7 +178,7 @@ esp_err_t load_dope_config() {
         snprintf(key, NVS_KEY_NAME_MAX_SIZE - 1, "D%d", i);
         ret = nvs_get_blob(handle, key, &dope_data, &required_size);
 
-        if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
             // If not found, use default values
             ESP_LOGI(TAG, "Dope item %d not found in NVS, using default values", i);
             memcpy(&dope_data, &nvs_dope_data_default, sizeof(nvs_dope_data_default));

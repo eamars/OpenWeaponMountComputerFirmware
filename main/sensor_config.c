@@ -25,7 +25,6 @@ const sensor_config_t sensor_config_default = {
 extern bno085_ctx_t * bno085_dev;
 
 esp_err_t save_sensor_config() {
-    esp_err_t err;
     nvs_handle_t handle;
     ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
 
@@ -44,14 +43,14 @@ esp_err_t save_sensor_config() {
 
 
 esp_err_t load_sensor_config() {
-    esp_err_t err;
+    esp_err_t ret;
 
     // Read configuration from NVS
     nvs_handle_t handle;
     ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
     size_t required_size = sizeof(sensor_config_t);
-    err = nvs_get_blob(handle, "cfg", &sensor_config, &required_size);
-    if (err == ESP_ERR_NVS_NOT_FOUND) {
+    ret = nvs_get_blob(handle, "cfg", &sensor_config, &required_size);
+    if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
         ESP_LOGI(TAG, "Initialize sensor_config with default values");
 
         // Initialize with default values
@@ -63,7 +62,7 @@ esp_err_t load_sensor_config() {
         ESP_RETURN_ON_ERROR(nvs_set_blob(handle, "cfg", &sensor_config, required_size), TAG, "Failed to write NVS blob");
         ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
     } else {
-        ESP_RETURN_ON_ERROR(err, TAG, "Failed to read NVS blob");
+        ESP_RETURN_ON_ERROR(ret, TAG, "Failed to read NVS blob");
     }
 
     // Verify CRC

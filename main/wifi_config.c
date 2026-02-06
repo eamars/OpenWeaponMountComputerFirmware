@@ -182,7 +182,7 @@ esp_err_t load_wifi_user_config() {
     size_t required_size = sizeof(wifi_user_config);
     ret = nvs_get_blob(handle, "cfg", &wifi_user_config, &required_size);
 
-    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+    if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
         ESP_LOGI(TAG, "Initialize wifi_user_config with default values");
 
         // Copy default values
