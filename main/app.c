@@ -200,6 +200,8 @@ void app_main(void)
             .sw_rotate = true,
             .buff_spiram = true,
             .buff_dma = false,
+            .direct_mode = false,
+            .full_refresh = true
         }
     };
 
