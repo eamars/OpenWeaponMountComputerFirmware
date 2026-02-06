@@ -238,11 +238,11 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
 
     // Create parent container to house everything
     parent_container = lv_obj_create(parent);
-
+    lv_obj_set_size(parent_container, lv_pct(100), lv_pct(100));  // take the full parent
     lv_obj_set_style_border_width(parent_container, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(parent_container, 2, 0);
-    lv_obj_set_size(parent_container, lv_pct(100), lv_pct(100));
-
+    lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_COLUMN); // Vertical stack
+    lv_obj_set_flex_align(parent_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_scroll_dir(parent_container, LV_DIR_NONE);  // no scroll
 
     // Create two container to house each
@@ -278,14 +278,14 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     lv_obj_set_size(minute_roller, lv_pct(45), lv_pct(100));
     lv_roller_set_options(minute_roller, roller_minute, LV_ROLLER_MODE_INFINITE);
     lv_obj_add_event_cb(minute_roller, roller_update_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_set_style_text_font(minute_roller, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(minute_roller, &lv_font_montserrat_32, 0);
     enable_roller(minute_roller, false);
 
     second_roller = lv_roller_create(top_container);
     lv_obj_set_size(second_roller, lv_pct(45), lv_pct(100));
     lv_roller_set_options(second_roller, roller_second, LV_ROLLER_MODE_INFINITE);
     lv_obj_add_event_cb(second_roller, roller_update_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_set_style_text_font(second_roller, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(second_roller, &lv_font_montserrat_32, 0);
     enable_roller(second_roller, false);
 
     // Add two presets under the second container
@@ -294,7 +294,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     // Preset 1
     presets[0].idx = 0;
     presets[0].preset_button = lv_btn_create(bottom_container);
-    lv_obj_set_size(presets[0].preset_button, lv_pct(100), lv_pct(48));
+    lv_obj_set_size(presets[0].preset_button, lv_pct(100), lv_pct(45));
     // lv_obj_set_style_bg_color(presets[0].preset_button, lv_palette_main(LV_PALETTE_LIGHT_BLUE), 0);
     lv_obj_remove_flag(presets[0].preset_button, LV_OBJ_FLAG_CHECKABLE);  // manual check
     lv_obj_add_event_cb(presets[0].preset_button, preset_button_pressed_cb, LV_EVENT_SHORT_CLICKED, &presets[0]);
@@ -305,12 +305,12 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     presets[0].preset_label = lv_label_create(presets[0].preset_button);
     update_label_with_timer_config(presets[0].preset_label, &presets[0].timer_config);
     lv_obj_center(presets[0].preset_label);
-    lv_obj_set_style_text_font(presets[0].preset_label, &lv_font_montserrat_32, LV_PART_MAIN);
+    lv_obj_set_style_text_font(presets[0].preset_label, &lv_font_montserrat_40, LV_PART_MAIN);
 
     // Preset 2
     presets[1].idx = 1;
     presets[1].preset_button = lv_btn_create(bottom_container);
-    lv_obj_set_size(presets[1].preset_button, lv_pct(100), lv_pct(48));
+    lv_obj_set_size(presets[1].preset_button, lv_pct(100), lv_pct(45));
     // lv_obj_set_style_bg_color(presets[1].preset_button, lv_palette_main(LV_PALETTE_LIME), 0);
     lv_obj_remove_flag(presets[1].preset_button, LV_OBJ_FLAG_CHECKABLE);  // manual check
     lv_obj_add_event_cb(presets[1].preset_button, preset_button_pressed_cb, LV_EVENT_SHORT_CLICKED, &presets[1]);
@@ -322,7 +322,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     presets[1].preset_label = lv_label_create(presets[1].preset_button);
     update_label_with_timer_config(presets[1].preset_label, &presets[1].timer_config);
     lv_obj_center(presets[1].preset_label);
-    lv_obj_set_style_text_font(presets[1].preset_label, &lv_font_montserrat_32, LV_PART_MAIN);
+    lv_obj_set_style_text_font(presets[1].preset_label, &lv_font_montserrat_40, LV_PART_MAIN);
 
     // Set tile layout based on the screen rotation
     set_rotation_countdown_timer_config_view(system_config.rotation);

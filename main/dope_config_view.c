@@ -367,7 +367,7 @@ void create_dope_config_msgbox(lv_obj_t * parent) {
 
     lv_obj_t * enable_label = lv_label_create(enable_option_container);
     lv_label_set_text_static(enable_label, "Enable");
-    lv_obj_set_style_text_font(enable_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(enable_label, &lv_font_montserrat_28, 0);
 
     dope_item_settings_enable_switch = lv_switch_create(enable_option_container);
     lv_obj_set_size(dope_item_settings_enable_switch, lv_pct(50), lv_pct(80));
@@ -379,7 +379,7 @@ void create_dope_config_msgbox(lv_obj_t * parent) {
     lv_obj_set_size(dope_item_settings_apply_button, lv_pct(80), lv_pct(30));
     lv_obj_t * apply_label = lv_label_create(dope_item_settings_apply_button);
     lv_obj_align(apply_label, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_text_font(apply_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(apply_label, &lv_font_montserrat_28, 0);
     lv_label_set_text(apply_label, "Apply");
 
     // Set rotation for the dope card config view
