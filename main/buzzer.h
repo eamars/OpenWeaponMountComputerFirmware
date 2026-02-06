@@ -7,6 +7,8 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include "app_cfg.h"
+
 
 #ifndef BUZZER_TASK_PRIORITY
     #define BUZZER_TASK_PRIORITY 4
@@ -33,6 +35,6 @@ typedef struct {
 
 esp_err_t buzzer_init();
 esp_err_t buzzer_run(uint32_t on_duration_ms, uint32_t off_duration_ms, uint8_t beep_count, bool block_wait);
-
+esp_err_t buzzer_off(bool block_wait);
 
 #endif  // BUZZER_H_

@@ -12,6 +12,7 @@
 #include "system_config.h"
 #include "countdown_timer.h"
 #include "low_power_mode.h"
+#include "buzzer.h"
 
 #define TAG "CountdownTimer"
 
@@ -151,6 +152,11 @@ void countdown_timer_continue(countdown_timer_t *ctx) {
     set_countdown_timer_state(ctx, COUNTDOWN_TIMER_RUN);
     xTaskNotifyGive(ctx->countdown_timer_task_handle);
 
+#if USE_BUZZER
+    // Start buzzer
+    buzzer_run(100, 50, 2, false);
+#endif  // USE_BUZZER
+
     if (lvgl_port_lock(0)) {
         lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
         lvgl_port_unlock();
@@ -203,6 +209,76 @@ void countdown_timer_button_long_press_event_cb(lv_event_t *e) {
 
 void update_timer_cb(void *p, int time_left_ms) {
     countdown_timer_t * countdown_timer = (countdown_timer_t *) p;
+
+#if USE_BUZZER
+
+    // 30s beep
+    if (countdown_timer->countdown_time_ms > 30 * 1000) {
+        if ((time_left_ms <= (30 * 1000)) && 
+            (time_left_ms > ((30 * 1000) - countdown_timer->update_period_ms))) {
+            buzzer_run(200, 50, 3, false);
+        }
+    }
+
+    // 20s beep
+    if (countdown_timer->countdown_time_ms > 20 * 1000) {
+        if ((time_left_ms <= (20 * 1000)) && 
+            (time_left_ms > ((20 * 1000) - countdown_timer->update_period_ms))) {
+            buzzer_run(200, 50, 2, false);
+        }
+    }
+
+    // 10s beep
+    if (countdown_timer->countdown_time_ms > 10 * 1000) {
+        if ((time_left_ms <= (10 * 1000)) && 
+            (time_left_ms > ((10 * 1000) - countdown_timer->update_period_ms))) {
+            buzzer_run(200, 50, 1, false);
+        }
+    }
+
+    // 5s beep
+    if (countdown_timer->countdown_time_ms > 5 * 1000) {
+        if ((time_left_ms <= (5 * 1000)) && 
+            (time_left_ms > ((5 * 1000) - countdown_timer->update_period_ms))) {
+            buzzer_run(100, 50, 1, false);
+        }
+    }
+
+    // 4s beep
+    if (countdown_timer->countdown_time_ms > 4 * 1000) {
+        if ((time_left_ms <= (4 * 1000)) && 
+            (time_left_ms > ((4 * 1000) - countdown_timer->update_period_ms))) {
+            buzzer_run(100, 50, 1, false);
+        }
+    }
+
+    // 3s beep
+    if (countdown_timer->countdown_time_ms > 3 * 1000) {
+        if ((time_left_ms <= (3 * 1000)) && 
+            (time_left_ms > ((3 * 1000) - countdown_timer->update_period_ms))) {
+            buzzer_run(100, 50, 1, false);
+        }
+    }
+
+    // 2s beep
+    if (countdown_timer->countdown_time_ms > 2 * 1000) {
+        if ((time_left_ms <= (2 * 1000)) && 
+            (time_left_ms > ((2 * 1000) - countdown_timer->update_period_ms))) {
+            buzzer_run(100, 50, 1, false);
+        }
+    }
+
+    // 1s beep
+    if (countdown_timer->countdown_time_ms > 1 * 1000) {
+        if ((time_left_ms <= (1 * 1000)) && 
+            (time_left_ms > ((1 * 1000) - countdown_timer->update_period_ms))) {
+            buzzer_run(1000, 50, 1, false);
+        }
+    }
+
+#endif  // USE_BUZZER
+
+
     int time_left_sec = (int) ceilf(time_left_ms / 1000.0);
     int percentage = (int) ceilf(time_left_ms * 100.0 / countdown_timer->countdown_time_ms);
     int minute = time_left_sec / 60;
@@ -274,7 +350,7 @@ lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * 
     lv_obj_set_style_border_width(countdown_timer_button, 0, LV_PART_MAIN);
     lv_obj_set_style_border_color(countdown_timer_button, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_shadow_width(countdown_timer_button, 0, LV_PART_MAIN);
-    lv_obj_set_size(countdown_timer_button, 150, 150);
+    lv_obj_set_size(countdown_timer_button, 200, 200);
 
     lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_short_press_event_cb, LV_EVENT_SHORT_CLICKED, (void *) countdown_timer);
     lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_long_press_event_cb, LV_EVENT_LONG_PRESSED, (void *) countdown_timer);
@@ -284,19 +360,20 @@ lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * 
     // lv_obj_set_style_arc_color(countdown_timer, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_arc_opa(countdown_timer_arc, LV_OPA_TRANSP, LV_PART_MAIN);
     // lv_obj_set_style_arc_width(countdown_timer_arc, 5, 0);
-
+    
     lv_arc_set_rotation(countdown_timer_arc, 270);
     lv_arc_set_bg_angles(countdown_timer_arc, 0, 360);
     lv_obj_remove_style(countdown_timer_arc, NULL, LV_PART_KNOB);   /*Be sure the knob is not displayed*/
     lv_obj_remove_flag(countdown_timer_arc, LV_OBJ_FLAG_CLICKABLE);  /*To not allow adjusting by click*/
     lv_arc_set_range(countdown_timer_arc, 0, 100);  // 100 divisions for the full arc
     lv_obj_align(countdown_timer_arc, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_size(countdown_timer_arc, LV_PCT(100), LV_PCT(100));
 
     countdown_timer_label = lv_label_create(countdown_timer_button);
 
     lv_label_set_text(countdown_timer_label, "0:00");
     lv_obj_set_style_text_color(countdown_timer_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(countdown_timer_label, &lv_font_montserrat_40, LV_PART_MAIN);
+    lv_obj_set_style_text_font(countdown_timer_label, &lv_font_montserrat_48, LV_PART_MAIN);
     lv_obj_align(countdown_timer_label, LV_ALIGN_CENTER, 0, 0);
 
     // Set layout based on the rotation

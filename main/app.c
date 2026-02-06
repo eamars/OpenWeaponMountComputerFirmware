@@ -227,7 +227,7 @@ void app_main(void)
     ESP_ERROR_CHECK(wifi_init());
 
     // Beep the buzzer to indicate the success of initialization
-    buzzer_run(200, 50, 2, false);
+    buzzer_run(100, 50, 2, false);
 }
 
 

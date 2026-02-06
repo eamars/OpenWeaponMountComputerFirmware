@@ -39,15 +39,48 @@ void buzzer_task(void *p) {
     buzzer_t *ctx = (buzzer_t *) p;
     buzzer_ctrl_t ctrl;
 
-    while (1) {
-        if (xQueueReceive(ctx->buzzer_command_queue, &ctrl, portMAX_DELAY) == pdPASS) {
+    // Local state for the beep schedule
+    uint8_t beep_left = 0;
+    bool state_on = false;
 
-            ESP_LOGI(TAG, "Processing buzzer command: on=%dms, off=%dms, count=%d", ctrl.on_duration_ms, ctrl.off_duration_ms, ctrl.beep_count);
-            for (int i = 0; i < ctrl.beep_count; i++) {
+    while (1) {
+        TickType_t delay;
+        // Check if we are still within a schedule
+        if (beep_left == 0) {
+            buzzer_set_duty(0);
+            delay = portMAX_DELAY;  // Wait indefinitely for the next command
+        }
+        else {
+            if (state_on) {
                 buzzer_set_duty(BUZZER_DUTY_CYCLE_PCT);  // on
-                vTaskDelay(pdMS_TO_TICKS(ctrl.on_duration_ms));
+                delay = pdMS_TO_TICKS(ctrl.on_duration_ms);
+                state_on = false;  // Next state will be off
+            }
+            else {
                 buzzer_set_duty(0);  // off
-                vTaskDelay(pdMS_TO_TICKS(ctrl.off_duration_ms));
+                delay = pdMS_TO_TICKS(ctrl.off_duration_ms);
+                state_on = true;  // Next state will be on
+
+                beep_left -= 1;  // Full schedule is compelte
+            }
+        }
+
+        // Use xQueueReceive with timeout to allow for schedule override and block delay
+        if (xQueueReceive(ctx->buzzer_command_queue, &ctrl, delay) == pdPASS) {
+            // New command received, update the control and reset the schedule
+            ESP_LOGI(TAG, "Received new buzzer command: on_duration=%d ms, off_duration=%d ms, beep_count=%d", 
+                ctrl.on_duration_ms, ctrl.off_duration_ms, ctrl.beep_count);
+
+            beep_left = ctrl.beep_count;
+
+            if (beep_left == 0) {
+                // No beeps, ensure it's off
+                state_on = false;
+                buzzer_set_duty(0);
+            }
+            else {
+                // Start with the on state
+                state_on = true;
             }
         }
     }
@@ -116,4 +149,8 @@ esp_err_t buzzer_run(uint32_t on_duration_ms, uint32_t off_duration_ms, uint8_t 
     xQueueSend(buzzer_ctx.buzzer_command_queue, &ctrl, block_wait ? portMAX_DELAY : 0);
 
     return ESP_OK;
+}
+
+esp_err_t buzzer_off(bool block_wait) {
+    return buzzer_run(0, 0, 0, block_wait);
 }

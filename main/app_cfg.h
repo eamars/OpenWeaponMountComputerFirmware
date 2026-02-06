@@ -66,7 +66,8 @@
 #define BNO085_BOOT_PIN          (GPIO_NUM_1)
 #define BNO085_RESET_PIN         (GPIO_NUM_8)
 
-// Other hardware
+//Buzzer
+#define USE_BUZZER 1
 #define BUZZER_OUT_PIN           (GPIO_NUM_47)
 #define BUZZER_LEDC_DRIVER       (LEDC_TIMER_0)
 #define BUZZER_TIMER             (LEDC_TIMER_0)
