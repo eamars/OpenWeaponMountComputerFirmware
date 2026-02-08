@@ -30,6 +30,7 @@ extern esp_lcd_panel_io_handle_t io_handle;
 extern lv_indev_t * lvgl_touch_handle;
 extern sensor_config_t sensor_config;
 extern bno085_ctx_t * bno085_dev;
+extern axp2101_ctx_t * axp2101_dev;
 
 lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
 TaskHandle_t low_power_monitor_task_handle;
@@ -105,9 +106,9 @@ void low_power_monitor_task(void *p) {
         }
 
         // Auto power off checks
-        if (system_config.power_off_timeout != POWER_OFF_TIMEOUT_NEVER &&                       // Auto power off enabled
-            (xEventGroupGetBits(low_power_control_event) & IN_LOW_POWER_MODE)) {                // Already in low power mode
-                                                                                                // TODO: Not on VBUS power (need to refresh the last low power mode time)
+        if ((system_config.power_off_timeout != POWER_OFF_TIMEOUT_NEVER) &&                       // Auto power off enabled
+            (xEventGroupGetBits(low_power_control_event) & IN_LOW_POWER_MODE) &&                // Already in low power mode
+            (!axp2101_dev->status.is_usb_connected)) {                                          // Not on VBUS power
 
             // The system is already in the sleep mode, then start the timer
             uint32_t power_off_timeout_ms = power_off_timeout_to_secs(system_config.power_off_timeout) * 1000;
@@ -263,7 +264,7 @@ void enable_low_power_mode(bool enable) {
 #endif  // USE_BNO085
 
         // lvgl_port_stop();
-        // lv_timer_create(delayed_stop_lvgl, 1, NULL);
+        lv_timer_create(delayed_stop_lvgl, 1, NULL);
 
     } 
     else {
@@ -271,7 +272,7 @@ void enable_low_power_mode(bool enable) {
         update_low_power_mode_last_activity_event();
         xEventGroupClearBits(low_power_control_event, IN_LOW_POWER_MODE);
 
-        // lvgl_port_resume();
+        lvgl_port_resume();
 
         // Move the low power mode back to its original index
         lv_obj_move_to_index(main_tileview, low_power_mode_display_index);

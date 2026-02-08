@@ -96,6 +96,8 @@ typedef struct {
     uint16_t vbatt_voltage_mv;
     uint16_t vsys_voltage_mv;
 
+    bool is_usb_connected;
+
 } axp2101_status_t;
 
 
