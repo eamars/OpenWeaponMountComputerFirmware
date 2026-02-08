@@ -312,6 +312,22 @@ void create_info_msg_box(lv_obj_t *parent) {
     lv_obj_add_event_cb(btn, on_msg_box_ok_button_clicked, LV_EVENT_CLICKED, NULL);
     lv_obj_align(msg_box, LV_ALIGN_BOTTOM_MID, 0, 0);
 
+    // Update the style of the message box
+    // Change fontsize of the message box text
+    static lv_style_t style_msg_box_text;
+    lv_style_init(&style_msg_box_text);
+    lv_style_set_text_font(&style_msg_box_text, &lv_font_montserrat_28);
+    lv_obj_add_style(msg_box_label, &style_msg_box_text, LV_PART_MAIN);
+
+    // Update the style of the message btn
+    static lv_style_t style_btn_text;
+    lv_style_init(&style_btn_text);
+
+    lv_style_set_text_font(&style_btn_text, &lv_font_montserrat_40);  // Set font of the button text to be larger for better readability
+    lv_style_set_height(&style_btn_text, LV_SIZE_CONTENT);  // Set height of the button to be larger for better readability
+    lv_style_set_width(&style_btn_text, LV_SIZE_CONTENT);  // Set width of the button to be larger for better readability
+    lv_obj_add_style(btn, &style_btn_text, LV_PART_MAIN);
+
     // Set hidden
     lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
 }

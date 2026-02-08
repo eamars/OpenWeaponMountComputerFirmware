@@ -6,6 +6,7 @@
 #include "esp_lvgl_port.h"
 #include "esp_check.h"
 #include "esp_task_wdt.h"
+#include "esp_random.h"
 
 #include "low_power_mode.h"
 #include "system_config.h"
@@ -177,7 +178,11 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     lv_obj_t * low_power_mode_label = lv_label_create(parent);
     lv_label_set_text(low_power_mode_label, "Low Power Mode");
     lv_obj_set_style_text_color(low_power_mode_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_center(low_power_mode_label);
+    // lv_obj_center(low_power_mode_label);
+    // Randomlize the position of the label to prevent burn-in on AMOLED screen
+    int x_pos = esp_random() % (LV_HOR_RES - lv_obj_get_width(low_power_mode_label));
+    int y_pos = esp_random() % (LV_VER_RES - lv_obj_get_height(low_power_mode_label));
+    lv_obj_set_pos(low_power_mode_label, x_pos, y_pos);
 
 #if USE_BNO085
     // Enable sensor stability classification report
