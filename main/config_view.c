@@ -23,6 +23,9 @@ static lv_obj_t * status_bar;
 static lv_obj_t * status_bar_wireless_state;
 static lv_obj_t * status_bar_battery_state;
 
+HEAPS_CAPS_ATTR static char status_bar_wireless_state_str[4] = {0};
+HEAPS_CAPS_ATTR static char status_bar_battery_state_str[4] = {0};
+
 extern system_config_t system_config;
 
 
@@ -379,11 +382,15 @@ void create_config_view(lv_obj_t *parent) {
 
     // WiFi icon
     status_bar_wireless_state = lv_label_create(status_bar);
+    memset(status_bar_wireless_state_str, 0, sizeof(status_bar_wireless_state_str));
+    lv_label_set_text_static(status_bar_wireless_state, status_bar_wireless_state_str);
     status_bar_update_wireless_state(WIRELESS_STATE_NOT_PROVISIONED);
 
     // Battery icon
     status_bar_battery_state = lv_label_create(status_bar);
-    status_bar_update_battery_level(101);  // FIXME: Currently set to power by USB
+    memset(status_bar_battery_state_str, 0, sizeof(status_bar_battery_state_str));
+    lv_label_set_text_static(status_bar_battery_state, status_bar_battery_state_str);
+    status_bar_update_battery_level(101);
 
     // Create menu item
     config_menu = lv_menu_create(parent_container);
@@ -436,67 +443,64 @@ void create_config_view(lv_obj_t *parent) {
 
 
 void status_bar_update_wireless_state(wireless_state_e state) {
-    if (lvgl_port_lock(0)) {
-        switch (state)
-        {
-            case WIRELESS_STATE_NOT_PROVISIONED:
-                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
-                wifi_config_update_status("not provisioned");
-                break;
-            case WIRELESS_STATE_PROVISIONING:
-                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_SHUFFLE);
-                wifi_config_update_status("provisioning");
-                break;
-            case WIRELESS_STATE_PROVISION_FAILED:
-                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_WARNING);
-                wifi_config_update_status("provision failed");
-                break;
-            case WIRELESS_STATE_PROVISION_EXPIRE:
-                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_CLOSE);
-                wifi_config_update_status("provision expired");
-                break;
-            case WIRELESS_STATE_NOT_CONNECTED:
-                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
-                wifi_config_update_status("not connected");
-                break;
-            case WIRELESS_STATE_CONNECTING:
-                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
-                wifi_config_update_status("connecting");
-                break;
-            case WIRELESS_STATE_CONNECTED:
-                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_WIFI);
-                wifi_config_update_status("connected");
-                break;
-            case WIRELESS_STATE_DISCONNECTED:
-                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_LOOP);
-                wifi_config_update_status("disconnected");
-                break;
-            case WIRELESS_STATE_NOT_CONNECTED_EXPIRE:
-                lv_label_set_text(status_bar_wireless_state, LV_SYMBOL_CLOSE);
-                wifi_config_update_status("connect expired");
-                break;
-            default:
-                break;
-        }
-        lvgl_port_unlock();
+    switch (state)
+    {
+        case WIRELESS_STATE_NOT_PROVISIONED:
+            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
+            wifi_config_update_status("not provisioned");
+            break;
+        case WIRELESS_STATE_PROVISIONING:
+            memcpy(status_bar_wireless_state_str, LV_SYMBOL_SHUFFLE, sizeof(LV_SYMBOL_SHUFFLE));
+            wifi_config_update_status("provisioning");
+            break;
+        case WIRELESS_STATE_PROVISION_FAILED:
+            memcpy(status_bar_wireless_state_str, LV_SYMBOL_WARNING, sizeof(LV_SYMBOL_WARNING));
+            wifi_config_update_status("provision failed");
+            break;
+        case WIRELESS_STATE_PROVISION_EXPIRE:
+            memcpy(status_bar_wireless_state_str, LV_SYMBOL_CLOSE, sizeof(LV_SYMBOL_CLOSE));
+            wifi_config_update_status("provision expired");
+            break;
+        case WIRELESS_STATE_NOT_CONNECTED:
+            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
+            wifi_config_update_status("not connected");
+            break;
+        case WIRELESS_STATE_CONNECTING:
+            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
+            wifi_config_update_status("connecting");
+            break;
+        case WIRELESS_STATE_CONNECTED:
+            memcpy(status_bar_wireless_state_str, LV_SYMBOL_WIFI, sizeof(LV_SYMBOL_WIFI));
+            wifi_config_update_status("connected");
+            break;
+        case WIRELESS_STATE_DISCONNECTED:
+            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
+            wifi_config_update_status("disconnected");
+            break;
+        case WIRELESS_STATE_NOT_CONNECTED_EXPIRE:
+            memcpy(status_bar_wireless_state_str, LV_SYMBOL_CLOSE, sizeof(LV_SYMBOL_CLOSE));
+            wifi_config_update_status("connect expired");
+            break;
+        default:
+            break;
     }
 }
 
 void status_bar_update_battery_level(int level_percentage) {
     if (level_percentage < 0) {
         // Unknown state
-        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_WARNING);
+        memcpy(status_bar_battery_state_str, LV_SYMBOL_WARNING, sizeof(LV_SYMBOL_WARNING));
     } else if (level_percentage < 10) {
-        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_BATTERY_EMPTY);
+        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_EMPTY, sizeof(LV_SYMBOL_BATTERY_EMPTY));
     } else if (level_percentage < 40) {
-        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_BATTERY_1);
+        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_1, sizeof(LV_SYMBOL_BATTERY_1));
     } else if (level_percentage < 70) {
-        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_BATTERY_2);
+        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_2, sizeof(LV_SYMBOL_BATTERY_2));
     } else if (level_percentage < 90) {
-        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_BATTERY_3);
+        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_3, sizeof(LV_SYMBOL_BATTERY_3));
     } else if (level_percentage <= 100) {
-        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_BATTERY_FULL);
+        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_FULL, sizeof(LV_SYMBOL_BATTERY_FULL));
     } else {
-        lv_label_set_text(status_bar_battery_state, LV_SYMBOL_USB);
+        memcpy(status_bar_battery_state_str, LV_SYMBOL_USB, sizeof(LV_SYMBOL_USB));
     }
 }

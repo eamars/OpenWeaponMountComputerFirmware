@@ -200,17 +200,11 @@ void axp2101_monitor_task(void * args) {
 
         // Update LVGL
         if (lvgl_display_is_ready()) {
-
-            if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
-                if (ctx->status.is_usb_connected) {
-                    status_bar_update_battery_level(101);  // USB power
-                }
-                else {
-                    status_bar_update_battery_level(ctx->status.battery_percentage);
-                }
-
-
-                lvgl_port_unlock();
+            if (ctx->status.is_usb_connected) {
+                status_bar_update_battery_level(101);  // USB power
+            }
+            else {
+                status_bar_update_battery_level(ctx->status.battery_percentage);
             }
         }
 
