@@ -144,23 +144,24 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
     int retry = 5;
     uint8_t write_buf[2] = {0x0, 0x0};  // write 0x0 to addr 0x0 to switch to working mode
 
-    while (retry-- > 0) {
+    while (retry > 0) {
         esp_err_t ret = i2c_master_transmit((i2c_master_dev_handle_t) config->driver_data, write_buf, 2, -1);
         if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to write to FT3168", esp_err_to_name(ret));
+            ESP_LOGW(TAG, "Failed to write to FT3168: %s, %d", esp_err_to_name(ret), retry);
             vTaskDelay(pdMS_TO_TICKS(200));
-            continue;
         }
         else {
             ESP_LOGI(TAG, "Successfully wrote to FT3168");
             break;
         }
+
+        retry -= 1;
     }
 
     if (retry == 0) {
         ESP_LOGE(TAG, "Failed to initialize FT3168 after multiple attempts");
         free(touch_handle);
-        return ESP_ERR_TIMEOUT;
+        ESP_RETURN_ON_ERROR(ESP_FAIL, TAG, "Unable to establish communication with FT3168");
     }
 
     ESP_LOGI(TAG, "FT3168 initialized successfully");
