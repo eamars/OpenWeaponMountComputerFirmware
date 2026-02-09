@@ -401,7 +401,7 @@ esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch_yaw(bno085_ctx_t *ctx,
     return ESP_FAIL;
 }
 
-esp_err_t bno085_wait_for_rotation_vector_roll_pitch_yaw(bno085_ctx_t * ctx, float * roll, float * pitch, float * yaw, bool block_wait) {
+esp_err_t bno085_wait_for_rotation_vector_roll_pitch_yaw(bno085_ctx_t * ctx, float * roll, float * pitch, float * yaw, float * accuracy, bool block_wait) {
     TickType_t wait_ticks;
     if (block_wait) {
         wait_ticks = portMAX_DELAY;
@@ -445,6 +445,10 @@ esp_err_t bno085_wait_for_rotation_vector_roll_pitch_yaw(bno085_ctx_t * ctx, flo
                 sensor_value.un.rotationVector.j, 
                 sensor_value.un.rotationVector.k
             );
+        }
+
+        if (accuracy) {
+            *accuracy = sensor_value.un.rotationVector.accuracy;
         }
 
         return ESP_OK;

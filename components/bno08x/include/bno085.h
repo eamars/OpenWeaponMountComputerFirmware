@@ -171,6 +171,6 @@ esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, uin
  * @param interval_ms Interval in milliseconds for the report.
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
-esp_err_t bno085_wait_for_rotation_vector_roll_pitch_yaw(bno085_ctx_t * ctx, float *roll, float *pitch, float *yaw, bool block_wait);
+esp_err_t bno085_wait_for_rotation_vector_roll_pitch_yaw(bno085_ctx_t * ctx, float *roll, float *pitch, float *yaw, float *accuracy, bool block_wait);
 
 #endif // BNO085_H

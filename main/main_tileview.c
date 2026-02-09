@@ -16,6 +16,7 @@
 #include "ota_mode.h"
 #include "point_of_aim_view.h"
 #include "opentrickler_remote_controller_view.h"
+#include "sensor_calibration_view.h"
 
 
 #define TAG "MainTileView"
@@ -119,21 +120,22 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_add_event_cb(tile_dope_config_view, dope_config_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
     // Acceleration analysis view (swiped right from configuration view)
-    lv_obj_t * tile_acceleration_analysis_view = lv_tileview_add_tile(main_tileview, 4, 1, LV_DIR_HOR);
-    lv_obj_set_user_data(tile_acceleration_analysis_view, enable_acceleration_analysis_view);
-    create_acceleration_analysis_view(tile_acceleration_analysis_view);
+    // lv_obj_t * tile_acceleration_analysis_view = lv_tileview_add_tile(main_tileview, 4, 1, LV_DIR_HOR);
+    // lv_obj_set_user_data(tile_acceleration_analysis_view, enable_acceleration_analysis_view);
+    // create_acceleration_analysis_view(tile_acceleration_analysis_view);
 
 
     // Point of aim view
-    lv_obj_t * tile_point_of_aim_view = lv_tileview_add_tile(main_tileview, 5, 1, LV_DIR_HOR);
-    lv_obj_set_user_data(tile_point_of_aim_view, enable_point_of_aim_view);
-    create_point_of_aim_view(tile_point_of_aim_view);
+    // lv_obj_t * tile_point_of_aim_view = lv_tileview_add_tile(main_tileview, 5, 1, LV_DIR_HOR);
+    // lv_obj_set_user_data(tile_point_of_aim_view, enable_point_of_aim_view);
+    // create_point_of_aim_view(tile_point_of_aim_view);
+
 #endif  // USE_BNO085
 
-    // OpenTrickler remote controller view
-    lv_obj_t * tile_opentrickler_controller_view = lv_tileview_add_tile(main_tileview, 6, 1, LV_DIR_HOR);
-    lv_obj_set_user_data(tile_opentrickler_controller_view, enable_opentrickler_remote_controller_mode);
-    create_opentrickler_remote_controller_view(tile_opentrickler_controller_view);
+    // // OpenTrickler remote controller view
+    // lv_obj_t * tile_opentrickler_controller_view = lv_tileview_add_tile(main_tileview, 6, 1, LV_DIR_HOR);
+    // lv_obj_set_user_data(tile_opentrickler_controller_view, enable_opentrickler_remote_controller_mode);
+    // create_opentrickler_remote_controller_view(tile_opentrickler_controller_view);
 
     // Tiles at column 0 are reserved for control purposes
     tile_low_power_mode_view = lv_tileview_add_tile(main_tileview, 0, 0, LV_DIR_NONE);  // The tile can only be entered automatically
@@ -145,9 +147,15 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_set_user_data(tile_ota_mode_view, enter_ota_mode);  // Use enter and exit code to activate and deactivate the low power mode
     create_ota_mode_view(tile_ota_mode_view);
 
+    // Sensor calibration view
+    lv_obj_t * tile_sensor_calibration_view = lv_tileview_add_tile(main_tileview, 0, 2, LV_DIR_BOTTOM);
+    lv_obj_set_user_data(tile_sensor_calibration_view, enter_sensor_calibration_mode);  // No need for callback
+    create_sensor_calibration_view(tile_sensor_calibration_view);
+
     // Switch to the default view
 #if USE_BNO085
     default_tile = tile_digital_level_view;
+    // default_tile = tile_sensor_calibration_view;
 #else
     default_tile = tile_config_view;
 #endif  // USE_BNO085
