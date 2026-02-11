@@ -28,6 +28,7 @@ typedef void (*tile_update_enable_cb_t) (bool);
 lv_obj_t * main_tileview = NULL;
 lv_obj_t * tile_low_power_mode_view = NULL;
 lv_obj_t * tile_ota_mode_view = NULL;
+lv_obj_t * tile_sensor_calibration_view = NULL;
 
 lv_obj_t * default_tile = NULL;
 
@@ -148,7 +149,7 @@ void create_main_tileview(lv_obj_t *parent)
     create_ota_mode_view(tile_ota_mode_view);
 
     // Sensor calibration view
-    lv_obj_t * tile_sensor_calibration_view = lv_tileview_add_tile(main_tileview, 0, 2, LV_DIR_BOTTOM);
+    tile_sensor_calibration_view = lv_tileview_add_tile(main_tileview, 0, 2, LV_DIR_BOTTOM);
     lv_obj_set_user_data(tile_sensor_calibration_view, enter_sensor_calibration_mode);  // No need for callback
     create_sensor_calibration_view(tile_sensor_calibration_view);
 

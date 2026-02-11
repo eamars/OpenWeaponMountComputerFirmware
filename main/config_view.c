@@ -195,12 +195,12 @@ lv_obj_t * create_colour_picker(lv_obj_t * container, lv_palette_t * colour, lv_
     
 
     lv_obj_set_style_bg_image_src(left_button, LV_SYMBOL_LEFT, 0);
-    lv_obj_set_height(left_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_height(left_button, 60);  // TODO: Find a better way to read the height from other widgets
     lv_obj_set_width(left_button, lv_pct(30));
     lv_obj_add_event_cb(left_button, lv_colour_picker_left_event_cb, LV_EVENT_SHORT_CLICKED, (void *) colour_indicator);
 
     lv_obj_set_style_bg_image_src(right_button, LV_SYMBOL_RIGHT, 0);
-    lv_obj_set_height(right_button, 36);
+    lv_obj_set_height(right_button, 60);
     lv_obj_set_width(right_button, lv_pct(30));
     lv_obj_add_event_cb(right_button, lv_colour_picker_right_event_cb, LV_EVENT_SHORT_CLICKED, (void *) colour_indicator);
 
@@ -234,17 +234,17 @@ lv_obj_t * create_save_reload_reset_buttons(lv_obj_t * container, lv_event_cb_t 
     // Save/reload Styling
     lv_obj_add_flag(save_button, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
     lv_obj_set_style_bg_image_src(save_button, LV_SYMBOL_SAVE, 0);
-    lv_obj_set_height(save_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_height(save_button, 60);  // TODO: Find a better way to read the height from other widgets
     lv_obj_set_width(save_button, lv_pct(30));
     lv_obj_add_event_cb(save_button, save_event_cb, LV_EVENT_SINGLE_CLICKED, NULL);
 
     lv_obj_set_style_bg_image_src(reload_button, LV_SYMBOL_UPLOAD, 0);
-    lv_obj_set_height(reload_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_height(reload_button, 60);  // TODO: Find a better way to read the height from other widgets
     lv_obj_set_width(reload_button, lv_pct(30));
     lv_obj_add_event_cb(reload_button, reload_event_cb, LV_EVENT_SINGLE_CLICKED, NULL);
 
     lv_obj_set_style_bg_image_src(reset_button, LV_SYMBOL_WARNING, 0);
-    lv_obj_set_height(reset_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_height(reset_button, 60);  // TODO: Find a better way to read the height from other widgets
     lv_obj_set_width(reset_button, lv_pct(30));
     lv_obj_add_event_cb(reset_button, reset_event_cb, LV_EVENT_SINGLE_CLICKED, NULL);
 
@@ -259,7 +259,7 @@ lv_obj_t * create_single_button(lv_obj_t * container, const char * icon, lv_even
     // lv_obj_add_flag(reset_provision_button, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
     lv_obj_set_style_bg_image_src(reset_provision_button, icon, 0);
     lv_obj_set_width(reset_provision_button, lv_pct(40));
-    lv_obj_set_height(reset_provision_button, 36);  // TODO: Find a better way to read the height from other widgets
+    lv_obj_set_height(reset_provision_button, 48);  // TODO: Find a better way to read the height from other widgets
     lv_obj_add_event_cb(reset_provision_button, event_cb, LV_EVENT_SINGLE_CLICKED, NULL);
 
     return reset_provision_button;

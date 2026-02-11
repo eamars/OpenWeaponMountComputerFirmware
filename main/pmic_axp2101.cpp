@@ -290,6 +290,7 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.disableDC4LowVoltageTurnOff();
     PMU.disableDC3LowVoltageTurnOff();
     PMU.disableDC2LowVoltageTurnOff();
+    PMU.disableDC1LowVoltageTurnOff();
 
     // Ease VSYS shutdown voltage
     PMU.setSysPowerDownVoltage(2600);
