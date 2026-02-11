@@ -32,6 +32,10 @@ static EventGroupHandle_t sensor_calibration_task_control;
 
 lv_obj_t * rv_measurements_label = NULL;
 lv_obj_t * rv_accuracy_label = NULL;
+lv_obj_t * last_tile_before_enter_calibration = NULL;
+
+extern lv_obj_t * main_tileview;                 // from main_tileview.c
+extern lv_obj_t * default_tile;                         // from main_tileview.c`
 
 HEAPS_CAPS_ATTR static char rv_measurements[64] = {0};
 HEAPS_CAPS_ATTR static char rv_accuracy_str[32] = {0};
@@ -54,6 +58,8 @@ void rotation_vector_poller_task(void *p) {
                 snprintf(rv_measurements, sizeof(rv_measurements), "Roll: %.2f\nPitch: %.2f\nYaw: %.2f", roll, pitch, yaw);
                 snprintf(rv_accuracy_str, sizeof(rv_accuracy_str), "Accuracy: %.2f", accuracy);
 
+                // ESP_LOGI(TAG, "Updated RV measurements: %s, %s", rv_measurements, rv_accuracy_str);
+
                 // Force an update
                 if (lvgl_port_lock(0)) {
                     lv_obj_invalidate(lv_screen_active());
@@ -64,7 +70,7 @@ void rotation_vector_poller_task(void *p) {
     }
 }
 
-void tare_function(lv_event_t * e) {
+void on_tare_button_clicked(lv_event_t * e) {
     ESP_LOGI(TAG, "Tare function called");
 
     int sh2_ret;
@@ -84,6 +90,16 @@ void tare_function(lv_event_t * e) {
     else {
         ESP_LOGE(TAG, "Failed to send tare command: %d", sh2_ret);
     }
+
+    // Move back to the previous tile
+    if (last_tile_before_enter_calibration) {
+        lv_tileview_set_tile(main_tileview, last_tile_before_enter_calibration, LV_ANIM_OFF);
+    }
+    else {
+        // Move to default tile
+        lv_tileview_set_tile(main_tileview, default_tile, LV_ANIM_OFF);
+    }
+    lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 }
 
 
@@ -127,7 +143,7 @@ void create_sensor_calibration_view(lv_obj_t * parent) {
     lv_obj_t * tare_button = lv_btn_create(parent);
     lv_obj_set_size(tare_button, LV_PCT(30), LV_PCT(30));
     lv_obj_center(tare_button);
-    lv_obj_add_event_cb(tare_button, tare_function, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(tare_button, on_tare_button_clicked, LV_EVENT_CLICKED, NULL);
     lv_obj_t * tare_label = lv_label_create(tare_button);
     lv_label_set_text(tare_label, "Tare");
     lv_obj_center(tare_label);

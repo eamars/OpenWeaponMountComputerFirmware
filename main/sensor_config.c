@@ -24,6 +24,14 @@ const sensor_config_t sensor_config_default = {
 
 extern bno085_ctx_t * bno085_dev;
 
+lv_obj_t * tare_calibration_button = NULL;
+lv_obj_t * sensor_calibration_button = NULL;
+
+
+extern lv_obj_t * tile_sensor_calibration_view;  // from main_tileview.c
+extern lv_obj_t * main_tileview;                 // from main_tileview.c
+extern lv_obj_t * last_tile_before_enter_calibration;  // from sensor_calibration_view.c
+
 esp_err_t save_sensor_config() {
     nvs_handle_t handle;
     ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
@@ -148,6 +156,21 @@ static void toggle_rotation_vector_report(lv_event_t *e) {
 }
 
 
+
+static void on_tare_calibration_button_pressed(lv_event_t * e) {
+    // Store current tile
+    last_tile_before_enter_calibration = lv_tileview_get_tile_active(main_tileview);
+
+    // Move to tare calibration view
+    lv_tileview_set_tile(main_tileview, tile_sensor_calibration_view, LV_ANIM_OFF);
+    lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
+}
+
+static void on_sensor_calibration_button_pressed(lv_event_t * e) {
+
+}
+
+
 lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
     lv_obj_t * container;
     lv_obj_t * config_item;
@@ -173,6 +196,14 @@ lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
     create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
+
+    // Tare calibration
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Tare Calibration");
+    tare_calibration_button = create_single_button(container, LV_SYMBOL_WARNING, on_tare_calibration_button_pressed);
+
+    // Sensor calibration
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Sensor Calibration");
+    sensor_calibration_button = create_single_button(container, LV_SYMBOL_WARNING, on_sensor_calibration_button_pressed);
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
