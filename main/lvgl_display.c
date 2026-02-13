@@ -47,6 +47,22 @@ static inline esp_err_t create_lvgl_display_event_group() {
 }
 
 
+void IRAM_ATTR lvgl_port_rounder_callback(lv_area_t * area)
+{
+    uint16_t x1 = area->x1;
+    uint16_t x2 = area->x2;
+    uint16_t y1 = area->y1;
+    uint16_t y2 = area->y2;
+
+    // round the start of area down to the nearest even number
+    area->x1 = (x1 >> 1) << 1;
+    area->y1 = (y1 >> 1) << 1;
+
+    // round the end of area up to the nearest odd number
+    area->x2 = ((x2 >> 1) << 1) + 1;
+    area->y2 = ((y2 >> 1) << 1) + 1;
+}
+
 
 esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
     esp_err_t ret;
@@ -80,6 +96,7 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
         .vres = DISP_V_RES_PIXEL,
         .monochrome = false,
         .color_format = LV_COLOR_FORMAT_RGB565,
+        .rounder_cb = lvgl_port_rounder_callback,
         .rotation = {
             .swap_xy = false,
             .mirror_x = false,
@@ -91,7 +108,7 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
             .buff_spiram = true,
             .buff_dma = false,
             .direct_mode = false,
-            .full_refresh = true
+            .full_refresh = false
         }
     };
 
@@ -105,6 +122,14 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
         .handle = touch_handle
     };
     lvgl_touch_handle = lvgl_port_add_touch(&touch_cfg);
+
+    // Add button input to LVGL
+    // lv_group_t * input_group = lv_group_create();
+    // lv_indev_t * btn_gpio0 = lv_indev_create();
+    // lv_indev_set_type(btn_gpio0, LV_INDEV_TYPE_KEYPAD);
+    // lv_indev_set_read_cb(btn_gpio0, btn_gpio_read);
+    // lv_indev_set_group(btn_gpio0, input_group);
+
 
     // Create LVGL application
     if (lvgl_port_lock(0)) {

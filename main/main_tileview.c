@@ -98,10 +98,6 @@ void create_main_tileview(lv_obj_t *parent)
     // Add callback to the scroll event
     lv_obj_add_event_cb(main_tileview, tile_change_callback, LV_EVENT_VALUE_CHANGED, NULL);
 
-    // Configuration view (Swiped right from digital level view)
-    lv_obj_t * tile_config_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
-    create_config_view(tile_config_view);
-
 #if USE_BNO085
     // Timer config view (swiped up from digital level view)
     lv_obj_t * tile_countdown_timer_config_view = lv_tileview_add_tile(main_tileview, 2, 0, LV_DIR_BOTTOM);
@@ -152,6 +148,12 @@ void create_main_tileview(lv_obj_t *parent)
     tile_sensor_calibration_view = lv_tileview_add_tile(main_tileview, 0, 2, LV_DIR_BOTTOM);
     lv_obj_set_user_data(tile_sensor_calibration_view, enter_sensor_calibration_mode);  // No need for callback
     create_sensor_calibration_view(tile_sensor_calibration_view);
+
+    // Configuration view (Swiped right from digital level view)
+    // FIXME: The configuration view has to be added the latest, to ensure all other configurations are created (along with other tile views)
+    //  Perhaps the configuration should be loaded before the creation of the view off one go. 
+    lv_obj_t * tile_config_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
+    create_config_view(tile_config_view);
 
     // Switch to the default view
 #if USE_BNO085

@@ -304,29 +304,30 @@ static void on_msg_box_ok_button_clicked(lv_event_t *e) {
 void create_info_msg_box(lv_obj_t *parent) {
     // Create a message box to be called by its content
     msg_box = lv_msgbox_create(parent);
-    lv_obj_set_width(msg_box, lv_pct(100));
-    lv_obj_set_height(msg_box, LV_SIZE_CONTENT);
+
+    // Styling
+    lv_obj_set_style_bg_opa(msg_box, LV_OPA_COVER, LV_PART_MAIN);  // semi transparent background
+    lv_obj_set_size(msg_box, lv_pct(90), lv_pct(90));
+    // lv_obj_set_style_blur_backdrop(msg_box, true, 0);  // blur the background of the msg box
+
+    lv_obj_t * content = lv_msgbox_get_content(msg_box);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    // lv_obj_set_scroll_dir(parent_container, LV_DIR_NONE);  // no scroll
 
     msg_box_label = lv_msgbox_add_text(msg_box, "This is a message box");
-    lv_obj_t * btn = lv_msgbox_add_footer_button(msg_box, "OK");
-    lv_obj_add_event_cb(btn, on_msg_box_ok_button_clicked, LV_EVENT_CLICKED, NULL);
-    lv_obj_align(msg_box, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_text_font(msg_box_label, &lv_font_montserrat_28, 0);
 
-    // Update the style of the message box
-    // Change fontsize of the message box text
-    static lv_style_t style_msg_box_text;
-    lv_style_init(&style_msg_box_text);
-    lv_style_set_text_font(&style_msg_box_text, &lv_font_montserrat_28);
-    lv_obj_add_style(msg_box_label, &style_msg_box_text, LV_PART_MAIN);
+    // Add a button (not a footer button)
+    lv_obj_t * ok_btn = lv_button_create(content);
+    lv_obj_set_size(ok_btn, lv_pct(50), 60);
+    lv_obj_add_event_cb(ok_btn, on_msg_box_ok_button_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_center(ok_btn);
 
-    // Update the style of the message btn
-    static lv_style_t style_btn_text;
-    lv_style_init(&style_btn_text);
-
-    lv_style_set_text_font(&style_btn_text, &lv_font_montserrat_40);  // Set font of the button text to be larger for better readability
-    lv_style_set_height(&style_btn_text, LV_SIZE_CONTENT);  // Set height of the button to be larger for better readability
-    lv_style_set_width(&style_btn_text, LV_SIZE_CONTENT);  // Set width of the button to be larger for better readability
-    lv_obj_add_style(btn, &style_btn_text, LV_PART_MAIN);
+    lv_obj_t *ok_label = lv_label_create(ok_btn);
+    lv_label_set_text(ok_label, "OK");
+    lv_obj_set_style_text_font(ok_label, &lv_font_montserrat_28, 0);
+    lv_obj_center(ok_label);
 
     // Set hidden
     lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
@@ -357,6 +358,9 @@ void set_rotation_config_view(lv_display_rotation_t rotation) {
             LV_FLEX_ALIGN_CENTER,  // cross axis center
             LV_FLEX_ALIGN_CENTER); // track cross axis center
 
+        // Put back button to the bottom of the menu
+        lv_menu_set_mode_header(config_menu, LV_MENU_HEADER_BOTTOM_FIXED);
+
     } else {
         lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_ROW);
 
@@ -370,6 +374,9 @@ void set_rotation_config_view(lv_display_rotation_t rotation) {
             LV_FLEX_ALIGN_START,  // main axis (row) center
             LV_FLEX_ALIGN_CENTER,  // cross axis center
             LV_FLEX_ALIGN_CENTER); // track cross axis center
+
+        // Put back button to the top of the menu
+        lv_menu_set_mode_header(config_menu, LV_MENU_HEADER_TOP_FIXED);
     }
 }
 
@@ -415,17 +422,17 @@ void create_config_view(lv_obj_t *parent) {
     lv_obj_set_size(config_menu, lv_pct(100), lv_pct(100));
     lv_obj_center(config_menu);
     lv_obj_set_style_bg_color(config_menu, lv_color_darken(lv_color_white(), 20), 0);
-    lv_menu_set_mode_header(config_menu, LV_MENU_HEADER_BOTTOM_FIXED);
 
     lv_obj_t * back_button = lv_menu_get_main_header_back_button(config_menu);
+    // Set back button background colour to blue
+    lv_obj_set_style_bg_color(back_button, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
+    // set no transparency for back button
+    lv_obj_set_style_bg_opa(back_button, LV_OPA_COVER, LV_PART_MAIN);
+
     lv_obj_t * back_button_label = lv_label_create(back_button);
     lv_label_set_text(back_button_label, "Back");
-
-#if CONFIG_LV_FONT_DEFAULT_MONTSERRAT_20
     lv_obj_set_style_text_font(back_button_label, &lv_font_montserrat_28, 0);
-#elif CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14
-    lv_obj_set_style_text_font(back_button_label, &lv_font_montserrat_20, 0);
-#endif
+    lv_obj_center(back_button_label);
 
     // Set overall layout based on rotation
     set_rotation_config_view(system_config.rotation);
