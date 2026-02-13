@@ -46,8 +46,8 @@ static inline esp_err_t create_lvgl_display_event_group() {
     return ESP_OK;
 }
 
-
-void IRAM_ATTR lvgl_port_rounder_callback(lv_area_t * area)
+// This function is required by some LVGL display drivers to align the pixel
+void IRAM_ATTR lvgl_port_rounder_divide_by_two(lv_area_t * area)
 {
     uint16_t x1 = area->x1;
     uint16_t x2 = area->x2;
@@ -96,7 +96,9 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
         .vres = DISP_V_RES_PIXEL,
         .monochrome = false,
         .color_format = LV_COLOR_FORMAT_RGB565,
-        .rounder_cb = lvgl_port_rounder_callback,
+#if USE_LCD_SH8601
+        .rounder_cb = lvgl_port_rounder_divide_by_two,
+#endif
         .rotation = {
             .swap_xy = false,
             .mirror_x = false,
