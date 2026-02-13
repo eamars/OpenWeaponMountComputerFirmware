@@ -16,6 +16,7 @@
 
 #include "esp_check.h"
 #include "esp_err.h"
+#include "esp_pm.h"
 
 #include "driver/i2c_master.h"
 
@@ -163,6 +164,14 @@ void app_main(void)
 
     // Initialize WiFi and related calls
     ESP_ERROR_CHECK(wifi_init());
+
+    // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler)
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 160,
+        .min_freq_mhz = 80,
+        .light_sleep_enable = false
+    };
+    ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
 
     // Beep the buzzer to indicate the success of initialization
     buzzer_run(100, 50, 2, false);
