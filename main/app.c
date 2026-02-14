@@ -168,9 +168,9 @@ void app_main(void)
 
     // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler)
     esp_pm_config_t pm_config = {
-        .max_freq_mhz = 160,
+        .max_freq_mhz = 240,
         .min_freq_mhz = 80,
-        .light_sleep_enable = false
+        .light_sleep_enable = false  // do not automatically enter light sleep, we will handle it in the low power mode task
     };
     ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
 

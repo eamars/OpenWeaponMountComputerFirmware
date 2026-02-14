@@ -47,7 +47,7 @@ typedef struct {
 
 
 typedef struct {
-    uint32_t interval_ms;
+    sh2_SensorConfig_t config;
     QueueHandle_t sensor_value_queue;
 } sensor_report_config_t;
 
@@ -134,6 +134,13 @@ esp_err_t bno085_enable_rotation_vector_report(bno085_ctx_t *ctx, uint32_t inter
  */
 esp_err_t bno085_enable_stability_classification_report(bno085_ctx_t *ctx, uint32_t interval_ms);
 
+
+/** 
+ * @brief Wait for significatn motion event report
+ */
+
+esp_err_t bno085_enable_stability_detector_report(bno085_ctx_t *ctx, uint32_t interval_ms);
+
 /**
  * @brief Wait for BNO085 game rotation vector roll and pitch values.
  *
@@ -172,5 +179,13 @@ esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, uin
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
 esp_err_t bno085_wait_for_rotation_vector_roll_pitch_yaw(bno085_ctx_t * ctx, float *roll, float *pitch, float *yaw, float *accuracy, bool block_wait);
+
+
+/** 
+ * @brief Wait for stability detector report
+ * @param ctx Pointer to the BNO085 context.
+ */
+esp_err_t bno085_wait_for_stability_detector_report(bno085_ctx_t *ctx, uint16_t *stability, bool block_wait);
+
 
 #endif // BNO085_H

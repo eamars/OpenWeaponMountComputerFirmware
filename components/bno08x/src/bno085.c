@@ -87,7 +87,6 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     // ESP_LOGI(TAG, "Event Received %p", sensor_value.sensorId);
 
     xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
-    ESP_LOGI(TAG, "Event Sent to Queue %p", target_report_config->sensor_value_queue);
 }
 
 
@@ -119,20 +118,8 @@ void sensor_poller_task(void *self) {
 }
 
 
-esp_err_t sh2_enable_report(sh2_SensorId_t sensor_id, uint32_t interval_ms) {
-    static sh2_SensorConfig_t config = {
-        .changeSensitivityEnabled = false,
-        .wakeupEnabled = false,
-        .changeSensitivityRelative = false,
-        .alwaysOnEnabled = false,
-        .changeSensitivity = 0,
-        .batchInterval_us = 0,
-        .sensorSpecific = 0,
-    };
-
-    config.reportInterval_us = interval_ms * 1000;
-
-    int status = sh2_setSensorConfig(sensor_id, &config);
+esp_err_t sh2_enable_report(sh2_SensorId_t sensor_id, sh2_SensorConfig_t *config) {
+    int status = sh2_setSensorConfig(sensor_id, config);
 
     if (status != SH2_OK) {
         return ESP_FAIL;
@@ -140,7 +127,6 @@ esp_err_t sh2_enable_report(sh2_SensorId_t sensor_id, uint32_t interval_ms) {
 
     return ESP_OK;
 }
-
 
 static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
     // Cast cookie back to the context
@@ -154,9 +140,9 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
             // Go over saved configurations
             for (uint8_t i = 0; i < SH2_MAX_SENSOR_EVENT_LEN; i += 1) {
                 // Re-enable reports
-                if (ctx->enabled_sensor_report_list[i].interval_ms != 0) {
-                    ESP_LOGI(TAG, "Re-enabling report for sensor ID %d with interval %d ms", i, ctx->enabled_sensor_report_list[i].interval_ms);
-                    sh2_enable_report(i, ctx->enabled_sensor_report_list[i].interval_ms);
+                if (ctx->enabled_sensor_report_list[i].config.reportInterval_us != 0) {
+                    ESP_LOGI(TAG, "Re-enabling report for sensor ID %d with interval %d us", i, ctx->enabled_sensor_report_list[i].config.reportInterval_us);
+                    sh2_enable_report(i, &ctx->enabled_sensor_report_list[i].config);
                 }
             }
             break;
@@ -307,12 +293,9 @@ esp_err_t _bno085_sh2_init(bno085_ctx_t *ctx) {
 }
 
 
-esp_err_t bno085_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t interval_ms) {
+esp_err_t bno085_configure_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, sh2_SensorConfig_t *config) {
     // look for a slot to save the config
     sensor_report_config_t * target_report_config = &ctx->enabled_sensor_report_list[sensor_id];
-
-    // enable report
-    ESP_LOGI(TAG, "Enabling Report 0x%x with interval %dms", sensor_id, interval_ms);
 
     // Create queue if not created already
     if (target_report_config->sensor_value_queue == NULL) {
@@ -323,31 +306,94 @@ esp_err_t bno085_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint
         }
     }
 
-    // Fill other house keeping information
-    target_report_config->interval_ms = interval_ms;
+    // Copy the configuration to the target report config
+    memcpy(&target_report_config->config, config, sizeof(sh2_SensorConfig_t));
 
     // Enable report at the sensor
-    return sh2_enable_report(sensor_id, interval_ms);
+    return sh2_enable_report(sensor_id, &target_report_config->config);
 }
 
 
 esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
-    return bno085_enable_report(ctx, SH2_GAME_ROTATION_VECTOR, interval_ms);
+    sh2_SensorConfig_t config = {
+        .changeSensitivityEnabled = false,
+        .wakeupEnabled = false,
+        .changeSensitivityRelative = false,
+        .alwaysOnEnabled = false,
+        .changeSensitivity = 0,
+        .batchInterval_us = 0,
+        .sensorSpecific = 0,
+    };
+
+    config.reportInterval_us = interval_ms * 1000;
+
+    return bno085_configure_report(ctx, SH2_GAME_ROTATION_VECTOR, &config);
 }
 
 
 esp_err_t bno085_enable_linear_acceleration_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
-    return bno085_enable_report(ctx, SH2_LINEAR_ACCELERATION, interval_ms);   
+    sh2_SensorConfig_t config = {
+        .changeSensitivityEnabled = false,
+        .wakeupEnabled = false,
+        .changeSensitivityRelative = false,
+        .alwaysOnEnabled = false,
+        .changeSensitivity = 0,
+        .batchInterval_us = 0,
+        .sensorSpecific = 0,
+    };
+
+    config.reportInterval_us = interval_ms * 1000;
+
+    return bno085_configure_report(ctx, SH2_LINEAR_ACCELERATION, &config);
 }
 
 esp_err_t bno085_enable_stability_classification_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
-    return bno085_enable_report(ctx, SH2_STABILITY_CLASSIFIER, interval_ms);
+    sh2_SensorConfig_t config = {
+        .changeSensitivityEnabled = false,
+        .wakeupEnabled = false,
+        .changeSensitivityRelative = false,
+        .alwaysOnEnabled = false,
+        .changeSensitivity = 0,
+        .batchInterval_us = 0,
+        .sensorSpecific = 0,
+    };
+
+    config.reportInterval_us = interval_ms * 1000;
+
+    return bno085_configure_report(ctx, SH2_STABILITY_CLASSIFIER, &config);
 }
 
 esp_err_t bno085_enable_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
-    return bno085_enable_report(ctx, SH2_ROTATION_VECTOR, interval_ms);
+    sh2_SensorConfig_t config = {
+        .changeSensitivityEnabled = false,
+        .wakeupEnabled = false,
+        .changeSensitivityRelative = false,
+        .alwaysOnEnabled = false,
+        .changeSensitivity = 0,
+        .batchInterval_us = 0,
+        .sensorSpecific = 0,
+    };
+
+    config.reportInterval_us = interval_ms * 1000;
+
+    return bno085_configure_report(ctx, SH2_ROTATION_VECTOR, &config);
 }
 
+
+esp_err_t bno085_enable_stability_detector_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
+    sh2_SensorConfig_t config = {   
+        .changeSensitivityEnabled = true,
+        .wakeupEnabled = false,
+        .changeSensitivityRelative = false,
+        .alwaysOnEnabled = false,
+        .changeSensitivity = 0,
+        .batchInterval_us = 0,
+        .sensorSpecific = 0,
+    };
+
+    config.reportInterval_us = interval_ms * 1000;
+    return bno085_configure_report(ctx, SH2_STABILITY_DETECTOR, &config);
+}
 
 
 esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch_yaw(bno085_ctx_t *ctx, float *roll, float *pitch, float *yaw, bool block_wait) {
@@ -508,6 +554,33 @@ esp_err_t bno085_wait_for_stability_classification_report(bno085_ctx_t *ctx, uin
     // Decode sensor event
     if (sensor_value.sensorId == SH2_STABILITY_CLASSIFIER) {
         *classification = sensor_value.un.stabilityClassifier.classification;
+        return ESP_OK;
+    }
+
+    return ESP_FAIL;
+}
+
+
+esp_err_t bno085_wait_for_stability_detector_report(bno085_ctx_t *ctx, uint16_t *stability, bool block_wait) {
+    TickType_t wait_ticks;
+    if (block_wait) {
+        wait_ticks = portMAX_DELAY;
+    }
+    else {
+        wait_ticks = 0;
+    }
+
+    sh2_SensorValue_t sensor_value;
+
+    // Wait for the queue from the corresponding report
+    if (xQueueReceive(ctx->enabled_sensor_report_list[SH2_STABILITY_DETECTOR].sensor_value_queue, &sensor_value, wait_ticks) != pdPASS) {
+        // ESP_LOGE(TAG, "Failed to receive stability detector report");
+        return ESP_FAIL;
+    }
+
+    // Decode sensor event
+    if (sensor_value.sensorId == SH2_STABILITY_DETECTOR) {
+        *stability = sensor_value.un.stabilityDetector.stability;
         return ESP_OK;
     }
 

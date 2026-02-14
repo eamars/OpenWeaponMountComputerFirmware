@@ -40,7 +40,7 @@ extern axp2101_ctx_t * axp2101_dev;
 extern wifi_user_config_t wifi_user_config;
 
 TaskHandle_t low_power_monitor_task_handle;
-TaskHandle_t sensor_stability_classifier_poller_task_handle;
+TaskHandle_t sensor_stability_detector_poller_task_handle;
 TaskHandle_t light_sleep_mode_task_handle;
 
 TickType_t last_activity_tick = 0;
@@ -138,21 +138,21 @@ void low_power_monitor_task(void *p) {
 }
 
 
-void sensor_stability_classifier_poller_task(void *p) {
+void sensor_stability_detector_poller_task(void *p) {
+    // Initialize sensor
+    ESP_ERROR_CHECK(bno085_enable_stability_detector_report(bno085_dev, SENSOR_STABILITY_DETECTOR_REPORT_PERIOD_MS));
+
     // Disable the task watchdog as the task is expected to block indefinitely
     esp_task_wdt_delete(NULL);
 
-    // Wait for sensor to be initialized
-    
-
     while (1) {
-        uint8_t stability_classification = STABILITY_CLASSIFIER_UNKNOWN;
-        esp_err_t err = bno085_wait_for_stability_classification_report(bno085_dev, &stability_classification, true);
+        uint16_t stability;
+        esp_err_t err = bno085_wait_for_stability_detector_report(bno085_dev, &stability, true);
 
         if (err == ESP_OK) {
-            
-            if (stability_classification == STABILITY_CLASSIFIER_MOTION) {
-                // If the sensor is moving in sleep move then wake up the system
+            update_low_power_mode_last_activity_event();
+
+            if (stability == STABILITY_EXITED) {
                 if (xEventGroupGetBits(low_power_control_event) & IN_LOW_POWER_MODE) {
                     if (main_tileview && last_tile) {
                         if (lvgl_port_lock(0)) {
@@ -162,10 +162,6 @@ void sensor_stability_classifier_poller_task(void *p) {
                         }
                         ESP_LOGI(TAG, "Exiting low power mode due to sensor activity");
                     }
-                }
-                // If the sensor is moving then update the last activity tick to prevent the system from entering the sleep state
-                else {
-                    update_low_power_mode_last_activity_event();
                 }
             }
         }
@@ -180,14 +176,10 @@ void light_sleep_mode_task(void *p) {
     // This task is responsible for controlling the entering and exiting of the light sleep mode. The task will be unblocked when there is a need to enter the light sleep mode, which is signaled by setting the SIGNAL_ENTER_LIGHT_SLEEP_MODE bit in the low_power_control_event event group. 
 
     // Configure the wakeup sources
-    // Touch event (based on touchpad interrupt pin)
-    ESP_ERROR_CHECK(gpio_wakeup_enable(TOUCHSCREEN_INT_PIN, GPIO_INTR_LOW_LEVEL));
-
-    // // IMU event (based on IMU interrupt pin)
-    // ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(BNO085_INT_PIN, 0));  // Wake up when the interrupt pin is low (active low)
-
-    // Configure the wakeup trigger type and enable wakeup
-    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+    ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(
+        (1 << TOUCHSCREEN_INT_PIN)
+            | (1 << BNO085_INT_PIN),  // Wake up when either the touch interrupt pin or the BNO085 interrupt pin is low (active low)
+        ESP_EXT1_WAKEUP_ANY_LOW));  // Wake up when the interrupt pin is low (active low)
 
 
     while (1) {
@@ -236,11 +228,6 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     int y_pos = esp_random() % (LV_VER_RES - lv_obj_get_height(low_power_mode_label));
     lv_obj_set_pos(low_power_mode_label, x_pos, y_pos);
 
-#if USE_BNO085
-    // Enable sensor stability classification report
-    ESP_ERROR_CHECK(bno085_enable_stability_classification_report(bno085_dev, SENSOR_STABILITY_CLASSIFIER_REPORT_PERIOD_MS));
-#endif  // USE_BNO085
-
     // Create user event poller task
     BaseType_t rtos_return = xTaskCreate(
         low_power_monitor_task,
@@ -269,15 +256,15 @@ void create_low_power_mode_view(lv_obj_t * parent) {
 #if USE_BNO085
     // Create sensor stability classifier task
     rtos_return = xTaskCreate(
-        sensor_stability_classifier_poller_task,
+        sensor_stability_detector_poller_task,
         "STABILITY",
-        SENSOR_STABILITY_CLASSIFIER_TASK_STACK,
+        SENSOR_STABILITY_DETECTOR_POLLER_TASK_STACK,
         NULL,
-        SENSOR_STABILITY_CLASSIFIER_TASK_PRIORITY,
-        &sensor_stability_classifier_poller_task_handle
+        SENSOR_STABILITY_DETECTOR_POLLER_TASK_PRIORITY,
+        &sensor_stability_detector_poller_task_handle
     );
     if (rtos_return != pdPASS) {
-        ESP_LOGE(TAG, "Failed to allocate memory for sensor_stability_classifier_poller_task");
+        ESP_LOGE(TAG, "Failed to allocate memory for sensor_stability_detector_poller_task");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 #endif  // USE_BNO085
@@ -338,7 +325,7 @@ void enable_low_power_mode(bool enable) {
         lv_timer_create(delayed_stop_lvgl, 1, NULL);
 
         // Enter light sleep mode
-        // xEventGroupSetBits(low_power_control_event, SIGNAL_ENTER_LIGHT_SLEEP_MODE);
+        xEventGroupSetBits(low_power_control_event, SIGNAL_ENTER_LIGHT_SLEEP_MODE);
 
     } 
     else {
