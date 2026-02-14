@@ -87,6 +87,7 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     // ESP_LOGI(TAG, "Event Received %p", sensor_value.sensorId);
 
     xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
+    ESP_LOGI(TAG, "Event Sent to Queue %p", target_report_config->sensor_value_queue);
 }
 
 

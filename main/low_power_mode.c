@@ -7,6 +7,8 @@
 #include "esp_check.h"
 #include "esp_task_wdt.h"
 #include "esp_random.h"
+#include "esp_sleep.h"
+#include "esp_timer.h"
 
 #include "low_power_mode.h"
 #include "system_config.h"
@@ -22,6 +24,8 @@
 typedef enum {
     IN_LOW_POWER_MODE = (1 << 0),
     PREVENT_ENTER_LOW_POWER_MODE = (1 << 1),
+    SIGNAL_ENTER_LIGHT_SLEEP_MODE = (1 << 2),
+    SIGNAL_ENTER_DEEP_SLEEP_MODE = (1 << 3),
 } low_power_mode_control_event_e;
 
 
@@ -35,14 +39,17 @@ extern bno085_ctx_t * bno085_dev;
 extern axp2101_ctx_t * axp2101_dev;
 extern wifi_user_config_t wifi_user_config;
 
-lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
 TaskHandle_t low_power_monitor_task_handle;
 TaskHandle_t sensor_stability_classifier_poller_task_handle;
+TaskHandle_t light_sleep_mode_task_handle;
+
 TickType_t last_activity_tick = 0;
 TickType_t last_low_power_mode_tick = 0;
 int32_t low_power_mode_display_index = 0;
 static EventGroupHandle_t low_power_control_event;
 static lv_obj_t * last_tile = NULL;  // last tile before entering the low power mode
+static lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
+
 lv_obj_t * low_power_mode_label = NULL;
 
 
@@ -165,6 +172,49 @@ void sensor_stability_classifier_poller_task(void *p) {
     }
 }
 
+
+void light_sleep_mode_task(void *p) {
+    // Disable the task watchdog as the task is expected to block indefinitely
+    esp_task_wdt_delete(NULL);
+
+    // This task is responsible for controlling the entering and exiting of the light sleep mode. The task will be unblocked when there is a need to enter the light sleep mode, which is signaled by setting the SIGNAL_ENTER_LIGHT_SLEEP_MODE bit in the low_power_control_event event group. 
+
+    // Configure the wakeup sources
+    // Touch event (based on touchpad interrupt pin)
+    ESP_ERROR_CHECK(gpio_wakeup_enable(TOUCHSCREEN_INT_PIN, GPIO_INTR_LOW_LEVEL));
+
+    // // IMU event (based on IMU interrupt pin)
+    // ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(BNO085_INT_PIN, 0));  // Wake up when the interrupt pin is low (active low)
+
+    // Configure the wakeup trigger type and enable wakeup
+    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+
+
+    while (1) {
+        // Block waiting for the signal to enter light sleep mode
+        xEventGroupWaitBits(low_power_control_event, SIGNAL_ENTER_LIGHT_SLEEP_MODE, pdTRUE, pdFALSE, portMAX_DELAY);
+
+        ESP_LOGI(TAG, "Entering light sleep mode...");
+        int64_t t_before_us = esp_timer_get_time();  // get time before entering sleep for debugging purpose
+        esp_light_sleep_start();
+        
+        /* Sleep Starts */
+
+        /* Sleep Ends */
+        int64_t t_after_us = esp_timer_get_time();
+
+        // Determine wakeup reason
+        uint32_t wakeup_cause = esp_sleep_get_wakeup_cause();
+        if (wakeup_cause & ESP_SLEEP_WAKEUP_GPIO) {
+            ESP_LOGI(TAG, "Wakeup caused by GPIO");
+        } else {
+            ESP_LOGI(TAG, "Wakeup caused by other reason: %d", wakeup_cause);
+        }
+
+        ESP_LOGI(TAG, "Time spent in light sleep mode: %lld ms", (t_after_us - t_before_us) / 1000);
+    }
+}
+
 void create_low_power_mode_view(lv_obj_t * parent) {
     low_power_control_event = xEventGroupCreate();
     if (low_power_control_event == NULL) {
@@ -204,6 +254,17 @@ void create_low_power_mode_view(lv_obj_t * parent) {
         ESP_LOGE(TAG, "Failed to allocate memory for low_power_monitor_task");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
+
+    // Create light sleep monitor task to control the entering and exiting of the light sleep mode. 
+    // This task is running independently from the low power monitor task. This task can be unblocked by setting the SIGNAL_ENTER_LIGHT_SLEEP_MODE bit in the low_power_control_event event group.
+    rtos_return = xTaskCreate(
+        light_sleep_mode_task,
+        "LSMON",
+        LOW_SLEEP_MODE_TASK_STACK,
+        NULL,
+        LOW_SLEEP_MODE_TASK_PRIORITY,
+        &light_sleep_mode_task_handle
+    );
 
 #if USE_BNO085
     // Create sensor stability classifier task
@@ -275,6 +336,9 @@ void enable_low_power_mode(bool enable) {
 
         // lvgl_port_stop();
         lv_timer_create(delayed_stop_lvgl, 1, NULL);
+
+        // Enter light sleep mode
+        // xEventGroupSetBits(low_power_control_event, SIGNAL_ENTER_LIGHT_SLEEP_MODE);
 
     } 
     else {

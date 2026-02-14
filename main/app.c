@@ -17,6 +17,7 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_pm.h"
+#include "esp_sleep.h"
 
 #include "driver/i2c_master.h"
 
