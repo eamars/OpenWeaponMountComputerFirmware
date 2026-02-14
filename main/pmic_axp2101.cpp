@@ -211,17 +211,17 @@ void axp2101_monitor_task(void * args) {
         // Update status
         power_management_view_update_status(ctx);
 
-        // Print it out
-        ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",
-            ctx->status.charge_status,
-            ctx->status.battery_percentage,
-            ctx->status.ts_temperature
-        );
-        ESP_LOGI(TAG, "VBUS: %dmV, VBATT: %dmV, VSYS: %dmV",
-            ctx->status.vbus_voltage_mv,
-            ctx->status.vbatt_voltage_mv,
-            ctx->status.vsys_voltage_mv
-        );
+        // // Print it out
+        // ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",
+        //     ctx->status.charge_status,
+        //     ctx->status.battery_percentage,
+        //     ctx->status.ts_temperature
+        // );
+        // ESP_LOGI(TAG, "VBUS: %dmV, VBATT: %dmV, VSYS: %dmV",
+        //     ctx->status.vbus_voltage_mv,
+        //     ctx->status.vbatt_voltage_mv,
+        //     ctx->status.vsys_voltage_mv
+        // );
     }
 }
 

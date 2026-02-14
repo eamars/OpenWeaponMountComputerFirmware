@@ -15,6 +15,7 @@
 #include "sensor_config.h"
 #include "bno085.h"
 #include "pmic_axp2101.h"
+#include "wifi.h"
 
 #define TAG "LowPowerMode"
 
@@ -32,6 +33,7 @@ extern lv_indev_t * lvgl_touch_handle;
 extern sensor_config_t sensor_config;
 extern bno085_ctx_t * bno085_dev;
 extern axp2101_ctx_t * axp2101_dev;
+extern wifi_user_config_t wifi_user_config;
 
 lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
 TaskHandle_t low_power_monitor_task_handle;
@@ -241,6 +243,9 @@ void enable_low_power_mode(bool enable) {
     if (enable) {
         xEventGroupSetBits(low_power_control_event, IN_LOW_POWER_MODE);
 
+        // Disable wifi for the duration of low power mode
+        wifi_request_stop();
+
         // Record the last time the system enters the low power mode
         last_low_power_mode_tick = xTaskGetTickCount();
         ESP_LOGI(TAG, "System entered low power mode at tick %ld", last_activity_tick);
@@ -286,6 +291,9 @@ void enable_low_power_mode(bool enable) {
         if (io_handle) {
             set_display_brightness(&io_handle, system_config.screen_brightness_normal_pct);
         }
+
+        // Re-enable wifi
+        wifi_request_start();
     }
 }
 
