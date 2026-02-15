@@ -253,7 +253,8 @@ void low_power_monitor_task(void *p) {
 
             // Have sayed in idle long enough
             if (idle_duration_ms > sleep_timeout_ms) {
-                enter_sleep_mode();
+                // enter_sleep_mode();
+                pmic_power_off();
             }
         }
 
