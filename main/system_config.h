@@ -16,12 +16,12 @@ typedef enum {
 } idle_timeout_t;
 
 typedef enum {
-    POWER_OFF_TIMEOUT_NEVER = 0,
-    POWER_OFF_TIMEOUT_1_HRS,
-    POWER_OFF_TIMEOUT_2_HRS,
-    POWER_OFF_TIMEOUT_5_HRS,
-    POWER_OFF_TIMEOUT_1_MIN,
-} power_off_timeout_t;
+    SLEEP_TIMEOUT_NEVER = 0,
+    SLEEP_TIMEOUT_1_HRS,
+    SLEEP_TIMEOUT_2_HRS,
+    SLEEP_TIMEOUT_5_HRS,
+    SLEEP_TIMEOUT_1_MIN,  // debug
+} sleep_timeout_t;
 
 
 typedef enum {
@@ -43,7 +43,7 @@ typedef struct {
     uint32_t crc32;
     lv_display_rotation_t rotation;
     idle_timeout_t idle_timeout;
-    power_off_timeout_t power_off_timeout;
+    sleep_timeout_t sleep_timeout;
     screen_brightness_pct_t screen_brightness_normal_pct;
     screen_brightness_pct_t screen_brightness_idle_pct;
 
@@ -57,6 +57,6 @@ lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_
 
 
 uint32_t idle_timeout_to_secs(idle_timeout_t timeout);
-uint32_t power_off_timeout_to_secs(power_off_timeout_t timeout);
+uint32_t sleep_timeout_to_secs(sleep_timeout_t timeout);
 
 #endif  // SYSTEM_CONFIG_H_
