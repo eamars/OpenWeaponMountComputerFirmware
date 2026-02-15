@@ -3,6 +3,7 @@
 
 #include "lvgl.h"
 
+typedef void (*tile_update_enable_cb_t) (bool);
 
 void create_main_tileview(lv_obj_t *parent);
 

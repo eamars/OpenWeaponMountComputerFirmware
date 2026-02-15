@@ -48,7 +48,7 @@ static void digital_level_view_draw_event_cb(lv_event_t * e) {
     int32_t disp_height = lv_area_get_height(&coords);
     float max_delta_vertical_shift = disp_height/ 4.0;  // maximum vertical shift for the indicator lines
     float max_delta_vertical_vertex = disp_height / 2.0f - 20;  // Maximum vertical verticies for the triangle
-    float delta_vertical_shift = -tanf(pitch_rad_local) * (disp_height / 2);
+    float delta_vertical_shift = -tanf(pitch_rad_local) * (disp_height / 2) * digital_level_view_config.pitch_display_gain;
     float vertical_base_position = disp_height / 2 + delta_vertical_shift;
 
     float threshold_rad = DEG_TO_RAD(digital_level_view_config.delta_level_threshold);

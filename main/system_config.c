@@ -29,26 +29,16 @@ extern esp_lcd_panel_io_handle_t io_handle;
 const char rotation_options[] = "0°\n90°\n180°\n270°";
 const char idle_timeout_options[] = "Never\n1 min\n5 min\n10 min\n10 sec";
 const char power_off_timeout_options[] = "Never\n1 hrs\n2 hrs\n5 hrs\n 1 min";
-const char screen_brightness_pct_options[] = "5%\n10%\n20%\n30%\n40%\n50%\n60%\n70%\n80%\n90%\n100%";
+const char screen_brightness_pct_options[] = "0%\n10%\n20%\n30%\n40%\n50%\n60%\n70%\n80%\n90%\n100%";
 
 
 screen_brightness_pct_t screen_brightness_pct_option_to_pct(int32_t selected) {
-    if (selected == 0) {
-        return SCREEN_BRIGHTNESS_5_PCT;
-    }
-    else {
-        return selected * 10;
-    }
+    return selected * 10;
 }
 
 
 int32_t pct_to_screen_brightness_pct_option(screen_brightness_pct_t pct) {
-    if (pct == SCREEN_BRIGHTNESS_5_PCT) {
-        return 0;
-    }
-    else {
-        return pct / 10;
-    }
+     return pct / 10;
 }
 
 

@@ -127,7 +127,7 @@ esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handl
         LCD_DATA1,
         LCD_DATA2, 
         LCD_DATA3,
-        4092  // 4092 to save more RAM
+        4091  // 4092 to save more RAM
     );
     ESP_ERROR_CHECK(spi_bus_initialize(LCD_QSPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
 

@@ -12,23 +12,19 @@
 #include "acceleration_analysis_view.h"
 #include "bno085.h"
 #include "system_config.h"
-#include "low_power_mode.h"
 #include "ota_mode.h"
 #include "point_of_aim_view.h"
 #include "opentrickler_remote_controller_view.h"
 #include "sensor_calibration_view.h"
-
+#include "low_power_mode.h"
 
 #define TAG "MainTileView"
 
 
-typedef void (*tile_update_enable_cb_t) (bool);
-
-
 lv_obj_t * main_tileview = NULL;
-lv_obj_t * tile_low_power_mode_view = NULL;
 lv_obj_t * tile_ota_mode_view = NULL;
 lv_obj_t * tile_sensor_calibration_view = NULL;
+lv_obj_t * tile_low_power_mode_view = NULL;
 
 lv_obj_t * default_tile = NULL;
 
@@ -136,7 +132,6 @@ void create_main_tileview(lv_obj_t *parent)
 
     // Tiles at column 0 are reserved for control purposes
     tile_low_power_mode_view = lv_tileview_add_tile(main_tileview, 0, 0, LV_DIR_NONE);  // The tile can only be entered automatically
-    lv_obj_set_user_data(tile_low_power_mode_view, enable_low_power_mode);  // Use enter and exit code to activate and deactivate the low power mode
     create_low_power_mode_view(tile_low_power_mode_view);
 
     // 0, 1 for OTA mode

@@ -25,7 +25,7 @@ typedef enum {
 
 
 typedef enum {
-    SCREEN_BRIGHTNESS_5_PCT     = 5,
+    SCREEN_BRIGHTNESS_0_PCT     = 0,
     SCREEN_BRIGHTNESS_10_PCT    = 10,
     SCREEN_BRIGHTNESS_20_PCT    = 20,
     SCREEN_BRIGHTNESS_30_PCT    = 30,

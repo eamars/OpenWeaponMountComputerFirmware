@@ -2,15 +2,15 @@
 #define LOW_POWER_MODE_H
 
 #include "lvgl.h"
-
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
 
-void create_low_power_mode_view(lv_obj_t * parent);
-void enable_low_power_mode(bool enable);
+void create_low_power_mode_view(lv_obj_t *parent);
+
 void update_low_power_mode_last_activity_event();
 bool is_low_power_mode_activated();
 

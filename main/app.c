@@ -35,6 +35,7 @@
 #include "usb.h"
 #include "buzzer.h"
 #include "lvgl_display.h"
+#include "low_power_mode.h"
 
 #define TAG "App"
 
@@ -43,6 +44,7 @@ bno085_ctx_t * bno085_dev;
 axp2101_ctx_t * axp2101_dev;
 extern system_config_t system_config;
 extern sensor_config_t sensor_config;
+extern uint32_t wakeup_cause;
 
 
 void mem_monitor_task(void *pvParameters) {
@@ -57,6 +59,8 @@ void mem_monitor_task(void *pvParameters) {
         // Optional: Internal RAM only
         ESP_LOGI(TAG, "Free internal heap: %u kbytes",
                 (unsigned)esp_get_free_internal_heap_size() / 1024);
+
+        ESP_LOGI(TAG, "Wakeup cause: %d", wakeup_cause);
 
 
         ESP_LOGI(TAG, "---------------------------");
