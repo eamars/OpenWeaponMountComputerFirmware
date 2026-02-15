@@ -179,10 +179,10 @@ void enter_sleep_mode() {
         lv_obj_t * prev_tile = lv_tileview_get_tile_active(main_tileview);
         lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
         lv_tileview_set_tile(main_tileview, prev_tile, LV_ANIM_OFF);
+        lv_obj_invalidate(main_tileview);
 
         lvgl_port_unlock();
     }
-
 
     // Restore wifi
     wifi_request_start();
@@ -197,7 +197,8 @@ void low_power_monitor_task(void *p) {
     // 2) BNO085 interrupt: to wake up the system when there is a sensor event, which indicates the user is interacting with the system
     ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(
             (1 << TOUCHSCREEN_INT_PIN) |
-            (1 << BNO085_INT_PIN)
+            // (1 << GPIO_NUM_0) | 
+            (1 << BNO085_INT_PIN) 
             // (1 << PMIC_AXP2101_INT_PIN)  // PMIC interrupt, to wake up the system when there is a change in power status, e.g. USB plugged in, battery low, etc.
             ,
         ESP_EXT1_WAKEUP_ANY_LOW)); 

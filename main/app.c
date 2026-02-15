@@ -113,7 +113,7 @@ void app_main(void)
     esp_err_t ret;
 
     // Create task to monitor memory usage
-    xTaskCreate(mem_monitor_task, "mem_monitor_task", 4096, NULL, 3, NULL);
+    // xTaskCreate(mem_monitor_task, "mem_monitor_task", 4096, NULL, 3, NULL);
 
     // Start event loop
     ESP_ERROR_CHECK(esp_event_loop_create_default());
