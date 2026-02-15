@@ -107,8 +107,8 @@ void enter_sensor_calibration_mode(bool enable) {
     ESP_LOGI(TAG, "Sensor Calibration Mode %s", enable ? "enabled" : "disabled");
 
     if (enable) {
-        prevent_low_power_mode_enter(true);
-
+        prevent_idle_mode_enter(true);
+        
         // Enable RV report from BNO085
         ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_REPORT_PERIOD_MS));
 
@@ -116,12 +116,12 @@ void enter_sensor_calibration_mode(bool enable) {
         xEventGroupSetBits(sensor_calibration_task_control, RV_POLLER_RUN);
     }
     else {
-        prevent_low_power_mode_enter(false);
+        prevent_idle_mode_enter(false);
 
         // Disable the poller task
         xEventGroupClearBits(sensor_calibration_task_control, RV_POLLER_RUN);
 
-        // Set RV report back to low power mode period
+        // Set RV report back to idle mode period
         ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS));
     }
 }

@@ -136,7 +136,7 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
                 xEventGroupClearBits(wireless_event_group, WIRELESS_STATEFUL_IS_STA_CONNECTED);
 
                 // Start the expiry timer after disconnected from Wifi (exclude the intentional state change)
-                if (wifi_user_config.wifi_enable && !is_low_power_mode_activated()) {
+                if (wifi_user_config.wifi_enable && !is_idle_mode_activated()) {
                     wifi_expiry_watchdog_start();
                     
                     esp_err_t ret = esp_wifi_start();

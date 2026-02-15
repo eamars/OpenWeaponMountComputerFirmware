@@ -207,7 +207,7 @@ void update_normal_screen_brightness(lv_event_t * e) {
     system_config.screen_brightness_normal_pct = screen_brightness_pct_option_to_pct(selected);
 
     // Check if the system is in normal mode
-    if (!is_low_power_mode_activated()) {
+    if (!is_idle_mode_activated() && !is_sleep_mode_activated()) {
         set_display_brightness(&io_handle, system_config.screen_brightness_normal_pct);
     }
 }
@@ -219,8 +219,8 @@ void update_idle_screen_brightness(lv_event_t * e) {
 
     system_config.screen_brightness_idle_pct = screen_brightness_pct_option_to_pct(selected);
 
-    // Check if the system is in normal mode
-    if (is_low_power_mode_activated()) {
+    // Check if the system is in idle mode
+    if (is_idle_mode_activated()) {
         set_display_brightness(&io_handle, system_config.screen_brightness_idle_pct);
     }
 }

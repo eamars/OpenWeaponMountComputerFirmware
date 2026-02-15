@@ -211,6 +211,11 @@ void axp2101_monitor_task(void * args) {
         // Update status
         power_management_view_update_status(ctx);
 
+        if (ctx->status.is_usb_connected) {
+            // Prevent entering sleep mode when USB is connected, to ensure the system is responsive for user interactions and avoid unexpected sleep when the device is plugged in
+            prevent_sleep_mode_enter(true);
+        }
+
         // // Print it out
         // ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",
         //     ctx->status.charge_status,

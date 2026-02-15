@@ -26,7 +26,8 @@
 typedef enum {
     IN_IDLE_MODE = (1 << 0),
     IN_SLEEP_MODE = (1 << 1),
-    PREVENT_ENTER_LOW_POWER_MODE = (1 << 2),
+    PREVENT_ENTER_IDLE_MODE = (1 << 2),
+    PREVENT_ENTER_SLEEP_MODE = (1 << 3),
 } low_power_mode_control_event_e;
 
 
@@ -209,18 +210,36 @@ void low_power_monitor_task(void *p) {
         uint32_t active_duration_ms = pdTICKS_TO_MS(current_tick - last_activity_tick);
         uint32_t idle_duration_ms = pdTICKS_TO_MS(current_tick - last_idle_tick);
 
-        ESP_LOGI(TAG, "Current Idle Mode: %d, Current Sleep Mode: %d, Prevent Enter Low Power Mode: %d", 
+        ESP_LOGI(TAG, "Current Idle Mode: %d, Current Sleep Mode: %d, Prevent Enter Idle Mode: %d, Prevent Enter Sleep Mode: %d", 
             (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) != 0,
             (xEventGroupGetBits(low_power_control_event) & IN_SLEEP_MODE) != 0,
-            (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_LOW_POWER_MODE) != 0
+            (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE) != 0,
+            (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE) != 0
         );
         ESP_LOGI(TAG, "Active duration: %d ms, Idle duration: %d ms", active_duration_ms, idle_duration_ms);
+
+        // In Idle mode
+        if (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) {
+            // Update idle mode tick
+            last_activity_tick = current_tick;
+        }
+
+        if (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE) {
+            // Update sleep mode tick
+            update_low_power_mode_last_activity_event();
+            last_idle_tick = current_tick;
+        }
+
+        if (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE) {
+            // Update sleep mode tick
+            last_idle_tick = current_tick;
+        }
 
 
         // Can enter idle mode
         if (system_config.idle_timeout != IDLE_TIMEOUT_NEVER &&                                     // Low power mode enabled
             !(xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) &&                        // Not already in idle mode
-            !(xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_LOW_POWER_MODE))          // Low power mode is not temporarily blocked
+            !(xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE))               // Idle mode is not temporarily blocked
         {
             uint32_t idle_timeout_ms = idle_timeout_to_secs(system_config.idle_timeout) * 1000;
             
@@ -237,17 +256,11 @@ void low_power_monitor_task(void *p) {
             }
         }
 
-        // In Idle mode
-        if (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) {
-            // Update idle mode tick
-            last_activity_tick = current_tick;
-        }
-
         // Can enter sleep mode
         if (system_config.sleep_timeout != SLEEP_TIMEOUT_NEVER &&                                   // Low power mode enabled
-            (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) &&                        // In idle mode already
+            (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) &&                         // In idle mode already
             !(xEventGroupGetBits(low_power_control_event) & IN_SLEEP_MODE) &&                       // Not already in sleep mode
-            !(xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_LOW_POWER_MODE))          // Low power mode is not temporarily blocked
+            !(xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE))              // Sleep mode is not temporarily blocked
         {                                            
             uint32_t sleep_timeout_ms = sleep_timeout_to_secs(system_config.sleep_timeout) * 1000;
 
@@ -337,22 +350,34 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     lv_indev_set_read_cb(lvgl_touch_handle, touchpad_read_cb_wrapper);
 }
 
-bool is_low_power_mode_activated() {
+bool is_idle_mode_activated() {
     // Both idle mode and sleep mode are considered as low power mode
-    return xEventGroupGetBits(low_power_control_event) & (IN_IDLE_MODE | IN_SLEEP_MODE);
+    return xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE;
+}
+
+bool is_sleep_mode_activated() {
+    return xEventGroupGetBits(low_power_control_event) & IN_SLEEP_MODE;
 }
 
 
-void prevent_low_power_mode_enter(bool prevent) {
+void prevent_idle_mode_enter(bool prevent) {
     // Update last tick 
     update_low_power_mode_last_activity_event();
 
     if (prevent) {
-        ESP_LOGI(TAG, "Temporarily disable low power mode");
-        xEventGroupSetBits(low_power_control_event, PREVENT_ENTER_LOW_POWER_MODE);
+        xEventGroupSetBits(low_power_control_event, PREVENT_ENTER_IDLE_MODE);
     }
     else {
-        ESP_LOGI(TAG, "Re-enable low power mode");
-        xEventGroupClearBits(low_power_control_event, PREVENT_ENTER_LOW_POWER_MODE);
+        xEventGroupClearBits(low_power_control_event, PREVENT_ENTER_IDLE_MODE);
+    }
+}
+
+void prevent_sleep_mode_enter(bool prevent) {
+
+    if (prevent) {
+        xEventGroupSetBits(low_power_control_event, PREVENT_ENTER_SLEEP_MODE);
+    }
+    else {
+        xEventGroupClearBits(low_power_control_event, PREVENT_ENTER_SLEEP_MODE);
     }
 }

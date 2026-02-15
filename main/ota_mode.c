@@ -640,10 +640,10 @@ void enter_ota_mode(bool enable) {
     ESP_LOGI(TAG, "OTA Mode %s", enable ? "enabled" : "disabled");
 
     if (enable) {
-        prevent_low_power_mode_enter(true);
+        prevent_idle_mode_enter(true);
     }
     else {
-        prevent_low_power_mode_enter(false);
+        prevent_idle_mode_enter(false);
     }
 }
 

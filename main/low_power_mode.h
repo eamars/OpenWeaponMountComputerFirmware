@@ -12,9 +12,12 @@ extern "C" {
 void create_low_power_mode_view(lv_obj_t *parent);
 
 void update_low_power_mode_last_activity_event();
-bool is_low_power_mode_activated();
 
-void prevent_low_power_mode_enter(bool prevent);
+bool is_idle_mode_activated();
+bool is_sleep_mode_activated();
+
+void prevent_idle_mode_enter(bool prevent);
+void prevent_sleep_mode_enter(bool prevent);
 
 #ifdef __cplusplus
 }
