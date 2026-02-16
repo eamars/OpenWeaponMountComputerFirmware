@@ -14,7 +14,7 @@
 static XPowersPMU PMU;
 
 
-#define TAG "AXP2101CPP"
+#define TAG "AXP2101"
 
 
 // C Function region
@@ -213,7 +213,7 @@ void axp2101_monitor_task(void * args) {
 
         if (ctx->status.is_usb_connected) {
             // Prevent entering sleep mode when USB is connected, to ensure the system is responsive for user interactions and avoid unexpected sleep when the device is plugged in
-            prevent_sleep_mode_enter(true);
+            // prevent_sleep_mode_enter(true);
         }
 
         // // Print it out
@@ -297,9 +297,6 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.disableDC2LowVoltageTurnOff();
     PMU.disableDC1LowVoltageTurnOff();
 
-    // Ease VSYS shutdown voltage
-    PMU.setSysPowerDownVoltage(2600);
-
     // Disable unused power outputs
     PMU.disableDC2();
     PMU.disableDC3();
@@ -322,11 +319,23 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.enableVbusVoltageMeasure();
     PMU.enableBattDetection();
 
+    // Don't check for PWROK pin
+    PMU.disablePwrOk();
+
+    // FIXME: Disable battery temperature protection
+    PMU.disableTSPinMeasure();
+
+    // Ease VSYS shutdown voltage
+    PMU.setSysPowerDownVoltage(2600);
+    ESP_LOGI(TAG, "Set VSYS power down voltage to %dmV", PMU.getSysPowerDownVoltage());
+
     // Set the minimum operating VBUS voltage 
     PMU.setVbusVoltageLimit(XPOWERS_AXP2101_VBUS_VOL_LIM_3V88);  // allow extremely low voltage input
+    ESP_LOGI(TAG, "Set VBUS voltage limit to %d", PMU.getVbusVoltageLimit());
 
     // Set maximum current per VBUS input
     PMU.setVbusCurrentLimit(pmic_vbus_current_limit_to_xpowers(power_management_config.vbus_current_limit));
+    ESP_LOGI(TAG, "Set VBUS current limit to %d", PMU.getVbusCurrentLimit());
 
     // Configure LED behavior (by the charger)
     PMU.setChargingLedMode(XPOWERS_CHG_LED_CTRL_CHG);
@@ -343,37 +352,38 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     );
 
     // Set charge current limits
-    PMU.setPrechargeCurr(XPOWERS_AXP2101_PRECHARGE_200MA);
+    PMU.setPrechargeCurr(XPOWERS_AXP2101_PRECHARGE_100MA);
+    ESP_LOGI(TAG, "Set battery pre-charge current to %d", PMU.getPrechargeCurr());
+
     PMU.setChargerConstantCurr(pmic_battery_charge_current_to_xpowers(power_management_config.battery_charge_current));
-    PMU.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_100MA);
+    ESP_LOGI(TAG, "Set battery charge current to %d", PMU.getChargerConstantCurr());
+
+    PMU.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_200MA);
+    ESP_LOGI(TAG, "Set battery charge termination current to %d", PMU.getChargerTerminationCurr());
 
     // Set charge voltage
     PMU.setChargeTargetVoltage(pmic_battery_charge_voltage_to_xpowers(power_management_config.battery_charge_voltage));
+    ESP_LOGI(TAG, "Set battery charge voltage to %d", PMU.getChargeTargetVoltage());
+
     // set low battery warning levels
     PMU.setLowBatWarnThreshold(10);
-    PMU.setLowBatShutdownThreshold(5);
+    ESP_LOGI(TAG, "Set low battery warning threshold to %d%%", PMU.getLowBatWarnThreshold());
 
-    // Don't check for PWROK pin
-    PMU.disablePwrOk();
+    PMU.setLowBatShutdownThreshold(5);
+    ESP_LOGI(TAG, "Set low battery shutdown threshold to %d%%", PMU.getLowBatShutdownThreshold());
 
     // Set PWROK output delay
     PMU.setPwrOkDelay(XPOWER_PWROK_DELAY_8MS);
 
     // Define button behavior
     // Configure threshold
-    PMU.setOnLevel(XPOWERS_POWERON_512MS);
-    PMU.setOffLevel(XPOWERS_POWEROFF_10S);
+    PMU.setOnLevel(XPOWERS_POWERON_128MS);
+    PMU.setOffLevel(XPOWERS_POWEROFF_4S);
     PMU.setIrqLevel(0);  // 1s
     PMU.enableLongPressShutdown();
     PMU.setLongPressRestart();
     PMU.disablePwrOkPinPullLow();  // do not reset on PWROK pulling low (this should never happen)
     PMU.disablePwronShutPMIC();     // Hard off on 16s press
-
-    // Print configured items
-    ESP_LOGI(TAG, "PMIC Configuration Applied:");
-    ESP_LOGI(TAG, "  VBUS Current Limit: %d", PMU.getVbusCurrentLimit());
-    ESP_LOGI(TAG, "  Battery Charge Current: %d", PMU.getChargerConstantCurr());
-    ESP_LOGI(TAG, "  Battery Charge Voltage: %d", PMU.getChargeTargetVoltage());
 
     // Populate status
     ctx->status.charge_status = PMU.getChargerStatus();
@@ -388,11 +398,11 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
 
     // print power on reason
     xpower_power_on_source_t power_on_source = PMU.getPowerOnSource();
-    ESP_LOGI(TAG, "AXP2101 Power On Source: %d", power_on_source);
+    ESP_LOGI(TAG, "Power On Source: %d", power_on_source);
 
     // print power off reason
     xpower_power_off_source_t power_off_source = PMU.getPowerOffSource();
-    ESP_LOGI(TAG, "AXP2101 Power Off Source: %d", power_off_source);
+    ESP_LOGI(TAG, "Power Off Source: %d", power_off_source);
 
     // Create task to handle PMIC interrupt
     BaseType_t rtos_return = xTaskCreate(
