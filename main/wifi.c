@@ -7,6 +7,7 @@
 #include "common.h"
 #include "wifi_config.h"
 #include "app_cfg.h"
+#include "low_power_mode.h"
 
 #include "wifi_provisioning/manager.h"
 #include "wifi_provisioning/scheme_softap.h"
@@ -69,17 +70,14 @@ void wifi_deinit_task(void *p) {
     // Create event if not created already
     ESP_ERROR_CHECK(create_wireless_event_group());
 
-    // Disable task watchdog
-    esp_task_wdt_delete(NULL);
+    // // Disable task watchdog
+    // esp_task_wdt_delete(NULL);
 
-    // Wait for expiry event
-    xEventGroupWaitBits(
-        wireless_event_group, 
-        WIRELESS_STATEFUL_IS_EXPIRED, 
-        pdTRUE,         // clear on assert
-        pdTRUE,         // wait for all bits to assert
-        portMAX_DELAY
-    );
+    // Block waiting for wifi to be expired
+    while (wifi_wait_for_expire(2000) != ESP_OK)
+    {
+        continue;
+    }
 
     wireless_state = WIRELESS_STATE_PROVISION_EXPIRE;
     status_bar_update_wireless_state(wireless_state);
@@ -138,7 +136,7 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
                 xEventGroupClearBits(wireless_event_group, WIRELESS_STATEFUL_IS_STA_CONNECTED);
 
                 // Start the expiry timer after disconnected from Wifi (exclude the intentional state change)
-                if (wifi_user_config.wifi_enable) {
+                if (wifi_user_config.wifi_enable && !is_idle_mode_activated()) {
                     wifi_expiry_watchdog_start();
                     
                     esp_err_t ret = esp_wifi_start();
@@ -322,6 +320,29 @@ esp_err_t wifi_init() {
     return ESP_OK;
 }
 
+esp_err_t wifi_request_start() {
+    ESP_LOGI(TAG, "Starting WiFi control at state: %d", wireless_state);
+    if (!wifi_is_expired() && wifi_user_config.wifi_enable) {
+        ESP_LOGI(TAG, "Requesting esp_wifi_start");
+        return esp_wifi_start();
+    }
+    
+    ESP_LOGI(TAG, "WiFi is disabled or expired. Start request ignored.");
+    return ESP_ERR_INVALID_STATE;
+}
+
+
+esp_err_t wifi_request_stop() {
+    ESP_LOGI(TAG, "Stopping WiFi control at state: %d", wireless_state);
+    if (!wifi_is_expired() && wifi_user_config.wifi_enable) {
+        ESP_LOGI(TAG, "Requesting esp_wifi_stop");
+        return esp_wifi_stop();
+    }
+
+    ESP_LOGI(TAG, "WiFi is disabled or expired. Stop request ignored.");
+    return ESP_ERR_INVALID_STATE;
+}
+
 
 void wifi_expiry_watchdog_restart() {
     xTimerReset(wifi_expiry_timeout_timer, 0);
@@ -397,4 +418,33 @@ bool wifi_is_sta_connected() {
     EventBits_t asserted_bits = xEventGroupGetBits(wireless_event_group);
 
     return asserted_bits & WIRELESS_STATEFUL_IS_STA_CONNECTED;
+}
+
+
+esp_err_t wifi_wait_for_expire(uint32_t block_wait_ms) {
+    create_wireless_event_group();
+
+    // Wait for expire event
+    EventBits_t asserted_bits = xEventGroupWaitBits(
+        wireless_event_group, 
+        WIRELESS_STATEFUL_IS_EXPIRED, 
+        pdFALSE,        // don't clear on assert
+        pdTRUE,         // wait for all bits to assert
+        pdMS_TO_TICKS(block_wait_ms)
+    );
+
+    if (asserted_bits & WIRELESS_STATEFUL_IS_EXPIRED) {
+        return ESP_OK;
+    }
+
+    return ESP_ERR_TIMEOUT; 
+}
+
+
+
+bool wifi_is_expired() {
+    create_wireless_event_group();
+    EventBits_t asserted_bits = xEventGroupGetBits(wireless_event_group);
+
+    return asserted_bits & WIRELESS_STATEFUL_IS_EXPIRED;
 }

@@ -16,6 +16,8 @@
 
 #include "esp_check.h"
 #include "esp_err.h"
+#include "esp_pm.h"
+#include "esp_sleep.h"
 
 #include "driver/i2c_master.h"
 
@@ -33,6 +35,7 @@
 #include "usb.h"
 #include "buzzer.h"
 #include "lvgl_display.h"
+#include "low_power_mode.h"
 
 #define TAG "App"
 
@@ -41,6 +44,7 @@ bno085_ctx_t * bno085_dev;
 axp2101_ctx_t * axp2101_dev;
 extern system_config_t system_config;
 extern sensor_config_t sensor_config;
+extern uint32_t wakeup_cause;
 
 
 void mem_monitor_task(void *pvParameters) {
@@ -55,6 +59,8 @@ void mem_monitor_task(void *pvParameters) {
         // Optional: Internal RAM only
         ESP_LOGI(TAG, "Free internal heap: %u kbytes",
                 (unsigned)esp_get_free_internal_heap_size() / 1024);
+
+        ESP_LOGI(TAG, "Wakeup cause: %d", wakeup_cause);
 
 
         ESP_LOGI(TAG, "---------------------------");
@@ -107,7 +113,7 @@ void app_main(void)
     esp_err_t ret;
 
     // Create task to monitor memory usage
-    xTaskCreate(mem_monitor_task, "mem_monitor_task", 4096, NULL, 3, NULL);
+    // xTaskCreate(mem_monitor_task, "mem_monitor_task", 4096, NULL, 3, NULL);
 
     // Start event loop
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -163,6 +169,14 @@ void app_main(void)
 
     // Initialize WiFi and related calls
     ESP_ERROR_CHECK(wifi_init());
+
+    // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler)
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 240,
+        .min_freq_mhz = 80,
+        .light_sleep_enable = false  // do not automatically enter light sleep, we will handle it in the low power mode task
+    };
+    ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
 
     // Beep the buzzer to indicate the success of initialization
     buzzer_run(100, 50, 2, false);

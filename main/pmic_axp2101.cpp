@@ -211,17 +211,22 @@ void axp2101_monitor_task(void * args) {
         // Update status
         power_management_view_update_status(ctx);
 
-        // Print it out
-        ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",
-            ctx->status.charge_status,
-            ctx->status.battery_percentage,
-            ctx->status.ts_temperature
-        );
-        ESP_LOGI(TAG, "VBUS: %dmV, VBATT: %dmV, VSYS: %dmV",
-            ctx->status.vbus_voltage_mv,
-            ctx->status.vbatt_voltage_mv,
-            ctx->status.vsys_voltage_mv
-        );
+        if (ctx->status.is_usb_connected) {
+            // Prevent entering sleep mode when USB is connected, to ensure the system is responsive for user interactions and avoid unexpected sleep when the device is plugged in
+            prevent_sleep_mode_enter(true);
+        }
+
+        // // Print it out
+        // ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",
+        //     ctx->status.charge_status,
+        //     ctx->status.battery_percentage,
+        //     ctx->status.ts_temperature
+        // );
+        // ESP_LOGI(TAG, "VBUS: %dmV, VBATT: %dmV, VSYS: %dmV",
+        //     ctx->status.vbus_voltage_mv,
+        //     ctx->status.vbatt_voltage_mv,
+        //     ctx->status.vsys_voltage_mv
+        // );
     }
 }
 
@@ -330,10 +335,10 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.disableIRQ(XPOWERS_AXP2101_ALL_IRQ);
     PMU.clearIrqStatus();
     PMU.enableIRQ(
-        XPOWERS_AXP2101_BAT_INSERT_IRQ | XPOWERS_AXP2101_BAT_REMOVE_IRQ |    // BATTERY
+        // XPOWERS_AXP2101_BAT_INSERT_IRQ | XPOWERS_AXP2101_BAT_REMOVE_IRQ |    // BATTERY
         XPOWERS_AXP2101_VBUS_INSERT_IRQ | XPOWERS_AXP2101_VBUS_REMOVE_IRQ |  // VBUS
         XPOWERS_AXP2101_PKEY_SHORT_IRQ | XPOWERS_AXP2101_PKEY_LONG_IRQ |     // POWER KEY
-        XPOWERS_AXP2101_BAT_CHG_DONE_IRQ | XPOWERS_AXP2101_BAT_CHG_START_IRQ |// CHARGE
+        // XPOWERS_AXP2101_BAT_CHG_DONE_IRQ | XPOWERS_AXP2101_BAT_CHG_START_IRQ |// CHARGE
         XPOWERS_AXP2101_WARNING_LEVEL1_IRQ | XPOWERS_AXP2101_WARNING_LEVEL2_IRQ     //Low battery warning
     );
 

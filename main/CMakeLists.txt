@@ -39,8 +39,9 @@ set(ALL_DEPS
     # MDNS
     mdns
 
-    # PMIC
+    # Power management
     XPowersLib
+    esp_pm
 
     # USB driver
     esp_tinyusb

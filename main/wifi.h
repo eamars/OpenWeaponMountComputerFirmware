@@ -52,6 +52,9 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base,
 
 esp_err_t wifi_init();
 
+esp_err_t wifi_request_start();
+esp_err_t wifi_request_stop();
+
 /**
  * @brief Block waiting for system to be provisioned. The function will return immediately if already provisioned. 
  */
@@ -63,6 +66,13 @@ bool wifi_is_provisioned();
  */
 esp_err_t wifi_wait_for_sta_connected(uint32_t block_wait_ms);
 bool wifi_is_sta_connected();
+
+
+/** 
+ * @brief Block waiting for wifi to expire. 
+ */
+esp_err_t wifi_wait_for_expire(uint32_t block_wait_ms);
+bool wifi_is_expired();
 
 void wifi_expiry_watchdog_start();
 void wifi_expiry_watchdog_restart();
