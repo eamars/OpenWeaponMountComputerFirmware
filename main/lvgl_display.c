@@ -5,10 +5,12 @@
 #include "bsp.h"
 #include "esp_check.h"
 #include "esp_err.h"
+#include "driver/gpio.h"
+#include "esp_check.h"
 
 #include "system_config.h"
 #include "main_tileview.h"
-
+#include "low_power_mode.h"
 
 #define TAG "LVGLDisplay"
 
@@ -30,6 +32,8 @@ lv_indev_t *lvgl_touch_handle = NULL;  // allow the low power module to inject c
 EventGroupHandle_t lvgl_display_event_group = NULL;
 
 
+
+
 // External services
 extern system_config_t system_config;
 
@@ -45,6 +49,48 @@ static inline esp_err_t create_lvgl_display_event_group() {
     }
     return ESP_OK;
 }
+
+
+#if USE_EXT_BUTTON
+// button
+volatile bool ext_button_interrupt_occurred = false;
+lv_timer_t * volatile ext_button_indev_timer = NULL;
+void btn_gpio_interrupt_handler() {
+    ext_button_interrupt_occurred = true;
+    if (ext_button_indev_timer) {
+        lv_timer_resume(ext_button_indev_timer);
+    }
+}
+
+
+void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
+    static uint32_t last_interrupt_tick = 0;
+    uint32_t tick_now = lv_tick_get();
+
+    // if no interrupt has happen in last xx ms then pause the indev timer
+    if (lv_tick_diff(tick_now, last_interrupt_tick) > 25) {
+        lv_timer_pause(ext_button_indev_timer);
+    }
+
+    if (ext_button_interrupt_occurred) {
+        ext_button_interrupt_occurred = false;
+        last_interrupt_tick = tick_now;
+
+        if (ext_button_indev_timer) {
+            lv_timer_resume(ext_button_indev_timer);
+        }
+    }
+
+    bool gpio_level = gpio_get_level(EXT_BUTTON_PIN);
+    data->state = gpio_level == 0 ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    data->key = LV_KEY_ENTER;
+
+    // Update last activity tick to wake up the device from sleep mode when the button is pressed
+    update_low_power_mode_last_activity_event();
+}
+
+#endif  // USE_EXT_BUTTON
+
 
 // This function is required by some LVGL display drivers to align the pixel
 void IRAM_ATTR lvgl_port_rounder_divide_by_two(lv_area_t * area)
@@ -125,13 +171,26 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
     };
     lvgl_touch_handle = lvgl_port_add_touch(&touch_cfg);
 
+#if USE_EXT_BUTTON
     // Add button input to LVGL
-    // lv_group_t * input_group = lv_group_create();
-    // lv_indev_t * btn_gpio0 = lv_indev_create();
-    // lv_indev_set_type(btn_gpio0, LV_INDEV_TYPE_KEYPAD);
-    // lv_indev_set_read_cb(btn_gpio0, btn_gpio_read);
-    // lv_indev_set_group(btn_gpio0, input_group);
+    // Initialize GPIO0 as input interrupt driven button
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << EXT_BUTTON_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_NEGEDGE  // falling edge
+    };
+    ESP_ERROR_CHECK(gpio_config(&io_conf));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(EXT_BUTTON_PIN, btn_gpio_interrupt_handler, NULL));
 
+    lv_group_t * input_group = lv_group_create();
+    lv_indev_t * btn_indev = lv_indev_create();
+    ext_button_indev_timer = lv_indev_get_read_timer(btn_indev);
+    lv_indev_set_type(btn_indev, LV_INDEV_TYPE_KEYPAD);
+    lv_indev_set_read_cb(btn_indev, btn_gpio_read);
+    lv_indev_set_group(btn_indev, input_group);
+#endif  // USE_EXT_BUTTON
 
     // Create LVGL application
     if (lvgl_port_lock(0)) {

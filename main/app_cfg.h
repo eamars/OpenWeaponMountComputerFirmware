@@ -80,6 +80,10 @@
 #define I2C_ADDR_AXP2101         0x34
 #define PMIC_AXP2101_INT_PIN     (GPIO_NUM_21)
 
+// Physical button
+#define USE_EXT_BUTTON 1
+#define EXT_BUTTON_PIN            (GPIO_NUM_0)
+
 
 // Other software configurations
 #define SENSOR_EVENT_POLLER_TASK_STACK 3072
