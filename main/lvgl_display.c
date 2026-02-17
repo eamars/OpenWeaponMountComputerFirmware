@@ -32,7 +32,7 @@ lv_indev_t *lvgl_touch_handle = NULL;  // allow the low power module to inject c
 EventGroupHandle_t lvgl_display_event_group = NULL;
 
 
-
+extern void delayed_exit_idle_mode(lv_timer_t *timer);
 
 // External services
 extern system_config_t system_config;
@@ -60,6 +60,7 @@ void btn_gpio_interrupt_handler() {
     if (ext_button_indev_timer) {
         lv_timer_resume(ext_button_indev_timer);
     }
+    lvgl_port_resume();
 }
 
 
@@ -87,6 +88,11 @@ void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
 
     // Update last activity tick to wake up the device from sleep mode when the button is pressed
     update_low_power_mode_last_activity_event();
+
+    if (is_idle_mode_activated()) {
+        lvgl_port_resume();
+        lv_timer_create(delayed_exit_idle_mode, 1, NULL); 
+    }
 }
 
 #endif  // USE_EXT_BUTTON

@@ -10,6 +10,7 @@
 #include "esp_sleep.h"
 #include "esp_timer.h"
 #include "esp_pm.h"
+#include "esp_lcd_panel_ops.h"
 
 #include "low_power_mode.h"
 #include "system_config.h"
@@ -31,16 +32,21 @@ typedef enum {
 } low_power_mode_control_event_e;
 
 
-extern system_config_t system_config;
 extern esp_lcd_panel_io_handle_t io_handle;
+extern esp_lcd_panel_handle_t panel_handle;
+
+extern system_config_t system_config;
 extern lv_indev_t * lvgl_touch_handle;
 extern sensor_config_t sensor_config;
 extern bno085_ctx_t * bno085_dev;
 extern axp2101_ctx_t * axp2101_dev;
 extern wifi_user_config_t wifi_user_config;
+
 extern lv_obj_t * main_tileview;
 extern lv_obj_t * default_tile;
 extern lv_obj_t * tile_low_power_mode_view;
+
+lv_obj_t * pre_low_power_mode_tile;
 
 TaskHandle_t low_power_monitor_task_handle;
 TaskHandle_t sensor_stability_detector_poller_task_handle;
@@ -65,8 +71,13 @@ static void delayed_enter_idle_mode(lv_timer_t * timer) {
     lv_timer_del(timer);
 }
 
-static void delayed_exit_idle_mode(lv_timer_t * timer) {
+void delayed_exit_idle_mode(lv_timer_t * timer) {
     enter_idle_mode(false);
+    lv_timer_del(timer);
+}
+
+static void delayed_stop_lvgl(lv_timer_t *timer) {
+    lvgl_port_stop();
     lv_timer_del(timer);
 }
 
@@ -80,7 +91,9 @@ void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *
     if (data->state == LV_INDEV_STATE_PR || data->enc_diff != 0) {
         update_low_power_mode_last_activity_event();
 
-        if (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) {
+        if (is_idle_mode_activated()) {
+            // If LVGL timer is not running then resume the timer ifrst
+            lvgl_port_resume();
             lv_timer_create(delayed_exit_idle_mode, 1, NULL); 
         }
     }
@@ -99,12 +112,43 @@ void enter_idle_mode(bool enter) {
         .light_sleep_enable = false  // do not automatically enter light sleep, we will handle it in the low power mode task
     };
 
+    ESP_LOGI(TAG, "%s idle mode", enter ? "Entering" : "Exiting");
+
     if (enter) {
         xEventGroupSetBits(low_power_control_event, IN_IDLE_MODE);
         // Dim the display  
-        if (io_handle) {
+        if (system_config.screen_brightness_idle_pct == 0) {
+            // set_display_brightness(&io_handle, 0);
+            esp_lcd_panel_disp_on_off(panel_handle, false);
+        }
+        else {
             set_display_brightness(&io_handle, system_config.screen_brightness_idle_pct);
         }
+
+#if USE_BNO085
+        // Stop the reporting
+        if (sensor_config.enable_game_rotation_vector_report) {
+            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
+        }
+        if (sensor_config.enable_linear_acceleration_report) {
+            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
+        }
+        if (sensor_config.enable_rotation_vector_report) {
+            ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
+        }
+#endif  // USE_BNO085
+
+        // Move to low power mode view
+        if (lvgl_port_lock(0)) {
+            pre_low_power_mode_tile = lv_tileview_get_tile_active(main_tileview);
+            lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
+            lv_obj_invalidate(main_tileview);
+
+            lvgl_port_unlock();
+        }
+
+        // turn off LVGL
+        lv_timer_create(delayed_stop_lvgl, 1, NULL);
 
         // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler)
         ESP_ERROR_CHECK(esp_pm_configure(&idle_pm_config));
@@ -116,8 +160,27 @@ void enter_idle_mode(bool enter) {
         xEventGroupClearBits(low_power_control_event, IN_IDLE_MODE);
         ESP_ERROR_CHECK(esp_pm_configure(&active_pm_config));
 
+        lvgl_port_resume();
+
+        // Move out of low power mode view
+        if (lvgl_port_lock(0)) {
+            if (pre_low_power_mode_tile) {
+                lv_tileview_set_tile(main_tileview, pre_low_power_mode_tile, LV_ANIM_OFF);
+            }
+            else {
+                // If for some reason we don't have the previous tile, just move to the default tile
+                lv_tileview_set_tile(main_tileview, default_tile, LV_ANIM_OFF);
+            }
+            lv_obj_invalidate(main_tileview);
+
+            lvgl_port_unlock();
+        }
+
         // Restore display brightness
-        if (io_handle) {
+        if (system_config.screen_brightness_idle_pct == 0) {
+            esp_lcd_panel_disp_on_off(panel_handle, true);
+        }
+        else {
             set_display_brightness(&io_handle, system_config.screen_brightness_normal_pct);
         }
     }
@@ -290,7 +353,8 @@ void sensor_stability_detector_poller_task(void *p) {
         if (err == ESP_OK) {
             update_low_power_mode_last_activity_event();
 
-            if (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) {
+            if (is_idle_mode_activated()) {
+                lvgl_port_resume();
                 lv_timer_create(delayed_exit_idle_mode, 1, NULL); 
             }
         }

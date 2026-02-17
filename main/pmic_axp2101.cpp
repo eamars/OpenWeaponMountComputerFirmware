@@ -377,8 +377,8 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
 
     // Define button behavior
     // Configure threshold
-    PMU.setOnLevel(XPOWERS_POWERON_128MS);
-    PMU.setOffLevel(XPOWERS_POWEROFF_4S);
+    PMU.setOnLevel(XPOWERS_POWERON_512MS);
+    PMU.setOffLevel(XPOWERS_POWEROFF_10S);
     PMU.setIrqLevel(0);  // 1s
     PMU.enableLongPressShutdown();
     PMU.setLongPressRestart();
