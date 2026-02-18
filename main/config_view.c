@@ -430,7 +430,7 @@ void create_config_view(lv_obj_t *parent) {
     lv_obj_set_style_bg_opa(back_button, LV_OPA_COVER, LV_PART_MAIN);
 
     lv_obj_t * back_button_label = lv_label_create(back_button);
-    lv_label_set_text(back_button_label, "Back");
+    lv_label_set_text(back_button_label, "  Back  ");
     lv_obj_set_style_text_font(back_button_label, &lv_font_montserrat_28, 0);
     lv_obj_center(back_button_label);
 

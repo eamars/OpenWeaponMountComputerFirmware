@@ -126,6 +126,10 @@ void app_main(void)
 
     // Read system configurations
     ESP_ERROR_CHECK(load_system_config());
+
+    // Configure global log level
+    esp_log_level_set("*", system_config.global_log_level);
+
     ESP_ERROR_CHECK(load_sensor_config());
 
     // Set buzzer

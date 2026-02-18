@@ -116,36 +116,31 @@ void enter_idle_mode(bool enter) {
 
     if (enter) {
         xEventGroupSetBits(low_power_control_event, IN_IDLE_MODE);
-        // Dim the display  
-        if (system_config.screen_brightness_idle_pct == 0) {
-            // set_display_brightness(&io_handle, 0);
-            esp_lcd_panel_disp_on_off(panel_handle, false);
-        }
-        else {
-            set_display_brightness(&io_handle, system_config.screen_brightness_idle_pct);
-        }
+        // turn off the display
+        esp_lcd_panel_disp_on_off(panel_handle, false);
 
 #if USE_BNO085
-        // Stop the reporting
-        if (sensor_config.enable_game_rotation_vector_report) {
-            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
-        }
-        if (sensor_config.enable_linear_acceleration_report) {
-            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
-        }
-        if (sensor_config.enable_rotation_vector_report) {
-            ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
-        }
+        // // Stop the reporting
+        // if (sensor_config.enable_game_rotation_vector_report) {
+        //     ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
+        // }
+        // if (sensor_config.enable_linear_acceleration_report) {
+        //     ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
+        // }
+        // if (sensor_config.enable_rotation_vector_report) {
+        //     ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
+        // }
+        bno085_enter_sleep(bno085_dev);
 #endif  // USE_BNO085
 
         // Move to low power mode view
-        if (lvgl_port_lock(0)) {
-            pre_low_power_mode_tile = lv_tileview_get_tile_active(main_tileview);
-            lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
-            lv_obj_invalidate(main_tileview);
+        // if (lvgl_port_lock(0)) {
+        //     pre_low_power_mode_tile = lv_tileview_get_tile_active(main_tileview);
+        //     lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
+        //     lv_obj_invalidate(main_tileview);
 
-            lvgl_port_unlock();
-        }
+        //     lvgl_port_unlock();
+        // }
 
         // turn off LVGL
         lv_timer_create(delayed_stop_lvgl, 1, NULL);
@@ -160,29 +155,29 @@ void enter_idle_mode(bool enter) {
         xEventGroupClearBits(low_power_control_event, IN_IDLE_MODE);
         ESP_ERROR_CHECK(esp_pm_configure(&active_pm_config));
 
+#if USE_BNO085
+        bno085_wake_up(bno085_dev);
+
+#endif  // USE_BNO085
+
         lvgl_port_resume();
 
         // Move out of low power mode view
-        if (lvgl_port_lock(0)) {
-            if (pre_low_power_mode_tile) {
-                lv_tileview_set_tile(main_tileview, pre_low_power_mode_tile, LV_ANIM_OFF);
-            }
-            else {
-                // If for some reason we don't have the previous tile, just move to the default tile
-                lv_tileview_set_tile(main_tileview, default_tile, LV_ANIM_OFF);
-            }
-            lv_obj_invalidate(main_tileview);
+        // if (lvgl_port_lock(0)) {
+        //     if (pre_low_power_mode_tile) {
+        //         lv_tileview_set_tile(main_tileview, pre_low_power_mode_tile, LV_ANIM_OFF);
+        //     }
+        //     else {
+        //         // If for some reason we don't have the previous tile, just move to the default tile
+        //         lv_tileview_set_tile(main_tileview, default_tile, LV_ANIM_OFF);
+        //     }
+        //     lv_obj_invalidate(main_tileview);
 
-            lvgl_port_unlock();
-        }
+        //     lvgl_port_unlock();
+        // }
 
         // Restore display brightness
-        if (system_config.screen_brightness_idle_pct == 0) {
-            esp_lcd_panel_disp_on_off(panel_handle, true);
-        }
-        else {
-            set_display_brightness(&io_handle, system_config.screen_brightness_normal_pct);
-        }
+        esp_lcd_panel_disp_on_off(panel_handle, true);
     }
 }
 
@@ -197,16 +192,17 @@ void enter_sleep_mode() {
     wifi_request_stop();
 
 #if USE_BNO085
-    // Stop the reporting
-    if (sensor_config.enable_game_rotation_vector_report) {
-        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
-    }
-    if (sensor_config.enable_linear_acceleration_report) {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
-    }
-    if (sensor_config.enable_rotation_vector_report) {
-        ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
-    }
+    // // Stop the reporting
+    // if (sensor_config.enable_game_rotation_vector_report) {
+    //     ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
+    // }
+    // if (sensor_config.enable_linear_acceleration_report) {
+    //     ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
+    // }
+    // if (sensor_config.enable_rotation_vector_report) {
+    //     ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
+    // }
+    bno085_enter_sleep(bno085_dev);
 #endif  // USE_BNO085
     
     // Dim the display  
@@ -228,6 +224,10 @@ void enter_sleep_mode() {
     update_low_power_mode_last_activity_event();  // Update the last activity tick to prevent immediately re-entering low power mode
     last_idle_tick = xTaskGetTickCount();  // Update the last idle tick to prevent immediately entering sleep mode after waking up
     xEventGroupClearBits(low_power_control_event, IN_SLEEP_MODE);
+
+#if USE_BNO085
+    bno085_wake_up(bno085_dev);
+#endif  // USE_BNO085
 
     // Resume display brightness
     if (io_handle) {
@@ -273,12 +273,12 @@ void low_power_monitor_task(void *p) {
         uint32_t active_duration_ms = pdTICKS_TO_MS(current_tick - last_activity_tick);
         uint32_t idle_duration_ms = pdTICKS_TO_MS(current_tick - last_idle_tick);
 
-        ESP_LOGI(TAG, "Current Idle Mode: %d, Current Sleep Mode: %d, Prevent Enter Idle Mode: %d, Prevent Enter Sleep Mode: %d", 
-            (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) != 0,
-            (xEventGroupGetBits(low_power_control_event) & IN_SLEEP_MODE) != 0,
-            (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE) != 0,
-            (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE) != 0
-        );
+        // ESP_LOGI(TAG, "Current Idle Mode: %d, Current Sleep Mode: %d, Prevent Enter Idle Mode: %d, Prevent Enter Sleep Mode: %d", 
+        //     (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) != 0,
+        //     (xEventGroupGetBits(low_power_control_event) & IN_SLEEP_MODE) != 0,
+        //     (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE) != 0,
+        //     (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE) != 0
+        // );
         ESP_LOGI(TAG, "Active duration: %d ms, Idle duration: %d ms", active_duration_ms, idle_duration_ms);
 
         // In Idle mode
@@ -349,6 +349,8 @@ void sensor_stability_detector_poller_task(void *p) {
     while (1) {
         uint16_t stability;
         esp_err_t err = bno085_wait_for_stability_detector_report(bno085_dev, &stability, true);
+
+        ESP_LOGI(TAG, "Stability detector report: %d, err: %d", stability, err);
 
         if (err == ESP_OK) {
             update_low_power_mode_last_activity_event();

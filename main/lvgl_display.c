@@ -27,6 +27,7 @@ esp_lcd_touch_handle_t touch_handle = NULL;
 
 // LVGL touch input device
 lv_indev_t *lvgl_touch_handle = NULL;  // allow the low power module to inject callback
+lv_group_t * button_input_group = NULL;
 
 // Event control
 EventGroupHandle_t lvgl_display_event_group = NULL;
@@ -69,7 +70,8 @@ void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
     uint32_t tick_now = lv_tick_get();
 
     // if no interrupt has happen in last xx ms then pause the indev timer
-    if (lv_tick_diff(tick_now, last_interrupt_tick) > 25) {
+    if (lv_tick_diff(tick_now, last_interrupt_tick) > 450)  // longer than default long_press_time
+    {
         lv_timer_pause(ext_button_indev_timer);
     }
 
@@ -177,6 +179,9 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
     };
     lvgl_touch_handle = lvgl_port_add_touch(&touch_cfg);
 
+    // Create the button input group to allow widget to stay focus
+    button_input_group = lv_group_create();
+
 #if USE_EXT_BUTTON
     // Add button input to LVGL
     // Initialize GPIO0 as input interrupt driven button
@@ -190,12 +195,13 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
     ESP_ERROR_CHECK(gpio_config(&io_conf));
     ESP_ERROR_CHECK(gpio_isr_handler_add(EXT_BUTTON_PIN, btn_gpio_interrupt_handler, NULL));
 
-    lv_group_t * input_group = lv_group_create();
     lv_indev_t * btn_indev = lv_indev_create();
     ext_button_indev_timer = lv_indev_get_read_timer(btn_indev);
     lv_indev_set_type(btn_indev, LV_INDEV_TYPE_KEYPAD);
     lv_indev_set_read_cb(btn_indev, btn_gpio_read);
-    lv_indev_set_group(btn_indev, input_group);
+
+    // Associate the button with the group
+    lv_indev_set_group(btn_indev, button_input_group);
 #endif  // USE_EXT_BUTTON
 
     // Create LVGL application

@@ -20,6 +20,8 @@
 lv_obj_t * countdown_timer_arc = NULL;
 lv_obj_t * countdown_timer_label = NULL;
 lv_obj_t * countdown_timer_button = NULL;
+
+extern lv_group_t * button_input_group;  // from lvgl_display.c
 extern system_config_t system_config;
 
 countdown_timer_state_t get_countdown_timer_state(countdown_timer_t * ctx) {
@@ -168,9 +170,15 @@ LVGL Widgets and Callbacks
 -------------------------------------*/
 
 
-void countdown_timer_button_short_press_event_cb(lv_event_t *e) {
+void countdown_timer_button_press_event_cb(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
     countdown_timer_t * countdown_timer = (countdown_timer_t *) lv_event_get_user_data(e);
+    lv_obj_t * button = lv_event_get_target(e);
+
+    // Skip if the button is not visible
+    if (!get_countdown_timer_widget_enabled()) {
+        return;
+    }
 
     if (code == LV_EVENT_SHORT_CLICKED) {
         countdown_timer_state_t current_state = get_countdown_timer_state(countdown_timer);
@@ -194,17 +202,11 @@ void countdown_timer_button_short_press_event_cb(lv_event_t *e) {
             break;
         }
     }
-}
-
-
-void countdown_timer_button_long_press_event_cb(lv_event_t *e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    countdown_timer_t * countdown_timer = (countdown_timer_t *) lv_event_get_user_data(e);
-
-    if (code == LV_EVENT_LONG_PRESSED) {
+    else if (code == LV_EVENT_LONG_PRESSED) {
         countdown_timer_start(countdown_timer);
     }
 }
+
 
 
 void update_timer_cb(void *p, int time_left_ms) {
@@ -352,8 +354,9 @@ lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * 
     lv_obj_set_style_shadow_width(countdown_timer_button, 0, LV_PART_MAIN);
     lv_obj_set_size(countdown_timer_button, 200, 200);
 
-    lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_short_press_event_cb, LV_EVENT_SHORT_CLICKED, (void *) countdown_timer);
-    lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_long_press_event_cb, LV_EVENT_LONG_PRESSED, (void *) countdown_timer);
+    lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_press_event_cb, LV_EVENT_SHORT_CLICKED, (void *) countdown_timer);
+    lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_press_event_cb, LV_EVENT_LONG_PRESSED, (void *) countdown_timer);
+    lv_group_add_obj(button_input_group, countdown_timer_button);  // Bind key button to the timer object
 
     countdown_timer_arc = lv_arc_create(countdown_timer_button);
     lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);

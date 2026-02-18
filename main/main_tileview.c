@@ -57,7 +57,7 @@ void tile_change_callback(lv_event_t * e) {
             tile_update_enable_cb(true);
         }
         else {
-            ESP_LOGW(TAG, "No enable callback associated with tile %p", active_tile);
+            ESP_LOGI(TAG, "No enable callback associated with tile %p", active_tile);
         }
     }
 

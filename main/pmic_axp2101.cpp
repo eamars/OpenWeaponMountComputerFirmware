@@ -377,9 +377,15 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
 
     // Define button behavior
     // Configure threshold
-    PMU.setOnLevel(XPOWERS_POWERON_512MS);
-    PMU.setOffLevel(XPOWERS_POWEROFF_10S);
-    PMU.setIrqLevel(0);  // 1s
+    PMU.setPowerKeyPressOnTime(XPOWERS_POWERON_128MS);
+    ESP_LOGI(TAG, "Set power on threshold to %d", PMU.getPowerKeyPressOnTime());
+
+    PMU.setPowerKeyPressOffTime(XPOWERS_POWEROFF_10S);
+    ESP_LOGI(TAG, "Set power off threshold to %d", PMU.getPowerKeyPressOffTime());
+
+    PMU.setIrqLevelTime(XPOWERS_AXP2101_IRQ_TIME_1S);  // 1s
+    ESP_LOGI(TAG, "Set IRQ level time to %d", PMU.getIrqLevelTime());
+
     PMU.enableLongPressShutdown();
     PMU.setLongPressRestart();
     PMU.disablePwrOkPinPullLow();  // do not reset on PWROK pulling low (this should never happen)

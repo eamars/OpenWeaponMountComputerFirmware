@@ -98,6 +98,18 @@ esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus
  */
 esp_err_t bno085_init_spi(bno085_spi_ctx_t *ctx, spi_host_device_t spi_host, gpio_num_t spi_cs_pin, gpio_num_t interrupt_pin, gpio_num_t reset_pin, gpio_num_t boot_pin, gpio_num_t ps0_wake_pin);
 
+
+/**
+ * @brief Put sensor in sleep state
+ */
+esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx);
+
+/** 
+ * @brief Wake up the sensor from sleep state
+ */
+esp_err_t bno085_wake_up(bno085_ctx_t *ctx);
+
+
 /**
  * @brief Enable Game Rotation Vector Report
  *

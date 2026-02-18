@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "esp_err.h"
+#include "esp_log.h"
 
 #include "lvgl.h"
 
@@ -25,11 +26,6 @@ typedef enum {
 
 
 typedef enum {
-    SCREEN_BRIGHTNESS_0_PCT     = 0,
-    SCREEN_BRIGHTNESS_10_PCT    = 10,
-    SCREEN_BRIGHTNESS_20_PCT    = 20,
-    SCREEN_BRIGHTNESS_30_PCT    = 30,
-    SCREEN_BRIGHTNESS_40_PCT    = 40,
     SCREEN_BRIGHTNESS_50_PCT    = 50,
     SCREEN_BRIGHTNESS_60_PCT    = 60,
     SCREEN_BRIGHTNESS_70_PCT    = 70,
@@ -45,8 +41,7 @@ typedef struct {
     idle_timeout_t idle_timeout;
     sleep_timeout_t sleep_timeout;
     screen_brightness_pct_t screen_brightness_normal_pct;
-    screen_brightness_pct_t screen_brightness_idle_pct;
-
+    esp_log_level_t global_log_level;
 } system_config_t;
 
 

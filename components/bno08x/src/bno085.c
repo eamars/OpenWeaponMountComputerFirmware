@@ -314,6 +314,27 @@ esp_err_t bno085_configure_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, s
 }
 
 
+
+esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx) {
+    int ret = sh2_devSleep();
+    if (ret != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to put sensor in sleep mode: %d", ret);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+
+esp_err_t bno085_wake_up(bno085_ctx_t *ctx) {
+    int ret = sh2_devOn();
+    if (ret != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to wake up the sensor: %d", ret);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+
 esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
     sh2_SensorConfig_t config = {
         .changeSensitivityEnabled = false,
@@ -336,7 +357,7 @@ esp_err_t bno085_enable_linear_acceleration_report(bno085_ctx_t *ctx, uint32_t i
         .changeSensitivityEnabled = false,
         .wakeupEnabled = false,
         .changeSensitivityRelative = false,
-        .alwaysOnEnabled = false,
+        .alwaysOnEnabled = true,
         .changeSensitivity = 0,
         .batchInterval_us = 0,
         .sensorSpecific = 0,
@@ -383,9 +404,9 @@ esp_err_t bno085_enable_rotation_vector_report(bno085_ctx_t *ctx, uint32_t inter
 esp_err_t bno085_enable_stability_detector_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
     sh2_SensorConfig_t config = {   
         .changeSensitivityEnabled = true,
-        .wakeupEnabled = false,
+        .wakeupEnabled = true,
         .changeSensitivityRelative = false,
-        .alwaysOnEnabled = false,
+        .alwaysOnEnabled = true,
         .changeSensitivity = 0,
         .batchInterval_us = 0,
         .sensorSpecific = 0,
