@@ -197,6 +197,8 @@ static void create_power_menu(lv_obj_t * parent) {
     lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_size(container, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_align(container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, LV_PART_MAIN);  // semi transparent background
+
 
     lv_obj_t * reboot_button = lv_button_create(container);
     lv_obj_set_style_bg_color(reboot_button, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -208,7 +210,7 @@ static void create_power_menu(lv_obj_t * parent) {
     lv_obj_center(reboot_button_label);
     lv_obj_set_style_text_font(reboot_button_label, &lv_font_montserrat_28, LV_PART_MAIN);
 
-
+#if USE_PMIC
     lv_obj_t * power_off_button = lv_button_create(container);
     lv_obj_set_style_bg_color(power_off_button, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_size(power_off_button, 200, 60);
@@ -218,6 +220,7 @@ static void create_power_menu(lv_obj_t * parent) {
     lv_label_set_text(power_off_button_label, "Power Off");
     lv_obj_center(power_off_button_label);
     lv_obj_set_style_text_font(power_off_button_label, &lv_font_montserrat_28, LV_PART_MAIN);
+#endif  // USE_PMIC
 }
 
 
@@ -231,30 +234,6 @@ lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * pare
     lv_obj_t * config_item;
 
     lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
-
-    // Add a reboot button
-    lv_obj_t * reboot_button = lv_button_create(sub_page_config_view);
-    lv_obj_set_style_bg_color(reboot_button, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_size(reboot_button, LV_PCT(80), LV_PCT(20));
-    lv_obj_add_event_cb(reboot_button, on_reboot_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
-
-    lv_obj_t * reboot_button_label = lv_label_create(reboot_button);
-    lv_label_set_text(reboot_button_label, "Reboot");
-    lv_obj_center(reboot_button_label);
-    lv_obj_set_style_text_font(reboot_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
-
-    // Add a power off button
-#if USE_PMIC
-    lv_obj_t * power_off_button = lv_button_create(sub_page_config_view);
-    lv_obj_set_style_bg_color(power_off_button, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_size(power_off_button, LV_PCT(80), LV_PCT(20));
-    lv_obj_add_event_cb(power_off_button, on_power_off_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
-
-    lv_obj_t * power_off_button_label = lv_label_create(power_off_button);
-    lv_label_set_text(power_off_button_label, "Power Off");
-    lv_obj_center(power_off_button_label);
-    lv_obj_set_style_text_font(power_off_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
-#endif  // USE_PMIC
 
     // Set initial status
     power_management_view_update_status(axp2101_dev);

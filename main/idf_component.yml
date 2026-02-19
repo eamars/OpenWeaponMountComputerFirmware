@@ -14,7 +14,7 @@ dependencies:
   #   # `public` flag doesn't have an effect dependencies of the `main` component.
   #   # All dependencies of `main` are public by default.
   #   public: true
-  lvgl/lvgl: ^9.4.0
+  lvgl/lvgl: ^9.5.0
   espressif/esp_lvgl_port: ~2.7.1
   espressif/esp_lcd_touch: ^1.2.1
   espressif/json_parser: ^1.0.3

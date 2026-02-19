@@ -19,7 +19,6 @@
 lv_obj_t * config_menu;
 lv_obj_t * msg_box;
 static lv_obj_t * parent_container;
-static lv_obj_t * msg_box_label;
 static lv_obj_t * status_bar;
 static lv_obj_t * status_bar_wireless_state;
 static lv_obj_t * status_bar_battery_state;
@@ -318,10 +317,13 @@ lv_obj_t * create_info_msg_box(lv_obj_t *parent, lvgl_additional_init_func callb
     lv_obj_t * msg_box = lv_obj_create(parent);
 
     // Styling
-    lv_obj_set_style_bg_opa(msg_box, LV_OPA_COVER, LV_PART_MAIN);  // semi transparent background
+    lv_obj_set_style_bg_opa(msg_box, LV_OPA_90, LV_PART_MAIN);  // semi transparent background
     lv_obj_set_size(msg_box, lv_pct(90), lv_pct(90));
     lv_obj_center(msg_box);
-    // lv_obj_set_style_blur_backdrop(msg_box, true, 0);  // blur the background of the msg box
+    // lv_obj_set_style_blur_backdrop(msg_box, true, LV_PART_MAIN);  // blur the background of the msg box
+    // lv_obj_set_style_blur_radius(msg_box, 10, LV_PART_MAIN);
+    // lv_obj_set_style_bg_color(msg_box, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(msg_box, 0, 0);
 
     lv_obj_set_flex_flow(msg_box, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(msg_box, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
