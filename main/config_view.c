@@ -15,9 +15,10 @@
 
 #define TAG "ConfigView"
 
+
 lv_obj_t * config_menu;
+lv_obj_t * msg_box;
 static lv_obj_t * parent_container;
-static lv_obj_t * msg_box;
 static lv_obj_t * msg_box_label;
 static lv_obj_t * status_bar;
 static lv_obj_t * status_bar_wireless_state;
@@ -297,32 +298,43 @@ lv_obj_t * create_switch(lv_obj_t * container, bool * state, lv_event_cb_t event
 
 static void on_msg_box_ok_button_clicked(lv_event_t *e) {
     // hide
+    lv_obj_t * msg_box = lv_event_get_user_data(e);
     lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void create_msg_label(lv_obj_t * parent) {
+    lv_obj_t * msg_box_label = lv_label_create(parent);
+    lv_obj_set_style_text_font(msg_box_label, &lv_font_montserrat_28, 0);
+    lv_obj_set_size(msg_box_label, LV_PCT(100), LV_PCT(100));
+    lv_label_set_long_mode(msg_box_label, LV_LABEL_LONG_MODE_WRAP);
 
-void create_info_msg_box(lv_obj_t *parent) {
+    // Add msgbox into the user data of the msgbox
+    lv_obj_set_user_data(parent, msg_box_label);
+}
+
+
+lv_obj_t * create_info_msg_box(lv_obj_t *parent, lvgl_additional_init_func callback_f) {
     // Create a message box to be called by its content
-    msg_box = lv_msgbox_create(parent);
+    lv_obj_t * msg_box = lv_obj_create(parent);
 
     // Styling
     lv_obj_set_style_bg_opa(msg_box, LV_OPA_COVER, LV_PART_MAIN);  // semi transparent background
     lv_obj_set_size(msg_box, lv_pct(90), lv_pct(90));
+    lv_obj_center(msg_box);
     // lv_obj_set_style_blur_backdrop(msg_box, true, 0);  // blur the background of the msg box
 
-    lv_obj_t * content = lv_msgbox_get_content(msg_box);
-    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    // lv_obj_set_scroll_dir(parent_container, LV_DIR_NONE);  // no scroll
+    lv_obj_set_flex_flow(msg_box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(msg_box, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scroll_dir(msg_box, LV_DIR_NONE);  // no scroll
 
-    msg_box_label = lv_msgbox_add_text(msg_box, "This is a message box");
-    lv_obj_set_style_text_font(msg_box_label, &lv_font_montserrat_28, 0);
+    if (callback_f) {
+        callback_f(msg_box);
+    }
 
     // Add a button (not a footer button)
-    lv_obj_t * ok_btn = lv_button_create(content);
+    lv_obj_t * ok_btn = lv_button_create(msg_box);
     lv_obj_set_size(ok_btn, lv_pct(50), 60);
-    lv_obj_add_event_cb(ok_btn, on_msg_box_ok_button_clicked, LV_EVENT_CLICKED, NULL);
-    lv_obj_center(ok_btn);
+    lv_obj_add_event_cb(ok_btn, on_msg_box_ok_button_clicked, LV_EVENT_CLICKED, msg_box);
 
     lv_obj_t *ok_label = lv_label_create(ok_btn);
     lv_label_set_text(ok_label, "OK");
@@ -331,9 +343,14 @@ void create_info_msg_box(lv_obj_t *parent) {
 
     // Set hidden
     lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
+
+    return msg_box;
 }
 
-void update_info_msg_box(const char * text) {
+void update_info_msg_box(lv_obj_t * msg_box, const char * text) {
+    // Retrieve the user data
+    lv_obj_t * msg_box_label = lv_obj_get_user_data(msg_box);
+
     lv_label_set_text(msg_box_label, text);
 
     lv_obj_clear_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
@@ -438,7 +455,7 @@ void create_config_view(lv_obj_t *parent) {
     set_rotation_config_view(system_config.rotation);
 
     // Create a messagebox for displaying information
-    create_info_msg_box(parent);
+    msg_box = create_info_msg_box(parent, create_msg_label);
 
     /*Create a main page*/
     lv_obj_t * main_page = lv_menu_page_create(config_menu, NULL);

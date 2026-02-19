@@ -31,6 +31,7 @@ lv_obj_t * sensor_calibration_button = NULL;
 extern lv_obj_t * tile_sensor_calibration_view;  // from main_tileview.c
 extern lv_obj_t * main_tileview;                 // from main_tileview.c
 extern lv_obj_t * last_tile_before_enter_calibration;  // from sensor_calibration_view.c
+extern lv_obj_t * msg_box;  // from config_view.c
 
 esp_err_t save_sensor_config() {
     nvs_handle_t handle;
@@ -94,13 +95,13 @@ esp_err_t load_sensor_config() {
 static void on_save_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(save_sensor_config());
 
-    update_info_msg_box("Configuration Saved");
+    update_info_msg_box(msg_box, "Configuration Saved");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(load_sensor_config());
 
-    update_info_msg_box("Previous Configuration Reloaded");
+    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
 
     // TODO: Update current displayed values
 }
@@ -109,7 +110,7 @@ static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&sensor_config, &sensor_config_default, sizeof(sensor_config));
 
-    update_info_msg_box("Configuration reset to default. Use reload button to undo the action");
+    update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
 
     // TODO: Update current display values
 }

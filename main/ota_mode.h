@@ -40,10 +40,21 @@ typedef struct {
 #define OTA_UPDATE_TASK_STACK 4096
 #define OTA_UPDATE_TASK_PRIORITY 7
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 void create_ota_mode_view(lv_obj_t * parent);
 void create_ota_prompt_view(lv_obj_t * parent);
 void enter_ota_mode(bool enable);
 void update_ota_mode_progress(int progress);
 lv_obj_t * create_menu_ota_upgrade_button(lv_obj_t * parent);
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  // OTA_MODE_H_

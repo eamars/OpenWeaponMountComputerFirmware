@@ -13,7 +13,7 @@
 #define TAG "AXP2101"
 #define NVS_NAMESPACE "PMG"
 
-
+static lv_obj_t * power_menu = NULL;
 extern power_management_config_t power_management_config;
 
 const char vbus_current_limit_options[] = "100mA\n500mA\n900mA\n1000mA\n1500mA\n2000mA";
@@ -31,7 +31,7 @@ const power_management_config_t default_power_management_config_t = {
 
 // from app.c
 extern axp2101_ctx_t * axp2101_dev;
-
+extern lv_obj_t * msg_box;
 
 HEAPS_CAPS_ATTR static char status_str_l1[64] = {0};
 HEAPS_CAPS_ATTR static char status_str_l2[64] = {0};
@@ -151,13 +151,13 @@ static void update_battery_charge_voltage_event_cb(lv_event_t *e) {
 static void on_save_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(save_pmic_config());
 
-    update_info_msg_box("Configuration Saved");
+    update_info_msg_box(msg_box, "Configuration Saved");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(load_pmic_config());
 
-    update_info_msg_box("Previous Configuration Reloaded");
+    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
 
     // TODO: Update current displayed values
 }
@@ -166,7 +166,7 @@ static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&power_management_config, &default_power_management_config_t, sizeof(power_management_config));
 
-    update_info_msg_box("Configuration reset to default. Use reload button to undo the action");
+    update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
 
     // TODO: Update current display values
 }
@@ -175,7 +175,7 @@ static void on_reset_button_pressed(lv_event_t * e) {
 // FIXME: Make it generic (this is imported from ota_mode.c)
 void on_reboot_button_pressed(lv_event_t * e);
 
- void on_power_off_button_pressed(lv_event_t * e) {
+void on_power_off_button_pressed(lv_event_t * e) {
     ESP_LOGI(TAG, "Shutting down");
 
     pmic_power_off();
@@ -185,6 +185,44 @@ void on_reboot_button_pressed(lv_event_t * e);
 void power_management_view_update_status(axp2101_ctx_t *ctx) {
     snprintf(status_str_l1, sizeof(status_str_l1), "SoC:%d,VBAT:%dmV", ctx->status.battery_percentage, ctx->status.vbatt_voltage_mv);
     snprintf(status_str_l2, sizeof(status_str_l2), "VBUS:%dmV,VSYS:%dmV", ctx->status.vbus_voltage_mv, ctx->status.vsys_voltage_mv);
+}
+
+
+static void create_power_menu(lv_obj_t * parent) {
+    lv_obj_t * container = lv_obj_create(parent);
+
+    lv_obj_remove_style_all(container);  // nuclear option
+    lv_obj_set_style_pad_row(container, 20, 0);  // vertical spacing
+
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_size(container, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t * reboot_button = lv_button_create(container);
+    lv_obj_set_style_bg_color(reboot_button, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_size(reboot_button, 200, 60);
+    lv_obj_add_event_cb(reboot_button, on_reboot_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_t * reboot_button_label = lv_label_create(reboot_button);
+    lv_label_set_text(reboot_button_label, "Reboot");
+    lv_obj_center(reboot_button_label);
+    lv_obj_set_style_text_font(reboot_button_label, &lv_font_montserrat_28, LV_PART_MAIN);
+
+
+    lv_obj_t * power_off_button = lv_button_create(container);
+    lv_obj_set_style_bg_color(power_off_button, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_size(power_off_button, 200, 60);
+    lv_obj_add_event_cb(power_off_button, on_power_off_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+
+    lv_obj_t * power_off_button_label = lv_label_create(power_off_button);
+    lv_label_set_text(power_off_button_label, "Power Off");
+    lv_obj_center(power_off_button_label);
+    lv_obj_set_style_text_font(power_off_button_label, &lv_font_montserrat_28, LV_PART_MAIN);
+}
+
+
+void power_menu_make_visible() {
+    lv_obj_clear_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
 }
 
 
@@ -251,6 +289,11 @@ lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * pare
     lv_obj_set_flex_grow(label, 1);
 
     lv_menu_set_load_page_event(parent, cont, sub_page_config_view);
+
+
+    // Create an view that is binded to power button.
+    power_menu = create_info_msg_box(lv_screen_active(), create_power_menu);
+    // lv_obj_clear_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
 
     return sub_page_config_view;
 }

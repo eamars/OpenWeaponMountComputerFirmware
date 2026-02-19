@@ -35,6 +35,7 @@ static lv_obj_t * reset_provision_button;
 static lv_obj_t * wifi_status_label = NULL;
 static lv_obj_t * wifi_enable_switch = NULL;
 extern EventGroupHandle_t wireless_event_group;
+extern lv_obj_t * msg_box;
 
 extern esp_err_t save_wifi_user_config();
 extern esp_err_t load_wifi_user_config();
@@ -69,7 +70,7 @@ static void toggle_enable_wifi(lv_event_t *e) {
 
 static void on_reset_provision_button_pressed(lv_event_t * e) {
     wifi_provision_reset();
-    update_info_msg_box("WiFi Provisioning reset. Please re-provision the device.");
+    update_info_msg_box(msg_box, "WiFi Provisioning reset. Please re-provision the device.");
 }
 
 
@@ -223,13 +224,13 @@ finally:
 static void on_save_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(save_wifi_user_config());
 
-    update_info_msg_box("Configuration Saved");
+    update_info_msg_box(msg_box, "Configuration Saved");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(load_wifi_user_config());
 
-    update_info_msg_box("Previous Configuration Reloaded");
+    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
 
     // TODO: Update current displayed values
 }
@@ -238,7 +239,7 @@ static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
 
-    update_info_msg_box("Configuration reset to default. Use reload button to undo the action");
+    update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
 
     // TODO: Update current display values
 }

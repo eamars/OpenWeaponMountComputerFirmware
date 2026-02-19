@@ -24,7 +24,7 @@ const system_config_t system_config_default = {
 };
 
 extern esp_lcd_panel_io_handle_t io_handle;
-
+extern lv_obj_t * msg_box;
 
 const char rotation_options[] = "0°\n90°\n180°\n270°";
 const char idle_timeout_options[] = "Never\n1 min\n5 min\n10 min\n10 sec";
@@ -180,13 +180,13 @@ void update_sleep_timeout_event_cb(lv_event_t *e) {
 static void on_save_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(save_system_config());
 
-    update_info_msg_box("Configuration Saved");
+    update_info_msg_box(msg_box, "Configuration Saved");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(load_system_config());
 
-    update_info_msg_box("Previous Configuration Reloaded");
+    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
 
     // TODO: Update current displayed values
 }
@@ -195,7 +195,7 @@ static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&system_config, &system_config_default, sizeof(system_config));
 
-    update_info_msg_box("Configuration reset to default. Use reload button to undo the action");
+    update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
 
     // TODO: Update current display values
 }

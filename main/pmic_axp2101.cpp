@@ -13,7 +13,6 @@
 
 static XPowersPMU PMU;
 
-
 #define TAG "AXP2101"
 
 
@@ -21,7 +20,6 @@ static XPowersPMU PMU;
 #ifdef __cplusplus
 extern "C" {
 #endif
-
 
 
 static void IRAM_ATTR axp2101_interrupt_handler(void * args) {
@@ -151,6 +149,10 @@ void axp2101_monitor_task(void * args) {
                 ESP_LOGI(TAG, "isPekeyShortPress");
             }
             if (PMU.isPekeyLongPressIrq()) {
+                if (lvgl_port_lock(0)) {
+                    power_menu_make_visible();
+                    lvgl_port_unlock();
+                }
                 ESP_LOGI(TAG, "isPekeyLongPress");
             }
             if (PMU.isPekeyNegativeIrq()) {

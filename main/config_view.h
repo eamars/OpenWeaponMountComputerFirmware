@@ -11,6 +11,9 @@
 #define LV_PALETTE_BLACK LV_PALETTE_LAST
 
 
+typedef void (*lvgl_additional_init_func)(lv_obj_t *);
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,6 +32,7 @@ lv_obj_t * create_save_reload_reset_buttons(lv_obj_t * container, lv_event_cb_t 
 lv_obj_t * create_switch(lv_obj_t * container, bool * state, lv_event_cb_t event_cb);
 lv_obj_t * create_config_label_static(lv_obj_t * parent, char * text);
 lv_obj_t * create_single_button(lv_obj_t * container, const char * icon, lv_event_cb_t event_cb);
+lv_obj_t * create_info_msg_box(lv_obj_t *parent, lvgl_additional_init_func callback_f);
 
 // Status bar update
 void status_bar_update_wireless_state(wireless_state_e state);
@@ -39,7 +43,7 @@ void status_bar_update_wireless_state(wireless_state_e state);
  */
 void status_bar_update_battery_level(int level_percentage);
 
-void update_info_msg_box(const char * text);
+void update_info_msg_box(lv_obj_t * msg_box, const char * text);
 
 
 #ifdef __cplusplus

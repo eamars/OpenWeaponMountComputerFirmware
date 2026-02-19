@@ -54,6 +54,7 @@ digital_level_view_t * current_digital_level_view;
 
 extern digital_level_view_t digital_level_view_type_1_context;
 extern digital_level_view_t digital_level_view_type_2_context;
+extern lv_obj_t * msg_box;
 
 // NOT threadsafe copy of roll and pitch to be shared within the module
 extern float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
@@ -204,13 +205,13 @@ static void update_roll_offset(lv_event_t *e) {
 static void on_save_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(save_digital_level_view_config());
 
-    update_info_msg_box("Configuration Saved");
+    update_info_msg_box(msg_box, "Configuration Saved");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(load_digital_level_view_config());
 
-    update_info_msg_box("Previous Configuration Reloaded");
+    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
 
     // TODO: Update current displayed values
 }
@@ -219,7 +220,7 @@ static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
 
-    update_info_msg_box("Configuration reset to default. Use reload button to undo the action");
+    update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
 
     // TODO: Update current display values
 }

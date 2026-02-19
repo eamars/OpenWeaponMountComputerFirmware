@@ -122,6 +122,7 @@ void pmic_power_off();
 
 lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page);
 void power_management_view_update_status(axp2101_ctx_t *ctx);
+void power_menu_make_visible();
 
 extern const power_management_config_t default_power_management_config_t;
 extern power_management_config_t power_management_config;
