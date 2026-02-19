@@ -116,6 +116,10 @@ void enter_idle_mode(bool enter) {
 
     if (enter) {
         xEventGroupSetBits(low_power_control_event, IN_IDLE_MODE);
+
+        // Stop Wifi
+        wifi_request_stop();
+        
         // turn off the display
         esp_lcd_panel_disp_on_off(panel_handle, false);
 
@@ -178,6 +182,9 @@ void enter_idle_mode(bool enter) {
 
         // Restore display brightness
         esp_lcd_panel_disp_on_off(panel_handle, true);
+
+        // Restore wifi
+        wifi_request_start();
     }
 }
 
