@@ -91,7 +91,7 @@ esp_err_t load_config(const char *ns, void *cfg, const void *default_cfg, size_t
     memcpy(&received_crc32, buf + size, sizeof(received_crc32));
 
     if (calculated_crc32 != received_crc32) {
-        ESP_LOGW(TAG, "NS: %s, CRC32 mismatch. Expected 0x%08x, Received 0x%p08x Will use default configuration", ns, calculated_crc32, received_crc32);
+        ESP_LOGW(TAG, "NS: %s, CRC32 mismatch. Expected 0x%08x, Received 0x%08x Will use default configuration", ns, calculated_crc32, received_crc32);
 
         heap_caps_free(buf);
         memcpy(cfg, default_cfg, size);
