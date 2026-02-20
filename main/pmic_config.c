@@ -19,14 +19,17 @@ extern power_management_config_t power_management_config;
 const char vbus_current_limit_options[] = "100mA\n500mA\n900mA\n1000mA\n1500mA\n2000mA";
 const char battery_charge_current_options[] = "100mA\n200mA\n300mA\n400mA\n500mA\n600mA\n700mA\n800mA\n900mA\n1000mA";
 const char battery_charge_voltage_options[] = "4.0V\n4.1V\n4.2V\n4.35V\n4.4V";
+const char idle_timeout_options[] = "Never\n1 min\n5 min\n10 min\n10 sec";
+const char sleep_timeout_options[] = "Never\n1 hrs\n2 hrs\n5 hrs\n 1 min";
 
 
 HEAPS_CAPS_ATTR power_management_config_t power_management_config;
-const power_management_config_t default_power_management_config_t = {
-    .crc32 = 0,
+const power_management_config_t default_power_management_config = {
     .vbus_current_limit = PMIC_VBUS_CURRENT_LIMIT_500MA,
     .battery_charge_current = PMIC_BATTERY_CHARGE_CURRENT_500MA,
     .battery_charge_voltage = PMIC_BATTERY_CHARGE_VOLTAGE_4V2,
+    .idle_timeout = IDLE_TIMEOUT_5_MIN,
+    .sleep_timeout = SLEEP_TIMEOUT_1_HRS,
 };
 
 // from app.c
@@ -38,73 +41,51 @@ HEAPS_CAPS_ATTR static char status_str_l2[64] = {0};
 
 
 esp_err_t save_pmic_config() {
-    esp_err_t ret;
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-
-    // Calculate CRC
-    power_management_config.crc32 = crc32_wrapper(&power_management_config, sizeof(power_management_config), sizeof(power_management_config.crc32));
-
-    // Write to NVS
-    ret = nvs_set_blob(handle, "cfg", &power_management_config, sizeof(power_management_config));
-    ESP_GOTO_ON_ERROR(ret, finally,  TAG, "Failed to write NVS blob");
-
-    ret = nvs_commit(handle);
-    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
-
-finally:
-    nvs_close(handle);
-
-    return ret;
+    return save_config(NVS_NAMESPACE, &power_management_config, sizeof(power_management_config));
 }
 
 
 esp_err_t load_pmic_config() {
-    esp_err_t ret;
-    uint32_t crc32;
-
-    // Read configuration from NVS
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-
-    size_t required_size = sizeof(power_management_config);
-    ret = nvs_get_blob(handle, "cfg", &power_management_config, &required_size);
-
-    if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
-        ESP_LOGI(TAG, "Initialize wifi_user_config with default values");
-
-        // Copy default values
-        memcpy(&power_management_config, &default_power_management_config_t, sizeof(power_management_config));
-        power_management_config.crc32 = crc32_wrapper(&power_management_config, sizeof(power_management_config), sizeof(power_management_config.crc32));
-
-        // Write to NVS
-        ret = nvs_set_blob(handle, "cfg", &power_management_config, sizeof(power_management_config));
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
-        ret = nvs_commit(handle);
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
-    }
-    else {
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to read NVS blob");
-    }
-
-    // Verify CRC32
-    crc32 = crc32_wrapper(&power_management_config, sizeof(power_management_config), sizeof(power_management_config.crc32));
-
-    if (crc32 != power_management_config.crc32) {
-        ESP_LOGW(TAG, "CRC32 mismatch, will use default settings. Expected %p, got %p", power_management_config.crc32, crc32);
-        memcpy(&power_management_config, &default_power_management_config_t, sizeof(power_management_config));
-        ESP_ERROR_CHECK(save_pmic_config());
-    }
-    else {
-        ESP_LOGI(TAG, "pmic_config loaded successfully");
-    }
-
-finally:
-    nvs_close(handle);
-
-    return ret;
+    return load_config(NVS_NAMESPACE, &power_management_config, &default_power_management_config, sizeof(power_management_config));
 }
 
+uint32_t idle_timeout_to_secs(idle_timeout_t timeout) {
+    switch (timeout) {
+        case IDLE_TIMEOUT_NEVER:
+            return 0;
+        case IDLE_TIMEOUT_1_MIN:
+            return 60;
+        case IDLE_TIMEOUT_5_MIN:
+            return 300;
+        case IDLE_TIMEOUT_10_MIN:
+            return 600;
+        case IDLE_TIMEOUT_10_SEC:
+            return 10;
+        default:
+            return 0;
+    }
+
+    return 0;
+}
+
+uint32_t sleep_timeout_to_secs(sleep_timeout_t timeout) {
+    switch (timeout) {
+        case SLEEP_TIMEOUT_NEVER:
+            return 0;
+        case SLEEP_TIMEOUT_1_HRS:
+            return 60 * 60;
+        case SLEEP_TIMEOUT_2_HRS:
+            return 60 * 60 * 2;
+        case SLEEP_TIMEOUT_5_HRS:
+            return 60 * 60 * 5;
+        case SLEEP_TIMEOUT_1_MIN:
+            return 60;
+        default:
+            return 0;
+    }
+
+    return 0;
+}
 
 static void update_vbus_current_limit_event_cb(lv_event_t *e) {
     lv_obj_t * dropdown = lv_event_get_target(e);
@@ -164,12 +145,31 @@ static void on_reload_button_pressed(lv_event_t * e) {
 
 static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
-    memcpy(&power_management_config, &default_power_management_config_t, sizeof(power_management_config));
+    memcpy(&power_management_config, &default_power_management_config, sizeof(power_management_config));
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
 
     // TODO: Update current display values
 }
+
+
+void update_idle_timeout_event_cb(lv_event_t *e) {
+    lv_obj_t * dropdown = lv_event_get_target(e);
+    int32_t selected = lv_dropdown_get_selected(dropdown);
+
+    power_management_config.idle_timeout = (idle_timeout_t) selected;
+    ESP_LOGI(TAG, "Idle timeout updated to %d", power_management_config.idle_timeout);
+}
+
+
+void update_sleep_timeout_event_cb(lv_event_t *e) {
+    lv_obj_t * dropdown = lv_event_get_target(e);
+    int32_t selected = lv_dropdown_get_selected(dropdown);
+
+    power_management_config.sleep_timeout = (sleep_timeout_t) selected;
+    ESP_LOGI(TAG, "Sleep timeout updated to %d", power_management_config.sleep_timeout);
+}
+
 
 
 // FIXME: Make it generic (this is imported from ota_mode.c)
@@ -242,6 +242,15 @@ lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * pare
     lv_obj_t * status_label_1 = create_config_label_static(sub_page_config_view, status_str_l1);
     lv_obj_t * status_label_2 = create_config_label_static(sub_page_config_view, status_str_l2);
 
+    // Idle timeout
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Idle Timeout");
+    config_item = create_dropdown_list(container, idle_timeout_options, power_management_config.idle_timeout, update_idle_timeout_event_cb, NULL);
+
+    // Sleep timeout
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Sleep Timeout");
+    config_item = create_dropdown_list(container, sleep_timeout_options, power_management_config.sleep_timeout, update_sleep_timeout_event_cb, NULL);
+
+
     // VBUS current limit
     container = create_menu_container_with_text(sub_page_config_view, NULL, "VBUS Current Limit");
     config_item = create_dropdown_list(container, vbus_current_limit_options, (int32_t) power_management_config.vbus_current_limit, update_vbus_current_limit_event_cb, NULL);
@@ -249,6 +258,7 @@ lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * pare
     // Battery charge current
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Battery Charge Current");
     config_item = create_dropdown_list(container, battery_charge_current_options, (int32_t) power_management_config.battery_charge_current, update_battery_charge_current_event_cb, NULL);
+
     // Battery charge voltage
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Battery Charge Voltage");
     config_item = create_dropdown_list(container, battery_charge_voltage_options, (int32_t) power_management_config.battery_charge_voltage, update_battery_charge_voltage_event_cb, NULL);

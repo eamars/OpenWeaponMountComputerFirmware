@@ -78,12 +78,30 @@ typedef enum {
 } pmic_battery_charge_voltage_e;
 
 
+typedef enum {
+    IDLE_TIMEOUT_NEVER = 0,
+    IDLE_TIMEOUT_1_MIN,
+    IDLE_TIMEOUT_5_MIN,
+    IDLE_TIMEOUT_10_MIN, 
+    IDLE_TIMEOUT_10_SEC,  // debug
+} idle_timeout_t;
+
+
+typedef enum {
+    SLEEP_TIMEOUT_NEVER = 0,
+    SLEEP_TIMEOUT_1_HRS,
+    SLEEP_TIMEOUT_2_HRS,
+    SLEEP_TIMEOUT_5_HRS,
+    SLEEP_TIMEOUT_1_MIN,  // debug
+} sleep_timeout_t;
+
 
 typedef struct {
-    uint32_t crc32;
     pmic_vbus_current_limit_e vbus_current_limit;
     pmic_battery_charge_current_e battery_charge_current;
     pmic_battery_charge_voltage_e battery_charge_voltage;
+    idle_timeout_t idle_timeout;
+    sleep_timeout_t sleep_timeout;
 
 } power_management_config_t;
 
@@ -123,6 +141,10 @@ void pmic_power_off();
 lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page);
 void power_management_view_update_status(axp2101_ctx_t *ctx);
 void power_menu_make_visible();
+
+uint32_t idle_timeout_to_secs(idle_timeout_t timeout);
+uint32_t sleep_timeout_to_secs(sleep_timeout_t timeout);
+
 
 extern const power_management_config_t default_power_management_config_t;
 extern power_management_config_t power_management_config;

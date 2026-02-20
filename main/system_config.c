@@ -17,8 +17,6 @@
 HEAPS_CAPS_ATTR system_config_t system_config;
 const system_config_t system_config_default = {
     .rotation = LV_DISPLAY_ROTATION_180,      // LV_DISPLAY_ROTATION_0, LV_DISPLAY_ROTATION_90, LV_DISPLAY_ROTATION_180, LV_DISPLAY_ROTATION_270
-    .idle_timeout = IDLE_TIMEOUT_5_MIN,
-    .sleep_timeout = SLEEP_TIMEOUT_1_HRS,
     .screen_brightness_normal_pct = SCREEN_BRIGHTNESS_100_PCT,
     .global_log_level = ESP_LOG_INFO,
 };
@@ -27,8 +25,6 @@ extern esp_lcd_panel_io_handle_t io_handle;
 extern lv_obj_t * msg_box;
 
 const char rotation_options[] = "0°\n90°\n180°\n270°";
-const char idle_timeout_options[] = "Never\n1 min\n5 min\n10 min\n10 sec";
-const char sleep_timeout_options[] = "Never\n1 hrs\n2 hrs\n5 hrs\n 1 min";
 const char screen_brightness_pct_options[] = "50%\n60%\n70%\n80%\n90%\n100%";
 const char log_level_options[] = "None\nError\nWarn\nInfo\nDebug\nVerbose";
 
@@ -42,106 +38,13 @@ int32_t pct_to_screen_brightness_pct_option(screen_brightness_pct_t pct) {
      return pct / 10;
 }
 
-
-uint32_t idle_timeout_to_secs(idle_timeout_t timeout) {
-    switch (timeout) {
-        case IDLE_TIMEOUT_NEVER:
-            return 0;
-        case IDLE_TIMEOUT_1_MIN:
-            return 60;
-        case IDLE_TIMEOUT_5_MIN:
-            return 300;
-        case IDLE_TIMEOUT_10_MIN:
-            return 600;
-        case IDLE_TIMEOUT_10_SEC:
-            return 10;
-        default:
-            return 0;
-    }
-
-    return 0;
-}
-
-
-uint32_t sleep_timeout_to_secs(sleep_timeout_t timeout) {
-    switch (timeout) {
-        case SLEEP_TIMEOUT_NEVER:
-            return 0;
-        case SLEEP_TIMEOUT_1_HRS:
-            return 60 * 60;
-        case SLEEP_TIMEOUT_2_HRS:
-            return 60 * 60 * 2;
-        case SLEEP_TIMEOUT_5_HRS:
-            return 60 * 60 * 5;
-        case SLEEP_TIMEOUT_1_MIN:
-            return 60;
-        default:
-            return 0;
-    }
-
-    return 0;
-}
-
-
 esp_err_t load_system_config() {
-    esp_err_t ret;
-
-    // Read configuration fron NVS
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-    size_t required_size = sizeof(system_config_t);
-    ret = nvs_get_blob(handle, "cfg", &system_config, &required_size);
-    if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
-        ESP_LOGI(TAG, "Initialize system_config with default values");
-
-        // Initialize with default values
-        memcpy(&system_config, &system_config_default, sizeof(system_config));
-        // Calculate CRC
-        system_config.crc32 = crc32_wrapper(&system_config, sizeof(system_config), sizeof(system_config.crc32));
-
-        // Write to NVS
-        ESP_RETURN_ON_ERROR(nvs_set_blob(handle, "cfg", &system_config, required_size), TAG, "Failed to write NVS blob");
-        ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
-    } else {
-        ESP_RETURN_ON_ERROR(ret, TAG, "Failed to read NVS blob");
-    }
-
-    // Verify CRC
-    uint32_t crc32 = crc32_wrapper(&system_config, sizeof(system_config), sizeof(system_config.crc32));
-
-    if (crc32 != system_config.crc32) {
-        ESP_LOGW(TAG, "CRC32 mismatch, will use default settings. Expected %p, got %p", system_config.crc32, crc32);
-        memcpy(&system_config, &system_config_default, sizeof(system_config));
-
-        ESP_ERROR_CHECK(save_system_config());
-    }
-    else {
-        ESP_LOGI(TAG, "Digital level view configuration loaded successfully");
-    }
-
-    nvs_close(handle);
-
-    return ESP_OK;
+    return load_config(NVS_NAMESPACE, &system_config, &system_config_default, sizeof(system_config));
 }
 
 
 esp_err_t save_system_config() {
-    size_t required_size = sizeof(system_config);
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-
-    // Calculate CRC
-    system_config.crc32 = crc32_wrapper(&system_config, sizeof(system_config), sizeof(system_config.crc32));
-
-    // Write to NVS
-    ESP_RETURN_ON_ERROR(nvs_set_blob(handle, "cfg", &system_config, required_size), TAG, "Failed to write NVS blob");
-    ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
-
-    ESP_LOGI(TAG, "System configuration saved successfully");
-
-    nvs_close(handle);
-
-    return ESP_OK;
+    return save_config(NVS_NAMESPACE, &system_config, sizeof(system_config));
 }
 
 
@@ -158,24 +61,6 @@ void update_rotation_event_cb(lv_event_t *e) {
         ESP_LOGI(TAG, "Rotation not changed");
     }
 }
-
-void update_idle_timeout_event_cb(lv_event_t *e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-
-    system_config.idle_timeout = (idle_timeout_t) selected;
-    ESP_LOGI(TAG, "Idle timeout updated to %d", system_config.idle_timeout);
-}
-
-
-void update_sleep_timeout_event_cb(lv_event_t *e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-
-    system_config.sleep_timeout = (sleep_timeout_t) selected;
-    ESP_LOGI(TAG, "Sleep timeout updated to %d", system_config.sleep_timeout);
-}
-
 
 static void on_save_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(save_system_config());
@@ -237,14 +122,6 @@ lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_
     // Global log level
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Global Log Level");
     config_item = create_dropdown_list(container, log_level_options, system_config.global_log_level, update_global_log_level, NULL);
-
-    // Idle timeout
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Idle Timeout");
-    config_item = create_dropdown_list(container, idle_timeout_options, system_config.idle_timeout, update_idle_timeout_event_cb, NULL);
-
-    // Sleep timeout
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Sleep Timeout");
-    config_item = create_dropdown_list(container, sleep_timeout_options, system_config.sleep_timeout, update_sleep_timeout_event_cb, NULL);
 
     // Screene brightness (normal)
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Screen Brightness");

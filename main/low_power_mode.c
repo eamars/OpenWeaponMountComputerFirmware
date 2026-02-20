@@ -312,11 +312,11 @@ void low_power_monitor_task(void *p) {
 
 
         // Can enter idle mode
-        if (system_config.idle_timeout != IDLE_TIMEOUT_NEVER &&                                     // Low power mode enabled
+        if (power_management_config.idle_timeout != IDLE_TIMEOUT_NEVER &&                                     // Low power mode enabled
             !(xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) &&                        // Not already in idle mode
             !(xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE))               // Idle mode is not temporarily blocked
         {
-            uint32_t idle_timeout_ms = idle_timeout_to_secs(system_config.idle_timeout) * 1000;
+            uint32_t idle_timeout_ms = idle_timeout_to_secs(power_management_config.idle_timeout) * 1000;
             
             // Have stayed in active long enough
             if (active_duration_ms > idle_timeout_ms) {
@@ -332,12 +332,12 @@ void low_power_monitor_task(void *p) {
         }
 
         // Can enter sleep mode
-        if (system_config.sleep_timeout != SLEEP_TIMEOUT_NEVER &&                                   // Low power mode enabled
+        if (power_management_config.sleep_timeout != SLEEP_TIMEOUT_NEVER &&                                   // Low power mode enabled
             (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) &&                         // In idle mode already
             !(xEventGroupGetBits(low_power_control_event) & IN_SLEEP_MODE) &&                       // Not already in sleep mode
             !(xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE))              // Sleep mode is not temporarily blocked
         {                                            
-            uint32_t sleep_timeout_ms = sleep_timeout_to_secs(system_config.sleep_timeout) * 1000;
+            uint32_t sleep_timeout_ms = sleep_timeout_to_secs(power_management_config.sleep_timeout) * 1000;
 
             // Have sayed in idle long enough
             if (idle_duration_ms > sleep_timeout_ms) {
