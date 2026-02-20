@@ -24,7 +24,7 @@
 
 
 #define TAG "DigitalLevelView"
-#define DIGITAL_LEVEL_VIEW_NAMESPACE "DLV"
+#define NVS_NAMESPACE "DLV"
 
 
 
@@ -330,61 +330,9 @@ lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent
 
 
 esp_err_t load_digital_level_view_config() {
-    esp_err_t ret;
-
-    // Read configuration from NVS
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", DIGITAL_LEVEL_VIEW_NAMESPACE);
-
-    size_t required_size = sizeof(digital_level_view_config);
-    ret = nvs_get_blob(handle, "cfg", &digital_level_view_config, &required_size);
-    if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
-        ESP_LOGI(TAG, "Initialize digital_level_view_config with default values");
-
-        // Initialize with default values
-        memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
-        // Calculate CRC
-        digital_level_view_config.crc32 = crc32_wrapper(&digital_level_view_config, sizeof(digital_level_view_config), sizeof(digital_level_view_config.crc32));
-
-        // Write to NVS
-        ESP_RETURN_ON_ERROR(nvs_set_blob(handle, "cfg", &digital_level_view_config, required_size), TAG, "Failed to write NVS blob");
-        ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
-    } else {
-        ESP_RETURN_ON_ERROR(ret, TAG, "Failed to read NVS blob");
-    }
-
-    // Verify CRC
-    uint32_t crc32 = crc32_wrapper(&digital_level_view_config, sizeof(digital_level_view_config), sizeof(digital_level_view_config.crc32));
-
-    if (crc32 != digital_level_view_config.crc32) {
-        ESP_LOGW(TAG, "CRC32 mismatch, will use default settings. Expected %p, got %p", digital_level_view_config.crc32, crc32);
-        memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
-
-        ESP_ERROR_CHECK(save_digital_level_view_config());
-    }
-    else {
-        ESP_LOGI(TAG, "Digital level view configuration loaded successfully");
-    }
-
-    nvs_close(handle);
-    return ESP_OK;
+    return load_config(NVS_NAMESPACE, &digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
 }
 
 esp_err_t save_digital_level_view_config() {
-    size_t required_size = sizeof(digital_level_view_config);
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(DIGITAL_LEVEL_VIEW_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", DIGITAL_LEVEL_VIEW_NAMESPACE);
-
-    // Calculate CRC
-    digital_level_view_config.crc32 = crc32_wrapper(&digital_level_view_config, sizeof(digital_level_view_config), sizeof(digital_level_view_config.crc32));
-
-    // Write to NVS
-    ESP_RETURN_ON_ERROR(nvs_set_blob(handle, "cfg", &digital_level_view_config, required_size), TAG, "Failed to write NVS blob");
-    ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
-
-    ESP_LOGI(TAG, "Digital level view configuration saved successfully");
-
-    nvs_close(handle);
-
-    return ESP_OK;
+    return save_config(NVS_NAMESPACE, &digital_level_view_config, sizeof(digital_level_view_config));
 }
