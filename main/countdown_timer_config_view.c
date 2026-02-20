@@ -1,7 +1,9 @@
 #include "countdown_timer_config_view.h"
 #include "countdown_timer.h"
-#include "esp_log.h"
 #include "system_config.h"
+#include "app_cfg.h"
+
+#include "esp_log.h"
 #include "nvs.h"
 #include "common.h"
 #include "esp_check.h"
@@ -14,24 +16,33 @@ const char * roller_second = "0s\n1s\n2s\n3s\n4s\n5s\n6s\n7s\n8s\n9s\n10s\n11s\n
 
 
 typedef struct {
-    uint32_t crc32;
     uint8_t minute;
     uint8_t second;
 } timer_config_t;
 
-const timer_config_t timer_config_default = {
-    .minute = 2,
-    .second = 0,
-};
 
 typedef struct {
     int idx;
     lv_obj_t * preset_button;
     lv_obj_t * preset_label;
-    timer_config_t timer_config;
+    timer_config_t * timer_config;
 } preset_t;
 
-static preset_t presets[2];
+
+typedef struct {
+    timer_config_t timer_configs[TIMER_COUNT];
+} timer_storage_t;
+
+
+HEAPS_CAPS_ATTR timer_storage_t timer_storage;
+const timer_storage_t timer_storage_default = {
+    .timer_configs = {
+        {2, 0},
+        {1, 30},
+    },
+};
+
+static preset_t presets[TIMER_COUNT];
 static preset_t * selected_preset = NULL;
 static lv_obj_t * minute_roller = NULL;
 static lv_obj_t * second_roller = NULL;
@@ -78,8 +89,8 @@ static void preset_button_pressed_cb(lv_event_t * e) {
         }
 
         // Send it to the configurator
-        lv_roller_set_selected(minute_roller, preset->timer_config.minute, LV_ANIM_ON);
-        lv_roller_set_selected(second_roller, preset->timer_config.second, LV_ANIM_ON);
+        lv_roller_set_selected(minute_roller, preset->timer_config->minute, LV_ANIM_ON);
+        lv_roller_set_selected(second_roller, preset->timer_config->second, LV_ANIM_ON);
 
         // Register the selected preset
         selected_preset = preset;
@@ -112,7 +123,7 @@ static void preset_button_pressed_cb(lv_event_t * e) {
         enable_roller(second_roller, true);
 
         // Set the timer to the widget
-        countdown_timer_update_time(&countdown_timer, (selected_preset->timer_config.minute * 60 + selected_preset->timer_config.second) * 1000);
+        countdown_timer_update_time(&countdown_timer, (selected_preset->timer_config->minute * 60 + selected_preset->timer_config->second) * 1000);
 
         // Force the timer to reset
         countdown_timer_start(&countdown_timer);
@@ -124,16 +135,14 @@ static void preset_button_pressed_cb(lv_event_t * e) {
 
 
 static void roller_update_event_cb(lv_event_t * e) {
-    lv_obj_t * roller = lv_event_get_target(e);
-
     if (selected_preset) {
         // Generate current countdown time
-        selected_preset->timer_config.minute = lv_roller_get_selected(minute_roller);
-        selected_preset->timer_config.second = lv_roller_get_selected(second_roller);
-        update_label_with_timer_config(selected_preset->preset_label, &selected_preset->timer_config);
+        selected_preset->timer_config->minute = lv_roller_get_selected(minute_roller);
+        selected_preset->timer_config->second = lv_roller_get_selected(second_roller);
+        update_label_with_timer_config(selected_preset->preset_label, selected_preset->timer_config);
 
         // If the preset is selected then the counter object needed to be updated with the new time
-        countdown_timer_update_time(&countdown_timer, (selected_preset->timer_config.minute * 60 + selected_preset->timer_config.second) * 1000);
+        countdown_timer_update_time(&countdown_timer, (selected_preset->timer_config->minute * 60 + selected_preset->timer_config->second) * 1000);
     }
 }
 
@@ -153,81 +162,21 @@ void set_rotation_countdown_timer_config_view(lv_display_rotation_t display_rota
 
 
 esp_err_t save_countdown_timer_config() {
-    esp_err_t ret;
-
-    // Write preset to the nvs storage
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-
-    for (int preset_idx = 0; preset_idx < sizeof(presets) / sizeof(presets[0]); preset_idx += 1) {
-        // Calculate CRC
-        presets[preset_idx].timer_config.crc32 = crc32_wrapper(&presets[preset_idx].timer_config, sizeof(presets[preset_idx].timer_config), sizeof(presets[preset_idx].timer_config.crc32));
-
-        char preset_name[NVS_KEY_NAME_MAX_SIZE - 1];
-        memset(preset_name, 0, sizeof(preset_name));
-        snprintf(preset_name, sizeof(preset_name), "T%d", preset_idx);
-
-        ret = nvs_set_blob(handle, preset_name, &presets[preset_idx].timer_config, sizeof(presets[preset_idx].timer_config));
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob for preset %d", preset_idx);
-    }
-
-    ret = nvs_commit(handle);
-    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
-
-finally:
-    nvs_close(handle);
-
-    return ret;
+    return save_config(NVS_NAMESPACE, &timer_storage, sizeof(timer_storage));
 }
 
 /** 
  * Load two presets
  */
 esp_err_t load_countdown_timer_config() {
-    esp_err_t ret;
-
-    // Read configuration from NVS
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-
-    size_t required_size = sizeof(timer_config_t);
-    for (int preset_idx = 0; preset_idx < sizeof(presets) / sizeof(presets[0]); preset_idx += 1) {
-        char preset_name[NVS_KEY_NAME_MAX_SIZE - 1];
-        memset(preset_name, 0, sizeof(preset_name));
-        snprintf(preset_name, sizeof(preset_name), "T%d", preset_idx);
-
-        ret = nvs_get_blob(handle, preset_name, &presets[preset_idx].timer_config, &required_size);
-        if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
-            // No record, will initialize with new values
-            ESP_LOGI(TAG, "Initialize countdown_timer_config[%d] with default values", preset_idx);
-            memcpy(&presets[preset_idx].timer_config, &timer_config_default, sizeof(timer_config_default));
-            presets[preset_idx].timer_config.crc32 = crc32_wrapper(&presets[preset_idx].timer_config, sizeof(presets[preset_idx].timer_config), sizeof(presets[preset_idx].timer_config.crc32));
-
-            // Write to NVS
-            ret = nvs_set_blob(handle, preset_name, &presets[preset_idx].timer_config, required_size);
-            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write preset %d to NVS", preset_idx);
-            ret = nvs_commit(handle);
-            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes for preset %d", preset_idx);
-        }
-        else {
-            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to read NVS blob for preset %d", preset_idx);
-        }
-
-        // Verify CRC
-        uint32_t crc32 = crc32_wrapper(&presets[preset_idx].timer_config, sizeof(presets[preset_idx].timer_config), sizeof(presets[preset_idx].timer_config.crc32));
-        if (crc32 != presets[preset_idx].timer_config.crc32) {
-            ESP_LOGE(TAG, "CRC mismatch for preset %d", preset_idx);
-            
-            // Reset to default
-            memcpy(&presets[preset_idx].timer_config, &timer_config_default, sizeof(timer_config_default));
-        }
-        else {
-            ESP_LOGI(TAG, "Loaded preset %d: %dm %ds", preset_idx, presets[preset_idx].timer_config.minute, presets[preset_idx].timer_config.second);
+    // Load preset timer
+    esp_err_t ret = load_config(NVS_NAMESPACE, &timer_storage, &timer_storage_default, sizeof(timer_storage));
+    if (ret == ESP_OK) {
+        // Assign memory
+        for (int i = 0; i < TIMER_COUNT; i += 1) {
+            presets[i].timer_config = &timer_storage.timer_configs[i];
         }
     }
-
-finally:
-    nvs_close(handle);
 
     return ret;
 }
@@ -303,7 +252,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     lv_obj_set_style_bg_color(presets[0].preset_button, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN | LV_STATE_DEFAULT);
 
     presets[0].preset_label = lv_label_create(presets[0].preset_button);
-    update_label_with_timer_config(presets[0].preset_label, &presets[0].timer_config);
+    update_label_with_timer_config(presets[0].preset_label, presets[0].timer_config);
     lv_obj_center(presets[0].preset_label);
     lv_obj_set_style_text_font(presets[0].preset_label, &lv_font_montserrat_40, LV_PART_MAIN);
 
@@ -320,7 +269,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
 
 
     presets[1].preset_label = lv_label_create(presets[1].preset_button);
-    update_label_with_timer_config(presets[1].preset_label, &presets[1].timer_config);
+    update_label_with_timer_config(presets[1].preset_label, presets[1].timer_config);
     lv_obj_center(presets[1].preset_label);
     lv_obj_set_style_text_font(presets[1].preset_label, &lv_font_montserrat_40, LV_PART_MAIN);
 
