@@ -146,9 +146,17 @@ void axp2101_monitor_task(void * args) {
             }
             if (PMU.isPekeyShortPressIrq()) {
                 update_low_power_mode_last_activity_event();
+                if (is_idle_mode_activated()) {
+                    wake_from_idle_mode();
+                }
                 ESP_LOGI(TAG, "isPekeyShortPress");
             }
             if (PMU.isPekeyLongPressIrq()) {
+                update_low_power_mode_last_activity_event();
+                if (is_idle_mode_activated()) {
+                    wake_from_idle_mode();
+                }
+
                 if (lvgl_port_lock(0)) {
                     power_menu_make_visible();
                     lvgl_port_unlock();

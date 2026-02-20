@@ -92,11 +92,16 @@ void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *
         update_low_power_mode_last_activity_event();
 
         if (is_idle_mode_activated()) {
-            // If LVGL timer is not running then resume the timer ifrst
-            lvgl_port_resume();
-            lv_timer_create(delayed_exit_idle_mode, 1, NULL); 
+            wake_from_idle_mode();
         }
     }
+}
+
+
+void wake_from_idle_mode() {
+    // If LVGL timer is not running then resume the timer ifrst
+    lvgl_port_resume();
+    lv_timer_create(delayed_exit_idle_mode, 1, NULL); 
 }
 
 
@@ -363,8 +368,7 @@ void sensor_stability_detector_poller_task(void *p) {
             update_low_power_mode_last_activity_event();
 
             if (is_idle_mode_activated()) {
-                lvgl_port_resume();
-                lv_timer_create(delayed_exit_idle_mode, 1, NULL); 
+                wake_from_idle_mode();
             }
         }
     }

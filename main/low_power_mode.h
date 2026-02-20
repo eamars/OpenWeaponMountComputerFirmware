@@ -19,6 +19,8 @@ bool is_sleep_mode_activated();
 void prevent_idle_mode_enter(bool prevent);
 void prevent_sleep_mode_enter(bool prevent);
 
+void wake_from_idle_mode();
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
