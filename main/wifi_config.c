@@ -151,72 +151,13 @@ void wifi_config_disable_provision_interface(wireless_state_e reason) {
 
 
 esp_err_t save_wifi_user_config() {
-    esp_err_t ret;
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-
-    // Calculate CRC
-    wifi_user_config.crc32 = crc32_wrapper(&wifi_user_config, sizeof(wifi_user_config), sizeof(wifi_user_config.crc32));
-
-    // Write to NVS
-    ret = nvs_set_blob(handle, "cfg", &wifi_user_config, sizeof(wifi_user_config));
-    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
-
-    ret = nvs_commit(handle);
-    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
-
-finally:
-    nvs_close(handle);
-
-    return ret;
+    return save_config(NVS_NAMESPACE, &wifi_user_config, sizeof(wifi_user_config));
 }
 
 
 
 esp_err_t load_wifi_user_config() {
-    esp_err_t ret;
-
-    // Read configuration from NVS
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-
-    size_t required_size = sizeof(wifi_user_config);
-    ret = nvs_get_blob(handle, "cfg", &wifi_user_config, &required_size);
-
-    if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
-        ESP_LOGI(TAG, "Initialize wifi_user_config with default values");
-
-        // Copy default values
-        memcpy(&wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
-        wifi_user_config.crc32 = crc32_wrapper(&wifi_user_config, sizeof(wifi_user_config), sizeof(wifi_user_config.crc32));
-
-        // Write to NVS
-        ret = nvs_set_blob(handle, "cfg", &wifi_user_config, sizeof(wifi_user_config));
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
-        ret = nvs_commit(handle);
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
-    }
-    else {
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to read NVS blob");
-    }
-
-    // Verify CRC32
-    uint32_t crc32 = crc32_wrapper(&wifi_user_config, sizeof(wifi_user_config), sizeof(wifi_user_config.crc32));
-
-    if (crc32 != wifi_user_config.crc32) {
-        ESP_LOGW(TAG, "CRC32 mismatch, will use default settings. Expected %p, got %p", wifi_user_config.crc32, crc32);
-        memcpy(&wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
-
-        ESP_ERROR_CHECK(save_wifi_user_config());
-    }
-    else {
-        ESP_LOGI(TAG, "wifi_user_config loaded successfully");
-    }
-
-finally:
-    nvs_close(handle);
-
-    return ret;
+    return load_config(NVS_NAMESPACE, &wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
 }
 
 

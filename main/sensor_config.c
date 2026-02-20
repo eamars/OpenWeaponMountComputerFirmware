@@ -34,61 +34,12 @@ extern lv_obj_t * last_tile_before_enter_calibration;  // from sensor_calibratio
 extern lv_obj_t * msg_box;  // from config_view.c
 
 esp_err_t save_sensor_config() {
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-
-    // Calculate CRC
-    sensor_config.crc32 = crc32_wrapper(&sensor_config, sizeof(sensor_config), sizeof(sensor_config.crc32));
-
-    // Write to NVS
-    ESP_RETURN_ON_ERROR(nvs_set_blob(handle, "cfg", &sensor_config, sizeof(sensor_config)), TAG, "Failed to write NVS blob");
-    ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
-
-    ESP_LOGI(TAG, "Sensor configuration saved successfully");
-
-    nvs_close(handle);
-    return ESP_OK;
+    return save_config(NVS_NAMESPACE, &sensor_config, sizeof(sensor_config));
 }
 
 
 esp_err_t load_sensor_config() {
-    esp_err_t ret;
-
-    // Read configuration from NVS
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", NVS_NAMESPACE);
-    size_t required_size = sizeof(sensor_config_t);
-    ret = nvs_get_blob(handle, "cfg", &sensor_config, &required_size);
-    if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
-        ESP_LOGI(TAG, "Initialize sensor_config with default values");
-
-        // Initialize with default values
-        memcpy(&sensor_config, &sensor_config_default, sizeof(sensor_config));
-        // Calculate CRC
-        sensor_config.crc32 = crc32_wrapper(&sensor_config, sizeof(sensor_config), sizeof(sensor_config.crc32));
-
-        // Write to NVS
-        ESP_RETURN_ON_ERROR(nvs_set_blob(handle, "cfg", &sensor_config, required_size), TAG, "Failed to write NVS blob");
-        ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "Failed to commit NVS changes");
-    } else {
-        ESP_RETURN_ON_ERROR(ret, TAG, "Failed to read NVS blob");
-    }
-
-    // Verify CRC
-    uint32_t crc32 = crc32_wrapper(&sensor_config, sizeof(sensor_config), sizeof(sensor_config.crc32));
-
-    if (crc32 != sensor_config.crc32) {
-        ESP_LOGW(TAG, "CRC32 mismatch, will use default settings. Expected %p, got %p", sensor_config.crc32, crc32);
-        memcpy(&sensor_config, &sensor_config_default, sizeof(sensor_config));
-
-        ESP_ERROR_CHECK(save_sensor_config());
-    }
-    else {
-        ESP_LOGI(TAG, "Sensor configuration loaded successfully");
-    }
-
-    nvs_close(handle);
-    return ESP_OK;
+    return load_config(NVS_NAMESPACE, &sensor_config, &sensor_config_default, sizeof(sensor_config));
 }
 
 
