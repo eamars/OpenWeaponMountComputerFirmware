@@ -82,18 +82,19 @@ static void delayed_stop_lvgl(lv_timer_t *timer) {
 }
 
 void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *data) {
-    // Call the original read callback
-    if (original_read_cb) {
-        original_read_cb(indev_drv, data);
-    }
-
     // Update last activity tick if there is any touch activity
     if (data->state == LV_INDEV_STATE_PR || data->enc_diff != 0) {
         update_low_power_mode_last_activity_event();
 
         if (is_idle_mode_activated()) {
             wake_from_idle_mode();
+            return;  // don't propagate the touch event for the wakeup
         }
+    }
+
+    // Call the original read callback
+    if (original_read_cb) {
+        original_read_cb(indev_drv, data);
     }
 }
 
