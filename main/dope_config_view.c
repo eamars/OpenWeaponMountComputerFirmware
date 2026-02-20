@@ -8,7 +8,7 @@
 #include "app_cfg.h"
 
 #define TAG "DopeConfigView"
-#define DOPE_CONFIG_NAMESPACE "DOPE"
+#define NVS_NAMESPACE "DOPE"
 
 // Major roller from 0 to 30
 const char * major_roller_options = "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30";
@@ -18,25 +18,29 @@ const char * minor_roller_options = ".0\n.1\n.2\n.3\n.4\n.5\n.6\n.7\n.8\n.9";
 extern system_config_t system_config;
 
 
-
-// Data structure used to store and read dope information
 typedef struct {
-    uint32_t crc32;
-    int dope10;
+    int dope_10;
     bool enable;
-} nvs_dope_data_t;
+} dope_info_t;
 
 typedef struct {
     int idx;
-    int dope_10;
+    dope_info_t * dope_info;
     char target_identifier[4];
     char dope_label_text[8];
     lv_obj_t * dope_item;
     lv_obj_t * dope_item_icon;
     lv_obj_t * dope_item_menu_label;
     lv_obj_t * dope_card_view;
-    bool enable;
 } dope_data_t;
+
+typedef struct {
+    dope_info_t dope_info[DOPE_CONFIG_MAX_DOPE_ITEM];
+} dope_storage_t;
+
+HEAPS_CAPS_ATTR dope_storage_t dope_storage;
+const dope_storage_t default_dope_storage = {0};
+
 
 // dope_data_t all_dope_data[DOPE_CONFIG_MAX_DOPE_ITEM] = {0};
 dope_data_t * all_dope_data = NULL;
@@ -53,18 +57,13 @@ lv_obj_t * dope_card_list = NULL;
 static lv_obj_t * parent_container = NULL;
 static lv_obj_t * top_container = NULL;
 static lv_obj_t * bottom_container = NULL;
-static lv_obj_t * nested_button_container = NULL;
+
 
 // Forward declaration
 lv_obj_t * create_dope_card(lv_obj_t *parent, dope_data_t *dope_data);
 esp_err_t save_dope_config();
 esp_err_t load_dope_config();
 
-
-const nvs_dope_data_t nvs_dope_data_default = {
-    .dope10 = 0,
-    .enable = false
-};
 
 void set_dope_item_settings_visibility(bool is_visible) {
     if (is_visible) {
@@ -80,10 +79,10 @@ void set_dope_item_settings(dope_data_t *data) {
     lv_label_set_text_fmt(title, "Target %s", data->target_identifier);
 
     // Update the rollers with the current dope values
-    lv_roller_set_selected(dope_item_settings_major_roller, data->dope_10 / 10, LV_ANIM_OFF);
-    lv_roller_set_selected(dope_item_settings_minor_roller, data->dope_10 % 10, LV_ANIM_OFF);
+    lv_roller_set_selected(dope_item_settings_major_roller, data->dope_info->dope_10 / 10, LV_ANIM_OFF);
+    lv_roller_set_selected(dope_item_settings_minor_roller, data->dope_info->dope_10 % 10, LV_ANIM_OFF);
     
-    if (data->enable) {
+    if (data->dope_info->enable) {
         lv_obj_add_state(dope_item_settings_enable_switch, LV_STATE_CHECKED);
         lv_label_set_text(all_dope_data[data->idx].dope_item_icon, LV_SYMBOL_EYE_OPEN);
     } else {
@@ -101,13 +100,13 @@ static void apply_dope_item_settings(lv_event_t * e) {
     int dope_major_decimal = (int) lv_roller_get_selected(dope_item_settings_major_roller);
     int dope_minor_decimal = (int) lv_roller_get_selected(dope_item_settings_minor_roller);
 
-    data->dope_10 = dope_major_decimal * 10 + dope_minor_decimal;
-    data->enable = lv_obj_has_state(dope_item_settings_enable_switch, LV_STATE_CHECKED);
+    data->dope_info->dope_10 = dope_major_decimal * 10 + dope_minor_decimal;
+    data->dope_info->enable = lv_obj_has_state(dope_item_settings_enable_switch, LV_STATE_CHECKED);
 
     // Update dope label (under multiple views due the sharing memory)
     snprintf(data->dope_label_text, sizeof(data->dope_label_text), "%d.%d", dope_major_decimal, dope_minor_decimal);
 
-    if (data->enable) {
+    if (data->dope_info->enable) {
         lv_obj_add_state(data->dope_item, LV_STATE_CHECKED);
         lv_label_set_text(data->dope_item_icon, LV_SYMBOL_EYE_OPEN);
 
@@ -126,7 +125,7 @@ static void apply_dope_item_settings(lv_event_t * e) {
         // If no card is visible then disable the dope_card_list too
         bool is_all_card_disabled = true;
         for (int i = 0; i < DOPE_CONFIG_MAX_DOPE_ITEM; i++) {
-            if (all_dope_data[i].enable) {
+            if (all_dope_data[i].dope_info->enable) {
                 is_all_card_disabled = false;
                 break;
             }
@@ -144,11 +143,11 @@ static void open_edit_window(lv_event_t * e) {
     lv_obj_t * dope_item = lv_event_get_target(e);
     dope_data_t * dope_data = lv_obj_get_user_data(dope_item);
 
-    // Update current selection
+    // Update current selection (this attribute is used by the apply button)
     current_selected_dope_item = dope_data->idx;
 
     // Populate the settings page and show it
-    set_dope_item_settings(&all_dope_data[current_selected_dope_item]);
+    set_dope_item_settings(dope_data);
     set_dope_item_settings_visibility(true);
 }
 
@@ -160,100 +159,12 @@ static void close_edit_window(lv_event_t * e) {
 
 
 esp_err_t load_dope_config() {
-    esp_err_t ret;
-
-    // Read configuration from NVS
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(DOPE_CONFIG_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", DOPE_CONFIG_NAMESPACE);
-
-    // Read each dope item configuration
-    for (int i = 0; i < DOPE_CONFIG_MAX_DOPE_ITEM; i += 1) {
-        nvs_dope_data_t dope_data;
-        memset(&dope_data, 0, sizeof(dope_data));
-        
-        size_t required_size = sizeof(dope_data);
-
-        char key[NVS_KEY_NAME_MAX_SIZE - 1];
-        memset(key, 0, sizeof(key));
-        snprintf(key, NVS_KEY_NAME_MAX_SIZE - 1, "D%d", i);
-        ret = nvs_get_blob(handle, key, &dope_data, &required_size);
-
-        if (ret == ESP_ERR_NVS_NOT_FOUND || ret == ESP_ERR_NVS_INVALID_LENGTH) {
-            // If not found, use default values
-            ESP_LOGI(TAG, "Dope item %d not found in NVS, using default values", i);
-            memcpy(&dope_data, &nvs_dope_data_default, sizeof(nvs_dope_data_default));
-
-            // Calculate CRC
-            dope_data.crc32 = crc32_wrapper(&dope_data, sizeof(dope_data), sizeof(dope_data.crc32));
-
-            // Write back to NVS
-            ret = nvs_set_blob(handle, key, &dope_data, required_size);
-            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
-
-            ret = nvs_commit(handle);
-            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
-
-        } else {
-            ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to read NVS blob for dope item %d", i);
-        }
-
-        // Verify CRC
-        uint32_t crc32 = crc32_wrapper(&dope_data, sizeof(dope_data), sizeof(dope_data.crc32));
-
-        if (crc32 != dope_data.crc32) {
-            ESP_LOGW(TAG, "Dope item %d CRC mismatch, will use default values. Expected %p, got %p", i, dope_data.crc32, crc32);
-            memcpy(&dope_data, &nvs_dope_data_default, sizeof(nvs_dope_data_default));
-        }
-        else {
-            // Apply the loaded configuration
-            all_dope_data[i].idx = i;
-            all_dope_data[i].dope_10 = dope_data.dope10;
-            all_dope_data[i].enable = dope_data.enable;
-        }
-    }
-
-finally:
-    nvs_close(handle);
-
-    return ret;
+    return load_config(NVS_NAMESPACE, &dope_storage, &default_dope_storage, sizeof(dope_storage));
 }
 
 
 esp_err_t save_dope_config() {
-    esp_err_t ret;
-
-    // Write configuration to NVS
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(DOPE_CONFIG_NAMESPACE, NVS_READWRITE, &handle), TAG, "Failed to open NVS namespace %s", DOPE_CONFIG_NAMESPACE);
-
-    // Write each dope item configuration
-    for (int i = 0; i < DOPE_CONFIG_MAX_DOPE_ITEM; i += 1) {
-        nvs_dope_data_t dope_data = {0};
-        size_t required_size = sizeof(dope_data);
-
-        // Populate dope_data from all_dope_data
-        dope_data.dope10 = all_dope_data[i].dope_10;
-        dope_data.enable = all_dope_data[i].enable;
-
-        // Calculate CRC
-        dope_data.crc32 = crc32_wrapper(&dope_data, sizeof(dope_data), sizeof(dope_data.crc32));
-
-        char key[NVS_KEY_NAME_MAX_SIZE - 1];
-        memset(key, 0, sizeof(key));
-        snprintf(key, NVS_KEY_NAME_MAX_SIZE - 1, "D%d", i);
-
-        ret = nvs_set_blob(handle, key, &dope_data, required_size);
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to write NVS blob");
-
-    }
-
-    ret = nvs_commit(handle);
-    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to commit NVS changes");
-
-finally:
-    nvs_close(handle);
-
-    return ret;
+    return save_config(NVS_NAMESPACE, &dope_storage, sizeof(dope_storage));
 }
 
 
@@ -328,7 +239,7 @@ void create_dope_config_msgbox(lv_obj_t * parent) {
     // A container for the enable label and apply/cancel buttons
     bottom_container = lv_obj_create(parent_container);
 
-    lv_obj_set_style_pad_all(bottom_container, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(bottom_container, 2, LV_PART_MAIN);
     lv_obj_set_style_border_width(bottom_container, 0, LV_PART_MAIN);
     // lv_obj_set_style_bg_opa(bottom_container, LV_OPA_COVER, LV_PART_MAIN);
     // lv_obj_set_style_bg_color(bottom_container, lv_palette_main(LV_PALETTE_YELLOW), 0);
@@ -362,7 +273,7 @@ void create_dope_config_msgbox(lv_obj_t * parent) {
                       LV_FLEX_ALIGN_CENTER,  // cross axis center
                       LV_FLEX_ALIGN_CENTER); // track cross axis center
 
-    lv_obj_set_style_pad_all(enable_option_container, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(enable_option_container, 2, LV_PART_MAIN);
     lv_obj_set_style_border_width(enable_option_container, 0, LV_PART_MAIN);
 
     lv_obj_t * enable_label = lv_label_create(enable_option_container);
@@ -370,7 +281,7 @@ void create_dope_config_msgbox(lv_obj_t * parent) {
     lv_obj_set_style_text_font(enable_label, &lv_font_montserrat_28, 0);
 
     dope_item_settings_enable_switch = lv_switch_create(enable_option_container);
-    lv_obj_set_size(dope_item_settings_enable_switch, lv_pct(50), lv_pct(80));
+    lv_obj_set_size(dope_item_settings_enable_switch, lv_pct(50), 60);
     lv_switch_set_orientation(dope_item_settings_enable_switch, LV_SWITCH_ORIENTATION_HORIZONTAL);
 
 
@@ -416,7 +327,9 @@ void create_dope_config_view(lv_obj_t * parent) {
 
     // Create dope items
     for (int i = 0; i < DOPE_CONFIG_MAX_DOPE_ITEM; i += 1) {
-        // The data is already pre-populated by load_dope_config();
+        // Populate stored information
+        all_dope_data[i].dope_info = &dope_storage.dope_info[i];
+        all_dope_data[i].idx = i;
 
         all_dope_data[i].dope_item = lv_list_add_button(dope_list, NULL, NULL);
         lv_obj_remove_flag(all_dope_data[i].dope_item, LV_OBJ_FLAG_CHECKABLE);  // Button is not checkable by the user, but controlled by the underlying state
@@ -436,14 +349,14 @@ void create_dope_config_view(lv_obj_t * parent) {
 
         all_dope_data[i].dope_item_menu_label = lv_label_create(all_dope_data[i].dope_item);
         lv_obj_set_style_text_font(all_dope_data[i].dope_item_menu_label, &lv_font_montserrat_20, 0);
-        snprintf(all_dope_data[i].dope_label_text, sizeof(all_dope_data[i].dope_label_text), "%d.%d", (int8_t) (all_dope_data[i].dope_10 / 10),  (int8_t) (all_dope_data[i].dope_10 % 10));
+        snprintf(all_dope_data[i].dope_label_text, sizeof(all_dope_data[i].dope_label_text), "%d.%d", (int8_t) (all_dope_data[i].dope_info->dope_10 / 10),  (int8_t) (all_dope_data[i].dope_info->dope_10 % 10));
         lv_label_set_text_static(all_dope_data[i].dope_item_menu_label, all_dope_data[i].dope_label_text);
         // lv_obj_align(all_dope_data[i].dope_item_menu_label, LV_ALIGN_RIGHT_MID, 0, 0);
 
         // create corresponding dope card at the digital level view screen
         all_dope_data[i].dope_card_view = create_dope_card(dope_card_list, &all_dope_data[i]);
         // Set default based on the information
-        if (all_dope_data[i].enable) {
+        if (all_dope_data[i].dope_info->enable) {
             is_all_card_disabled = false;
             lv_obj_add_state(all_dope_data[i].dope_item, LV_STATE_CHECKED);
             lv_label_set_text(all_dope_data[i].dope_item_icon, LV_SYMBOL_EYE_OPEN);
@@ -455,9 +368,11 @@ void create_dope_config_view(lv_obj_t * parent) {
             lv_obj_add_flag(all_dope_data[i].dope_card_view, LV_OBJ_FLAG_HIDDEN);
         }
 
+        // Associate each item in the list with the edit window
         lv_obj_add_event_cb(all_dope_data[i].dope_item, open_edit_window, LV_EVENT_CLICKED, NULL);
         lv_obj_set_user_data(all_dope_data[i].dope_item, &all_dope_data[i]);
     }
+
 
     // Set the default state of the dope card view on the digital level view
     if ((dope_card_list != NULL) && is_all_card_disabled) {
