@@ -238,6 +238,7 @@ void axp2101_monitor_task(void * args) {
         //     ctx->status.vsys_voltage_mv
         // );
     }
+
 }
 
 
@@ -350,7 +351,7 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     // Configure LED behavior (by the charger)
     PMU.setChargingLedMode(XPOWERS_CHG_LED_CTRL_CHG);
 
-    // Configure IQR
+    // Configure IRQ
     PMU.disableIRQ(XPOWERS_AXP2101_ALL_IRQ);
     PMU.clearIrqStatus();
     PMU.enableIRQ(
@@ -479,6 +480,11 @@ esp_err_t axp2101_deinit(axp2101_ctx_t *ctx) {
 void pmic_power_off() {
     // Perform the shutdown
     ESP_LOGW(TAG, "System is powering off...");
+
+    // disable battery fet
+    PMU.disableBATFET();
+
+    // Perform shutdown
     PMU.shutdown();
 }
 
