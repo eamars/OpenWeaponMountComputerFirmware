@@ -49,7 +49,7 @@ esp_err_t load_config(const char *ns, void *cfg, const void *default_cfg, size_t
 
     // Open NVS partition
     nvs_handle_t handle;
-    ret = nvs_open(ns, NVS_READONLY, &handle);
+    ret = nvs_open(ns, NVS_READWRITE, &handle);
     ESP_RETURN_ON_ERROR(ret, TAG, "NS: %s, Failed to nvs_open: %s", ns, esp_err_to_name(ret));
 
     // Allocate memory for data buffer, this step will have additional space at the end of the structure
