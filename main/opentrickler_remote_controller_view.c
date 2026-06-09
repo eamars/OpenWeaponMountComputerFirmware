@@ -150,9 +150,17 @@ static esp_err_t http_client_event_handler(esp_http_client_event_t *evt)
             // Assume chunked transfer encoding (actually not)
             if (!esp_http_client_is_chunked_response(evt->client)) {
                 if (evt->user_data) {
+                    if (output_len + evt->data_len >= OPENTRICKLER_REST_BUFFER_BYTES) {
+                        ESP_LOGE(TAG, "HTTP response too large: %d bytes", evt->data_len);
+                        output_len = 0;
+                        return ESP_ERR_INVALID_SIZE;
+                    }
+
                     // Copy the data to the buffer
-                    memcpy(evt->user_data + output_len, evt->data, evt->data_len);
+                    char *output = (char *) evt->user_data;
+                    memcpy(output + output_len, evt->data, evt->data_len);
                     output_len += evt->data_len;
+                    output[output_len] = '\0';
                 }
             }
 
@@ -251,8 +259,10 @@ static void opentrickler_rest_poller_task(void *p) {
        
         // Start the polling loop
         last_poll_tick = xTaskGetTickCount();
-        while (xEventGroupGetBits(opentrickler_rest_poller_task_control) & (OPENTRICKLER_REST_POLLER_TASK_RUN | OPENTRICKLER_REST_POLLER_SERVER_SELECTED)) {
+        EventBits_t run_bits = OPENTRICKLER_REST_POLLER_TASK_RUN | OPENTRICKLER_REST_POLLER_SERVER_SELECTED;
+        while ((xEventGroupGetBits(opentrickler_rest_poller_task_control) & run_bits) == run_bits) {
             // Start HTTP request
+            memset(charge_mode_state_json_raw, 0, OPENTRICKLER_REST_BUFFER_BYTES);
             ret = esp_http_client_perform(client);
             ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to open HTTP connection: %s", esp_err_to_name(ret));
 

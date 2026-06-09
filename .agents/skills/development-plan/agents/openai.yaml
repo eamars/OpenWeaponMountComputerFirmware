@@ -1,0 +1,4 @@
+interface:
+  display_name: "Development Plan"
+  short_description: "Plan, review, execute, and verify work"
+  default_prompt: "Use $development-plan to draft, review, or execute this development plan."

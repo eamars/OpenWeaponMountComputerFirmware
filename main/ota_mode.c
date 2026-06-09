@@ -308,26 +308,26 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
         }
     }
 
-    // Update the description field
-    lv_label_set_text_fmt(ota_description_label, 
-        "Firmware #ff0000 %s # Available.\n"
-        "Release Note:\n"
-        "------\n"
-        "%s",
-        ota_manifest.version, 
-        ota_manifest.note
-    );
+    if (lvgl_port_lock(0)) {
+        // Update the description field
+        lv_label_set_text_fmt(ota_description_label,
+            "Firmware #ff0000 %s # Available.\n"
+            "Release Note:\n"
+            "------\n"
+            "%s",
+            ota_manifest.version,
+            ota_manifest.note
+        );
 
-    
-    // Make OTA upgrade button visible
-    lv_obj_remove_flag(menu_ota_upgrade_button, LV_OBJ_FLAG_HIDDEN);
+        // Make OTA upgrade button visible
+        lv_obj_remove_flag(menu_ota_upgrade_button, LV_OBJ_FLAG_HIDDEN);
 
-    // If important, then also prompt directly to the user
-    if (ota_manifest.importance > OTA_IMPORTANCE_NORMAL) {
-        if (lvgl_port_lock(0)) {
+        // If important, then also prompt directly to the user
+        if (ota_manifest.importance > OTA_IMPORTANCE_NORMAL) {
             set_ota_prompt_view_visibility(true);
-            lvgl_port_unlock();
         }
+
+        lvgl_port_unlock();
     }
 
     // We're done here

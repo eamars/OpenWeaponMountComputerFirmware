@@ -14,6 +14,8 @@
 #define NVS_NAMESPACE "PMG"
 
 static lv_obj_t * power_menu = NULL;
+static lv_obj_t * power_management_status_label_1 = NULL;
+static lv_obj_t * power_management_status_label_2 = NULL;
 extern power_management_config_t power_management_config;
 
 const char vbus_current_limit_options[] = "100mA\n500mA\n900mA\n1000mA\n1500mA\n2000mA";
@@ -185,6 +187,13 @@ void on_power_off_button_pressed(lv_event_t * e) {
 void power_management_view_update_status(axp2101_ctx_t *ctx) {
     snprintf(status_str_l1, sizeof(status_str_l1), "SoC:%d,VBAT:%dmV", ctx->status.battery_percentage, ctx->status.vbatt_voltage_mv);
     snprintf(status_str_l2, sizeof(status_str_l2), "VBUS:%dmV,VSYS:%dmV", ctx->status.vbus_voltage_mv, ctx->status.vsys_voltage_mv);
+
+    if (power_management_status_label_1) {
+        lv_label_set_text_static(power_management_status_label_1, status_str_l1);
+    }
+    if (power_management_status_label_2) {
+        lv_label_set_text_static(power_management_status_label_2, status_str_l2);
+    }
 }
 
 
@@ -239,8 +248,8 @@ lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * pare
     power_management_view_update_status(axp2101_dev);
 
     // Battery status label
-    lv_obj_t * status_label_1 = create_config_label_static(sub_page_config_view, status_str_l1);
-    lv_obj_t * status_label_2 = create_config_label_static(sub_page_config_view, status_str_l2);
+    power_management_status_label_1 = create_config_label_static(sub_page_config_view, status_str_l1);
+    power_management_status_label_2 = create_config_label_static(sub_page_config_view, status_str_l2);
 
     // Idle timeout
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Idle Timeout");

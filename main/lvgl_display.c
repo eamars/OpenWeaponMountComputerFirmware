@@ -56,12 +56,12 @@ static inline esp_err_t create_lvgl_display_event_group() {
 // button
 volatile bool ext_button_interrupt_occurred = false;
 lv_timer_t * volatile ext_button_indev_timer = NULL;
-void btn_gpio_interrupt_handler() {
+
+static void IRAM_ATTR btn_gpio_interrupt_handler(void *arg) {
+    (void) arg;
+
     ext_button_interrupt_occurred = true;
-    if (ext_button_indev_timer) {
-        lv_timer_resume(ext_button_indev_timer);
-    }
-    lvgl_port_resume();
+    lvgl_port_task_wake(LVGL_PORT_EVENT_TOUCH, NULL);
 }
 
 
