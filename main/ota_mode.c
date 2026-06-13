@@ -4,6 +4,7 @@
 #include "main_tileview.h"
 #include "app_cfg.h"
 #include "common.h"
+#include "mem_diag.h"
 
 #include "esp_lvgl_port.h"
 #include "esp_log.h"
@@ -608,6 +609,7 @@ void create_ota_mode_view(lv_obj_t * parent) {
 
     // Create the task to poll for OTA update
     BaseType_t rtos_return;
+    mem_diag_log_checkpoint("ota_poller_create begin");
     rtos_return = xTaskCreate(
         ota_poller_task, 
         "ota_poller",
@@ -618,10 +620,13 @@ void create_ota_mode_view(lv_obj_t * parent) {
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for ota_poller_task");
+        mem_diag_log_checkpoint("ota_poller_create failed");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
+    mem_diag_log_checkpoint("ota_poller_create end");
 
     // Create the task to perform OTA update
+    mem_diag_log_checkpoint("ota_updater_create begin");
     rtos_return = xTaskCreate(
         ota_update_task, 
         "ota_updater",
@@ -632,8 +637,10 @@ void create_ota_mode_view(lv_obj_t * parent) {
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for ota_update_task");
+        mem_diag_log_checkpoint("ota_updater_create failed");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
+    mem_diag_log_checkpoint("ota_updater_create end");
 }
 
 void enter_ota_mode(bool enable) {

@@ -8,6 +8,7 @@
 #include "wifi_config.h"
 #include "app_cfg.h"
 #include "low_power_mode.h"
+#include "mem_diag.h"
 
 #include "wifi_provisioning/manager.h"
 #include "wifi_provisioning/scheme_softap.h"
@@ -54,11 +55,18 @@ static inline esp_err_t create_wireless_event_group() {
 
 
 static esp_err_t start_mdns_service() {
+    mem_diag_log_checkpoint("mdns_restart begin");
+
     // Make sure the previous session is terminated
     mdns_free();
+    mem_diag_log_checkpoint("mdns_free end");
 
     // Initialize mDNS
     esp_err_t ret = mdns_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS init failed: %s", esp_err_to_name(ret));
+    }
+    mem_diag_log_checkpoint("mdns_init end");
 
     // TODO: Assign mDNS name and service
 

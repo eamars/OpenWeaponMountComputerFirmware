@@ -36,6 +36,7 @@
 #include "buzzer.h"
 #include "lvgl_display.h"
 #include "low_power_mode.h"
+#include "mem_diag.h"
 
 #define TAG "App"
 
@@ -98,12 +99,18 @@ i2c_master_bus_handle_t i2c1_master_init() {
 
 
 esp_err_t storage_init() {
+    mem_diag_log_checkpoint("nvs_init begin");
+
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         // NVS partition was truncated and needs to be erased
+        mem_diag_log_checkpoint("nvs_erase begin");
         ESP_ERROR_CHECK(nvs_flash_erase());
+        mem_diag_log_checkpoint("nvs_erase end");
         ret = nvs_flash_init();
     }
+
+    mem_diag_log_checkpoint("nvs_init end");
 
     return ret;
 }
