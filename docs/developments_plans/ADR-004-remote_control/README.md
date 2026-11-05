@@ -4,7 +4,7 @@
 
 - Goal: let a host script drive and observe the device over COM11, so the device checks in the ADRs (state-change runs, rotation sweeps, soaks) run without the owner at the device and end in a machine-checked verdict.
 - Plan class: large
-- Status: draft (2026-11-05, awaiting owner approval)
+- Status: in_progress (approved by the owner 2026-11-05)
 - Mandatory skills: `esp32-debug`, `development-plan`, `lvgl-widget` (settings switch)
 - Overall cutover strategy: bigbang for new code; the existing UI keeps working unchanged, and the feature can be switched off in Settings.
 - Highest-risk areas: commands touching LVGL from another task; commands that bypass the UI's own callbacks; the serial reader competing with log output on the same port.
