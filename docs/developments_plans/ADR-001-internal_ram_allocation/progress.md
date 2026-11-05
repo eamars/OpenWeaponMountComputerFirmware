@@ -140,3 +140,5 @@ Capture from device uptime 595 s to 950 s (stopped after the owner reported "rou
 - `Network connected, will poll OTA source` did not appear in this capture: the poller logs it once per boot, after the first connection, which happened before the capture started. `ota_poller` is absent from every stack-report round in the second and third runs (it was present in Stages 2-4 with Wi-Fi off), so it finished and deleted itself through `vTaskDeleteWithCaps(NULL)` without fault.
 
 Result: pass (`taskLVGL` ≥ 2,048 B, `sys_evt` ≥ 512 B, application tasks ≥ 512 B, zero markers). Overnight run started immediately afterwards, device untouched, Wi-Fi on, rotation 1.
+
+Overnight run: started after the third run, stopped after a few minutes at the owner's direction (owner item 11, deferred). Not evaluated.

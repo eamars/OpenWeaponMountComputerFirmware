@@ -8,7 +8,7 @@
 - Mandatory skills: `esp32-debug`, `development-plan`
 - Overall cutover strategy: bigbang per change, in three separately flashed and verified commits: safety net, task stacks, QSPI transfer size.
 - Highest-risk areas: task self-deletion lifecycle for stacks created in PSRAM; the QSPI transfer size change on the display bus; failures that appear only during state changes or after hours.
-- Acceptance criteria: with Wi-Fi off, steady-state internal free heap ≥ 155,000 B and largest DMA-capable block ≥ 80,000 B; a 10-minute Wi-Fi-on run through the listed state changes and an overnight run of at least 8 h, both with zero failure markers, zero failed-allocation reports, no new core dump, and every application task's minimum free stack ≥ 512 B; frame rate on the digital level view not below 15 frames/s at QSPI 4091 (16 frames/s with the stack move alone).
+- Acceptance criteria: with Wi-Fi off, steady-state internal free heap ≥ 155,000 B and largest DMA-capable block ≥ 80,000 B; a 10-minute Wi-Fi-on run through the listed state changes, with zero failure markers, zero failed-allocation reports, no new core dump, and every application task's minimum free stack ≥ 512 B; frame rate on the digital level view not below 15 frames/s at QSPI 4091 (16 frames/s with the stack move alone).
 
 ## Owner's direction (2026-11-05)
 
@@ -22,6 +22,7 @@
 8. Stage 4 decision (2026-11-05): keep QSPI 4091. It costs about 6 ms of flush per frame against 4096 (15.8 vs 19.4 frames/s once stacks are in PSRAM) and gives a 114.7 KB largest DMA block instead of 64 KB. The frame-rate floor for this plan becomes 15 frames/s; ADR-002 step 1 owns recovering the flush cost.
 9. Change 4 added (2026-11-05): the Stage 5 reboot was `assert failed: spinlock_acquire (lock->count == 0)` in `esp_lcd_touch_ft3168_read_data`; the core dump puts the touch handle, which holds a `portMUX_TYPE`, at `0x3c1bb584` (PSRAM). Spinlocks are not safe in PSRAM on the ESP32-S3. Both touch drivers allocate the handle with `MALLOC_CAP_DEFAULT`; they move to internal RAM. A class audit found no other spinlock in PSRAM.
 10. Change 4 reverted, Change 5 added (2026-11-05): the item 9 premise is wrong. ESP-IDF v5.5.2 handles spinlocks in PSRAM by disabling interrupts and taking an internal CAS lock (`esp_cpu_compare_and_set`). The corrupted spinlock sat 236 B below the base of the `taskLVGL` stack, and the second Stage 5 run measured `taskLVGL` at 44 B free and `sys_evt` at 300 B free. Change 5 raises both stacks; Change 4 is reverted because it only moved the corrupted neighbour.
+11. Overnight run deferred (2026-11-05): the owner does not run the device overnight at this stage. The overnight run is removed from this plan's acceptance and left for a later soak; Stage 5 is the state-change run only.
 
 ## Context
 
@@ -244,7 +245,7 @@ Overall strategy: bigbang
 4. Production subagent implements Change 3. Parent builds, flashes, runs the Stage 4 device check. Commit.
 4a. Production subagent implemented Change 4; it passed Stage 4a and was committed (`6f5f32a`), then the second Stage 5 run disproved its premise.
 4b. Parent reverts `6f5f32a`. Production subagent implements Change 5. Parent regenerates `sdkconfig`, builds, flashes, runs the Stage 4b device check. Commit.
-5. Parent runs the Stage 5 soak with the owner, then the overnight run.
+5. Parent runs the Stage 5 state-change run with the owner. (The overnight run is deferred, owner item 11.)
 6. Parent restores the final configuration (profiling `0`, `sdkconfig` regenerated from defaults), builds, flashes, checks one clean boot.
 7. Independent code review, then registry update.
 
@@ -296,8 +297,8 @@ Overall strategy: bigbang
   - Sign-off: `<agent/date>`
 - [ ] Stage 5 - soak
   - Covers: step 5.
-  - Verify: Device checks "State-change run" and "Overnight run".
-  - Evidence: capture file paths, the owner's confirmation of each on-device action, failure-marker and failed-allocation counts, first and last stack reports, heap readings at start and end of the overnight run.
+  - Verify: Device check "State-change run" (the overnight run is deferred, owner item 11).
+  - Evidence: capture file paths, the owner's confirmation of each on-device action, failure-marker and failed-allocation counts, stack reports and heap readings of the state-change run.
   - Handoff: next is Stage 6.
   - Sign-off: `<agent/date>`
 - [ ] Stage 6 - final build flashed
@@ -352,7 +353,7 @@ Verification builds: `DISPLAY_PROFILING_ENABLED 1` and `CONFIG_FREERTOS_USE_TRAC
 - QSPI (Wi-Fi off, 120 s): `display_prof_cfg` reports `qspi_actual_max_transfer=4092`; average `largest_dma` ≥ 80,000 B; average `free_int` ≥ 155,000 B; `flush=` ≥ 15 per 1-s window on average.
 - Stacks (Wi-Fi off, 330 s): stack report shows `taskLVGL` in PSRAM with minimum free ≥ 8,192 B and `sys_evt` with minimum free ≥ 1,024 B; zero failure markers. In Stage 5 and the overnight run, `taskLVGL` must keep ≥ 2,048 B free and `sys_evt` ≥ 512 B.
 - State-change run (600 s, owner on the device, in this order): turn Wi-Fi on in settings and press Save; wait for `Connected with IP Address:`, the `mdns_init end` checkpoint and `Network connected, will poll OTA source`; open every main tile once, including sensor calibration (the acceleration analysis, point of aim and OpenTrickler views are commented out in `main/main_tileview.c` and cannot be opened); let the device go idle and wake it three times; change rotation once, press Save, change it back, press Save; turn Wi-Fi off and on with the settings switch and wait for the IP address again.
-- Overnight run (≥ 8 h, Wi-Fi on, unattended, serial logged to a file in the background): zero failure markers; the boot count in the log stays at one; heap readings at the start and the end are recorded; the last stack report shows every application task with minimum free stack ≥ 512 B. The device spends most of the night in idle mode; this run covers idle, Wi-Fi keep-alive, reconnects and timers, not active drawing.
+- Overnight run: deferred by the owner (item 11); not part of this plan's acceptance.
 
 ## Independent Code Review
 
@@ -386,7 +387,7 @@ This plan is complete when:
 |---|---|---|
 | A moved task runs code that needs an internal stack | Light-sleep and OTA-write tasks excluded; flash writes from PSRAM stacks are allowed in this build | State-change run with Save presses; core dump captures any panic |
 | Wrong delete API leaks or corrupts a stack | Every caps task deleted with `vTaskDeleteWithCaps` | Static Greps; review gate. `wifi_deinit` self-deletes only after the 600 s Wi-Fi expiry timeout and `axp2101_deinit` has no callers, so these two delete paths are not exercised on the device |
-| A moved task's stack is too small once in PSRAM | Sizes unchanged; canary on | Stack report ≥ 512 B free for every application task after the overnight run |
-| Failure appears only after hours or during transitions | State-change run plus overnight run | Zero failure markers; core dump partition empty of new dumps |
+| A moved task's stack is too small once in PSRAM | Sizes unchanged; canary on | Stack report ≥ 512 B free for every application task in the state-change run |
+| Failure appears only after hours or during transitions | State-change run; overnight run deferred (owner item 11), so failures that need hours are not covered by this plan | Zero failure markers; core dump partition empty of new dumps |
 | Failed-allocation hook itself disturbs timing | ROM printing only, no allocation | Any hook output fails the run anyway and is investigated |
 | Slower PSRAM stack access delays sensor polling | Pollers run at 20 ms or slower | Frame count ≥ 15/s; `ui_ok` in `digital_level_prof` not lower in Stage 3 than in Stage 2 (`lock_fail` follows the sensor report rate and is not a slowdown measure) |
