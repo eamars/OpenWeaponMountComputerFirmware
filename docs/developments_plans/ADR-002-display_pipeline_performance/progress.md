@@ -19,3 +19,5 @@ Starting point (from ADR-001 evidence, no new capture):
 Memory: `free_int` about 193 KB; `largest_dma` 114,483-114,688 B; `free_spiram` about 5,615,000 B; `taskLVGL` 8,328 B free of 16,384 under the soak.
 
 Result: pass.
+
+Correction (2026-11-05): the installed port is `esp_lvgl_port` 2.7.2 (re-resolved by the component manager on 2026-11-05 within the manifest's `~2.7.1`); the plan's references to 2.7.1 are corrected to 2.7.2. The code studied for the plan was the installed 2.7.2.

@@ -29,7 +29,7 @@ State after ADR-001 (Built 2026-11-05, `main` at `c327b08`), measured on COM11:
 
 Internal free heap about 193 KB, largest DMA-capable block 114.7 KB, PSRAM free about 5.6 MB.
 
-Today's flush (`esp_lvgl_port` 2.7.1, `lvgl_port_flush_callback` in `src/lvgl9/esp_lvgl_port_disp.c`) makes three full passes over the frame before the bus sees it:
+Today's flush (`esp_lvgl_port` 2.7.2, `lvgl_port_flush_callback` in `src/lvgl9/esp_lvgl_port_disp.c`) makes three full passes over the frame before the bus sees it:
 
 1. `lv_draw_sw_rotate` from the LVGL draw buffer into the rotation buffer `draw_buffs[2]` (255,360 B, PSRAM).
 2. `lv_draw_sw_rgb565_swap` over that buffer in place (PSRAM).
@@ -125,7 +125,7 @@ Overall strategy: bigbang
 | Overlap | Two buffers alternate; no semaphore | `draw_bitmap` for strip k+1 returns only after strip k has left the bus (ESP-IDF waits in `tx_param`), so the buffer of strip k is free when strip k+1's call returns. |
 | Flush done | Count strips; the ISR callback calls `lv_display_flush_ready` when the done count reaches the frame's strip count | Callbacks of earlier strips can arrive while the next `draw_bitmap` waits; a "last strip" flag set beforehand would fire early. |
 | Rotate loops | Project loops that read PSRAM row by row and write strided into internal RAM, with the byte swap in the same pass | One PSRAM read pass and sequential cache-line use at every rotation. |
-| Pixel mapping | Identical to `esp_lvgl_port` 2.7.1 with LVGL 9.6 (table below) | The picture must not change. |
+| Pixel mapping | Identical to `esp_lvgl_port` 2.7.2 with LVGL 9.6 (table below) | The picture must not change. |
 | Draw buffers | Unchanged: 2 × full frame, PSRAM, partial mode | One change at a time. |
 
 ## Contracts And Data Shapes
@@ -150,7 +150,7 @@ No other symbol is public. Everything else in `display_flush.c` is `static`.
 
 ### Area and pixel mapping
 
-Let the LVGL area be `w × h` pixels at logical `(x1, y1)`, source buffer `src` with stride `w` pixels. Physical panel resolution 280 × 456; at 90°/270° LVGL's logical resolution is 456 × 280. The physical window is computed exactly as `lvgl_port_rotate_area` does in `esp_lvgl_port` 2.7.1 (`hres`/`vres` swapped at 90°/270°):
+Let the LVGL area be `w × h` pixels at logical `(x1, y1)`, source buffer `src` with stride `w` pixels. Physical panel resolution 280 × 456; at 90°/270° LVGL's logical resolution is 456 × 280. The physical window is computed exactly as `lvgl_port_rotate_area` does in `esp_lvgl_port` 2.7.2 (`hres`/`vres` swapped at 90°/270°):
 
 | Rotation | Physical width × height | Physical window | Source pixel `(sx, sy)` goes to window pixel `(dx, dy)` |
 |---|---|---|---|
@@ -295,7 +295,7 @@ Run this gate after all `Verification` checks pass and before final sign-off. Th
 
 Review scope:
 
-- The pixel mapping and window arithmetic against the Contracts table and `esp_lvgl_port` 2.7.1, for full and partial areas at all four rotations, including odd area sizes after the rounder.
+- The pixel mapping and window arithmetic against the Contracts table and `esp_lvgl_port` 2.7.2, for full and partial areas at all four rotations, including odd area sizes after the rounder.
 - The flush-done logic: no early, missed or double `lv_display_flush_ready`, including the error path.
 - ISR rules in the completion callback; staging buffer reuse safety against ESP-IDF's in-flight waits.
 - Allocation and cleanup in `display_flush_create`, including the failure paths.
