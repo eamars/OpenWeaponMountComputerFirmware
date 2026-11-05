@@ -1,5 +1,6 @@
 #include "lvgl_display.h"
 #include "app_cfg.h"
+#include "display_flush.h"
 #include "esp_lvgl_port.h"
 #include "esp_log.h"
 #include "bsp.h"
@@ -273,11 +274,11 @@ static void display_profile_start(lv_display_t *disp) {
     }
 
     ESP_LOGI(TAG,
-        "display_prof_cfg: hres=%d vres=%d buffer_px=%d lvgl_trans_px=%d qspi_cfg_max_transfer=%d qspi_actual_max_transfer=%u double=1 sw_rotate=1 rotation=%d qspi_pclk_hz=%d",
+        "display_prof_cfg: hres=%d vres=%d buffer_px=%d staging_bytes=%d qspi_cfg_max_transfer=%d qspi_actual_max_transfer=%u double=1 sw_rotate=1 rotation=%d qspi_pclk_hz=%d",
         DISP_H_RES_PIXEL,
         DISP_V_RES_PIXEL,
         DISP_H_RES_PIXEL * DISP_V_RES_PIXEL,
-        LVGL_DISPLAY_TRANS_SIZE,
+        DISPLAY_FLUSH_STAGING_BYTES,
         LCD_QSPI_MAX_TRANSFER_SIZE,
         (unsigned) display_profile_qspi_actual_max_transfer_size,
         system_config.rotation,
@@ -347,24 +348,6 @@ void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
 #endif  // USE_EXT_BUTTON
 
 
-// This function is required by some LVGL display drivers to align the pixel
-void IRAM_ATTR lvgl_port_rounder_divide_by_two(lv_area_t * area)
-{
-    uint16_t x1 = area->x1;
-    uint16_t x2 = area->x2;
-    uint16_t y1 = area->y1;
-    uint16_t y2 = area->y2;
-
-    // round the start of area down to the nearest even number
-    area->x1 = (x1 >> 1) << 1;
-    area->y1 = (y1 >> 1) << 1;
-
-    // round the end of area up to the nearest odd number
-    area->x2 = ((x2 >> 1) << 1) + 1;
-    area->y2 = ((y2 >> 1) << 1) + 1;
-}
-
-
 esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
     esp_err_t ret;
 
@@ -387,37 +370,15 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
     ESP_ERROR_CHECK(ret);
 
     // Add display to LVGL
-    lvgl_port_display_cfg_t disp_cfg = {
-        .io_handle = io_handle,
-        .panel_handle = panel_handle,
-        .buffer_size = DISP_H_RES_PIXEL * DISP_V_RES_PIXEL,
-        .trans_size = LVGL_DISPLAY_TRANS_SIZE,
-        .double_buffer = true,
-        .hres = DISP_H_RES_PIXEL,
-        .vres = DISP_V_RES_PIXEL,
-        .monochrome = false,
-        .color_format = LV_COLOR_FORMAT_RGB565,
-#if USE_LCD_SH8601
-        .rounder_cb = lvgl_port_rounder_divide_by_two,
-#endif
-        .rotation = {
-            .swap_xy = false,
-            .mirror_x = false,
-            .mirror_y = false
-        },
-        .flags = {
-            .swap_bytes = true,
-            .sw_rotate = true,
-            .buff_spiram = true,
-            .buff_dma = false,
-            .direct_mode = false,
-            .full_refresh = false
-        }
-    };
-
     lv_display_t *lvgl_disp = NULL;
     // lv_indev_t *lvgl_touch_indev = NULL;
-    lvgl_disp = lvgl_port_add_disp(&disp_cfg);
+    if (lvgl_port_lock(0)) {
+        lvgl_disp = display_flush_create(io_handle, panel_handle);
+        lvgl_port_unlock();
+    }
+    if (lvgl_disp == NULL) {
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
 
     // Add touch input to LVGL
     const lvgl_port_touch_cfg_t touch_cfg = {

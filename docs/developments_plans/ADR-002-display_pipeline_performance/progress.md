@@ -57,3 +57,11 @@ Capture from uptime 330 s (same boot as the boot/memory check, no reset). Rotati
   Flush at 180° ≤ 30.4 ms: pass. Flush at 90° ≤ 43.0 ms: pass.
 - Heap: `free_int` 198,068; `largest_dma` 118,784; `free_spiram` 5,874,798. Failure markers: all 0. Stack report: `taskLVGL` 8,136 B free; `sys_evt` 1,788 B free.
 - Open: 270° not exercised on the device in this capture; the host simulation covered it (identical output).
+
+### 270° check (2026-11-05)
+
+- The owner set 270° and then 0° and reports both correct ("It is done already, 270 deg and 0 deg").
+- The 270° selection happened between two captures (uptime 971 s to 1,119 s) and is not in a log. The capture that followed starts with the device at a rotation other than the last logged 180°: flush callback 15.7 ms, 21.7 frames/s over 121 windows (logged 180° earlier: 17.8 ms, 19.0 frames/s), most likely 270°; then `Rotation updated to 1` and `to 0` two seconds apart; 0°: 181 windows, 19.9 frames/s, flush 18.3 ms.
+- Failure markers: all 0.
+
+Result for Stage 3: pass. The picture at all four rotations is confirmed by the owner; the 270° speed reading is attributed by elimination, not by a log line.
