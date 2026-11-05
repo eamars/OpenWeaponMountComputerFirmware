@@ -142,3 +142,13 @@ Capture from device uptime 595 s to 950 s (stopped after the owner reported "rou
 Result: pass (`taskLVGL` ≥ 2,048 B, `sys_evt` ≥ 512 B, application tasks ≥ 512 B, zero markers). Overnight run started immediately afterwards, device untouched, Wi-Fi on, rotation 1.
 
 Overnight run: started after the third run, stopped after a few minutes at the owner's direction (owner item 11, deferred). Not evaluated.
+
+## Stage 6 - final build flashed (2026-11-05)
+
+- `main/app_cfg.h`: `#define DISPLAY_PROFILING_ENABLED 0`.
+- `sdkconfig` deleted and regenerated with `idf.py reconfigure`: `# CONFIG_FREERTOS_USE_TRACE_FACILITY is not set`, `CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=3584`, `CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y`.
+- Build: pass. Flashed COM11, 60 s capture, firmware `v0.0.1-107-g9bac183-dirty` (the dirty mark is this profiling line, committed with this entry).
+- Boot: reset reason `USB (11)`, the allowed BNO085 abort, reboot with `Reset reason: PANIC (4)` and its stored-dump summary, `FT3168 initialized successfully`, main tile view active, `main_task: Returned from app_main()`. No `display_prof`, `digital_level_prof` or `stack_rpt` lines (0 matches).
+- `git status --short` before this commit: only `M main/app_cfg.h`.
+
+Result: pass.
