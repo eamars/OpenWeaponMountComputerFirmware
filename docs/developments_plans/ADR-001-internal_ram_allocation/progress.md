@@ -129,3 +129,14 @@ Re-reading the first-run core dump: `taskLVGL` stack used/free at the panic was 
 - Device, Wi-Fi off, 330 s, firmware `v0.0.1-103-gab0be64-dirty`: stack report `taskLVGL` PSRAM min free 9,944 B (of 16,384), `sys_evt` internal min free 1,868 B (of 3,584). Heap avg `free_int` 193,133, `largest_dma` 114,483; frames 16.5/s. Failure markers: 1 `rst:` (port open), 1 allowed BNO085 abort; all others 0.
 
 Result: pass. Next: Stage 5 from the start.
+
+## Stage 5, third run - state-change part passed (2026-11-05)
+
+Capture from device uptime 595 s to 950 s (stopped after the owner reported "roughly ok"). Firmware `v0.0.1-103-gab0be64` + Change 5 (`793cbbc`), verification build. Owner actions in the log: Wi-Fi connect (`Connected with IP Address:192.168.2.146`), rotation 2 → 1, Wi-Fi off/on with reconnect, saves (`NS: DOPE`, `NS: CT`), three idle → wake cycles (742 s, 816 s, and the wake at 595 s), each followed by a Wi-Fi reconnect. Rotation was not changed back (device left at rotation 1). Owner verdict: "roughly ok".
+
+- Failure markers: all 0 (no `rst:`, panic, abort, `ESP_ERR_NO_MEM`, LCD queue failure, stack overflow, `alloc_failed:`).
+- Heap (avg after 10 s): `free_int` 194,075 (min 190,803); `largest_dma` 114,688; `min_int` 186,931; `free_spiram` 5,614,991.
+- Stack report, two rounds (604 s, 904 s): `taskLVGL` min free 8,328 B of 16,384 (8,056 B used: the old 8,192 B stack would have had about 136 B left, consistent with the 44 B reading and the overflow explanation); `sys_evt` min free 1,548 B of 3,584 (2,036 B used: about 268 B would have been left in the old 2,304 B stack). Application tasks: lowest `sensor_poller` 876, `STABILITY` 936. ESP-IDF tasks as before (`ipc1` 428, `ipc0` 500).
+- `Network connected, will poll OTA source` did not appear in this capture (the OTA poller ran and self-deleted earlier in this boot; it polls once per boot after the first connection).
+
+Result: pass (`taskLVGL` ≥ 2,048 B, `sys_evt` ≥ 512 B, application tasks ≥ 512 B, zero markers). Overnight run started immediately afterwards, device untouched, Wi-Fi on, rotation 1.
