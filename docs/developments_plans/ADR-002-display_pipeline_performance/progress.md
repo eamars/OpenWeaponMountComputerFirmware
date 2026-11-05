@@ -40,3 +40,20 @@ Correction (2026-11-05): the installed port is `esp_lvgl_port` 2.7.2 (re-resolve
 - Failure markers: 1 `rst:` (port open), 1 allowed BNO085 abort; all others 0, including `alloc_failed:`. No `display_prof` gap while the screen was active; the one gap (73.7 s → 311.8 s) matches `Entering idle mode` / `Exiting idle mode` exactly.
 - Speed at 180° from this capture (windows with ≥ 10 flushes, 81 windows): frames 17.3/s, render 42.4 ms, flush callback 19.2 ms (was 30.4 ms).
 - Stack report: `sys_evt` 1,804 B free; the `taskLVGL` line was lost by the USB console after the idle period; taken from the next capture.
+
+### Picture and speed (2026-11-05, owner on the device, Wi-Fi off)
+
+Capture from uptime 330 s (same boot as the boot/memory check, no reset). Rotation changes in the log: 2 → 0 (532 s) → 1 (550 s) → 2 (702 s). No change to rotation 3 (270°) appears in this boot. The owner used the countdown timer to keep the screen awake and redrawing during the speed windows.
+
+- Owner verdict: "All good now, no visible change to the ADR-001" (picture correct, no artefacts, tearing unchanged).
+- Speed (windows with ≥ 10 flushes):
+
+| Rotation | Windows | Frames/s | Render | Flush callback | ADR-001 flush |
+|---|---:|---:|---:|---:|---:|
+| 0° | 13 | 17.0 | 45,195 µs | 21,282 µs | not measured |
+| 90° | 151 | 20.2 | 38,157 µs | 16,226 µs | 43.0 ms |
+| 180° | 270 | 19.0 | 41,618 µs | 17,812 µs | 30.4 ms |
+
+  Flush at 180° ≤ 30.4 ms: pass. Flush at 90° ≤ 43.0 ms: pass.
+- Heap: `free_int` 198,068; `largest_dma` 118,784; `free_spiram` 5,874,798. Failure markers: all 0. Stack report: `taskLVGL` 8,136 B free; `sys_evt` 1,788 B free.
+- Open: 270° not exercised on the device in this capture; the host simulation covered it (identical output).
