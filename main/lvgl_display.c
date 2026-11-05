@@ -13,6 +13,8 @@
 
 #include <inttypes.h>
 
+#include "esp_task_wdt.h"
+
 #include "system_config.h"
 #include "main_tileview.h"
 #include "low_power_mode.h"
@@ -348,6 +350,34 @@ void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
 #endif  // USE_EXT_BUTTON
 
 
+#define LVGL_WATCHDOG_FEED_PERIOD_MS 1000
+
+static esp_task_wdt_user_handle_t lvgl_watchdog_user = NULL;
+static volatile bool lvgl_watchdog_paused = false;
+
+// Runs in the LVGL task, so it only feeds while that task is really running its timers
+static void lvgl_watchdog_feed_timer_cb(lv_timer_t *timer) {
+    ESP_UNUSED(timer);
+    esp_task_wdt_reset_user(lvgl_watchdog_user);
+}
+
+
+void lvgl_watchdog_pause(bool pause) {
+    lvgl_watchdog_paused = pause;
+    // Feed now either way: on resume this gives the LVGL task a full timeout to run its first timer
+    if (lvgl_watchdog_user != NULL) {
+        esp_task_wdt_reset_user(lvgl_watchdog_user);
+    }
+}
+
+
+void lvgl_watchdog_feed_while_paused() {
+    if (lvgl_watchdog_paused && lvgl_watchdog_user != NULL) {
+        esp_task_wdt_reset_user(lvgl_watchdog_user);
+    }
+}
+
+
 esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
     esp_err_t ret;
 
@@ -419,6 +449,17 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
 #endif
         create_main_tileview(lv_screen_active());
         lv_display_set_rotation(lvgl_disp, system_config.rotation);
+
+        // Lock-up guard: if the LVGL task stops running its timers, the task watchdog panics
+        // (core dump, then reboot). Idle mode stops LVGL on purpose: the watchdog is paused from
+        // lvgl_port_stop() to lvgl_port_resume(), and the low-power task feeds it meanwhile.
+        esp_err_t wdt_ret = esp_task_wdt_add_user("lvgl", &lvgl_watchdog_user);
+        if (wdt_ret == ESP_OK) {
+            lv_timer_create(lvgl_watchdog_feed_timer_cb, LVGL_WATCHDOG_FEED_PERIOD_MS, NULL);
+        }
+        else {
+            ESP_LOGE(TAG, "Failed to add LVGL task watchdog user: %s", esp_err_to_name(wdt_ret));
+        }
         lvgl_port_unlock();
     }
 

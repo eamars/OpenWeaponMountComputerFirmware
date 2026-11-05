@@ -54,14 +54,15 @@ void wifi_config_update_status(const char * state_str) {
 }
 
 
-void wifi_config_set_enable(bool enable) {
+esp_err_t wifi_config_set_enable(bool enable) {
     wifi_user_config.wifi_enable = enable;
 
+    esp_err_t ret;
     if (wifi_user_config.wifi_enable) {
-        esp_wifi_start();
+        ret = esp_wifi_start();
     }
     else {
-        esp_wifi_stop();
+        ret = esp_wifi_stop();
     }
 
     // Keep the switch in step when the change does not come from the switch itself
@@ -73,6 +74,8 @@ void wifi_config_set_enable(bool enable) {
             lv_obj_remove_state(wifi_enable_switch, LV_STATE_CHECKED);
         }
     }
+
+    return ret;
 }
 
 

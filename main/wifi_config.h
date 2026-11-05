@@ -14,7 +14,9 @@ void wifi_config_disable_enable_interface();
 
 /**
  * @brief Turn Wi-Fi on or off as the Enable WiFi switch does, and update the switch. Call with the LVGL lock held.
+ *
+ * @return The result of esp_wifi_start() or esp_wifi_stop() (the switch ignores it, as before).
  */
-void wifi_config_set_enable(bool enable);
+esp_err_t wifi_config_set_enable(bool enable);
 
 #endif  // WIFI_CONFIG_H_

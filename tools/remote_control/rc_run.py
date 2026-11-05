@@ -31,11 +31,34 @@ READY_PROBE_PERIOD_S = 2.0
 STATS_PERIOD_S = 30.0
 IP_TIMEOUT_S = 90.0
 READ_POLL_S = 0.05
+HOST_RX_QUEUE_BYTES = 1 << 20   # Windows receive queue requested after open
 
 IP_ADDRESS_MARKER = "Connected with IP Address:"
 BNO085_DETECT_MARKER = "Failed to detect BNO085"
 ABORT_MARKER = "abort() was called"
 RESET_MARKER = "rst:0x"
+WATCHDOG_TRIGGER_MARKER = "Task watchdog got triggered"
+WATCHDOG_TRIGGER_TIMEOUT_S = 15.0   # the task watchdog timeout is 5 s
+CORE_DUMP_SAVED_MARKER = "Core dump has been saved to flash."
+CRASH_MARKERS = (RESET_MARKER, "Guru Meditation", ABORT_MARKER)  # expected in the watchdog scenario
+
+# Every @ok reply starts with the command's own prefix, so a stale reply cannot answer the next command
+REPLY_PREFIXES = {
+    "help": "@ok help",
+    "state": "@ok tile=",
+    "stats": "@ok free_int=",
+    "bt": "@ok bt",
+    "tap": "@ok tap",
+    "swipe": "@ok swipe",
+    "tile": "@ok tile=",
+    "rot": "@ok rot=",
+    "wifi": "@ok wifi=",
+    "save": "@ok save",
+    "idle": "@ok idle",
+    "wake": "@ok wake",
+    "reboot": "@ok reboot",
+    "hang": "@ok hang",
+}
 FAILURE_MARKERS = (
     RESET_MARKER,
     "Guru Meditation",
@@ -59,6 +82,9 @@ AFTER_ROTATION_S = 5.0
 WIFI_OFF_S = 10.0
 ROTATION_DWELL_S = 120.0
 KEEP_AWAKE_S = 20.0       # re-select the home tile this often during long dwells
+WATCH_PERIOD_S = 10.0     # watch scenario: one `state` check this often
+READY_DRAIN_S = 1.0       # after the first answer, replies to earlier probes may still arrive
+FINAL_PUMP_S = 5.0        # keep reading this long after a scenario's last command
 
 
 class Session:
@@ -85,6 +111,10 @@ class Session:
         self.port.dtr = False
         self.port.rts = False
         self.port.open()
+        if hasattr(self.port, "set_buffer_size"):
+            # pyserial asks Windows for a 4 KB receive queue on open; a burst larger than that
+            # between two reads stalls the USB link and the device drops console output
+            self.port.set_buffer_size(rx_size=HOST_RX_QUEUE_BYTES, tx_size=4096)
 
         self.rx_buffer = b""
         self.lines = []           # every received line, in order
@@ -144,6 +174,21 @@ class Session:
                 return
             time.sleep(READ_POLL_S)
 
+    def _reply_matches(self, line: str, reply: str) -> bool:
+        """True when reply can be the answer to command line (any @err counts)."""
+        if reply.startswith("@err"):
+            return True
+        cmd = line.split()[0] if line.split() else ""
+        prefix = REPLY_PREFIXES.get(cmd)
+        if prefix is None or not reply.startswith(prefix):
+            return False
+        # `state` and `tile` share a prefix; only `state` reports the rotation
+        if cmd == "state":
+            return " rot=" in reply
+        if cmd == "tile":
+            return " rot=" not in reply
+        return True
+
     def _exchange(self, line: str, timeout_s: float):
         """Send one command line and return its reply line, or None on timeout."""
         # One outstanding command at a time: anything left over belongs to an earlier command
@@ -159,8 +204,11 @@ class Session:
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             self.pump(READ_POLL_S)
-            if self.replies:
-                return self.replies.pop(0)
+            while self.replies:
+                reply = self.replies.pop(0)
+                if self._reply_matches(line, reply):
+                    return reply
+                self._write_log("!", f"reply not matching '{line}' dropped: {reply}")
         return None
 
     def wait_ready(self) -> bool:
@@ -175,6 +223,11 @@ class Session:
             if reply is not None and reply.startswith("@ok"):
                 self.booting = False
                 print(f"ready: {reply}")
+                # Probes sent while the device booted may be answered in a burst; drop those answers
+                self.pump(READY_DRAIN_S)
+                for stale in self.replies:
+                    self._write_log("!", f"reply to an earlier probe dropped: {stale}")
+                self.replies.clear()
                 return True
         self.failures.append(f"device not ready within {READY_TIMEOUT_S:.0f} s")
         return False
@@ -304,10 +357,11 @@ def wait_for_ip_address(session: Session, start_index: int, accept_connected: bo
         accept_connected: When the line does not come, accept a device that `state` reports as
             already connected (turning Wi-Fi on while it is on and connected prints no new line).
     """
-    if session.wait_for_log(IP_ADDRESS_MARKER, IP_TIMEOUT_S, start_index):
-        return
+    # Ask first: waiting 90 s for a line that never comes lets the device go idle, which stops Wi-Fi
     if accept_connected and " ip=1" in session.command("state"):
-        print("note: no new IP address line; state reports the device already connected")
+        print("note: state reports the device already connected")
+        return
+    if session.wait_for_log(IP_ADDRESS_MARKER, IP_TIMEOUT_S, start_index):
         return
     session.failures.append(f"no '{IP_ADDRESS_MARKER}' within {IP_TIMEOUT_S:.0f} s")
 
@@ -372,9 +426,74 @@ def scenario_rotation_sweep(session: Session):
     session.stats()
 
 
+def scenario_watch(session: Session):
+    """state_change, then check `state` every WATCH_PERIOD_S for session.watch_s seconds.
+
+    Hunts the LVGL lock freeze seen on 2026-11-06. With the LVGL watchdog a freeze panics and
+    reboots within 5 s: the `rst:` marker fails the run and the core dump stays on the device.
+    """
+    scenario_state_change(session)
+
+    deadline = time.monotonic() + session.watch_s
+    while time.monotonic() < deadline:
+        session.dwell(WATCH_PERIOD_S)
+        session.command("state")
+
+
+def wait_for_text(session: Session, text: str, timeout_s: float, start_index: int) -> bool:
+    """Read the log (sending nothing) until a line from start_index on contains text."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        session.pump(READ_POLL_S)
+        if any(text in line for line in session.lines[start_index:]):
+            return True
+    return False
+
+
+def scenario_watchdog(session: Session):
+    """Prove the LVGL lock-up watchdog: `hang` must end in a task watchdog panic and a reboot.
+
+    Takes the LVGL lock and never gives it back (the freeze seen on 2026-11-06). Passes when the
+    task watchdog names the `lvgl` user, the device boots again, reports the watchdog reset and
+    has a core dump stored. The crash's own markers (panic, reset) are expected and not counted.
+    """
+    if not session.command("hang").startswith("@ok"):
+        return
+
+    start_index = len(session.lines)
+    markers_before = len(session.markers)
+    if not wait_for_text(session, WATCHDOG_TRIGGER_MARKER, WATCHDOG_TRIGGER_TIMEOUT_S, start_index):
+        session.failures.append(f"no '{WATCHDOG_TRIGGER_MARKER}' within {WATCHDOG_TRIGGER_TIMEOUT_S:.0f} s of hang")
+        return
+    if not wait_for_text(session, " - lvgl", 2.0, start_index):
+        session.failures.append("task watchdog fired without naming the lvgl user")
+
+    session.booting = True  # the reset that follows is the expected one
+    if not session.wait_ready():
+        return
+
+    # Forgive only the crash's own markers; anything else (no memory, stack overflow) still counts
+    crash = session.markers[markers_before:]
+    session.markers[markers_before:] = [(m, l) for m, l in crash if m not in CRASH_MARKERS]
+    for marker, line in crash:
+        if marker in CRASH_MARKERS:
+            print(f"expected crash marker {marker}: {line}")
+
+    crash_lines = session.lines[start_index:]
+    reset_lines = [line for line in crash_lines if "Reset reason:" in line]
+    print(f"reset: {reset_lines[-1] if reset_lines else '(none)'}")
+    if not any("TASK_WDT" in line or "PANIC" in line for line in reset_lines):
+        session.failures.append("no watchdog or panic reset reason after the reboot")
+    # The dump is never erased, so ask for this crash's save line, not the boot's summary of any dump
+    if not any(CORE_DUMP_SAVED_MARKER in line for line in crash_lines):
+        session.failures.append(f"no '{CORE_DUMP_SAVED_MARKER}' during the crash")
+
+
 SCENARIOS = {
     "state_change": scenario_state_change,
     "rotation_sweep": scenario_rotation_sweep,
+    "watch": scenario_watch,
+    "watchdog": scenario_watchdog,
 }
 
 
@@ -394,6 +513,8 @@ def parse_args(argv):
                          help="fail when taskLVGL's lowest free stack (B) is below this")
     options.add_argument("--min-largest-dma", type=int, default=None,
                          help="fail when the lowest largest DMA-capable block (B) is below this")
+    options.add_argument("--watch-s", type=float, default=600.0,
+                         help="watch scenario: seconds to keep checking after state_change")
     options.add_argument("--log-dir", type=pathlib.Path, default=DEFAULT_LOG_DIR,
                          help="directory for session logs (default build/rc_logs)")
 
@@ -415,6 +536,7 @@ def main(argv) -> int:
     label = "send" if args.action == "send" else args.name
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     session = Session(args.port, args.log_dir / f"rc_{label}_{stamp}.log")
+    session.watch_s = args.watch_s
     try:
         if session.wait_ready():
             if args.action == "send":
@@ -424,6 +546,7 @@ def main(argv) -> int:
                     session.command(args.line)
             else:
                 SCENARIOS[args.name](session)
+                session.pump(FINAL_PUMP_S)  # a crash right after the last command still counts
         passed = session.verdict(args.min_lvgl_stack, args.min_largest_dma)
     finally:
         session.close()

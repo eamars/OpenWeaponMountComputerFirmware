@@ -13,6 +13,7 @@
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_debug_helpers.h"
 #include "esp_lvgl_port.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -45,7 +46,8 @@
 
 #define RC_MAX_ARGS 4
 
-#define RC_HELP_COMMANDS "help state stats tap swipe tile rot wifi save idle wake reboot"
+#define RC_BT_DEPTH 24
+#define RC_HELP_COMMANDS "help state stats bt tap swipe tile rot wifi save idle wake reboot hang"
 
 
 typedef struct {
@@ -497,12 +499,20 @@ static bool rc_cmd_wifi(int argc, char **argv, char *reply, size_t reply_size) {
         return rc_reply(reply, reply_size, false, "@err args");
     }
 
+    // After the Wi-Fi window expires the screen disables the switch; refuse the same way
+    if (wifi_is_expired()) {
+        return rc_reply(reply, reply_size, false, "@err expired");
+    }
+
     if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
         return rc_reply(reply, reply_size, false, "@err busy");
     }
-    wifi_config_set_enable(enable);
+    esp_err_t ret = wifi_config_set_enable(enable);
     lvgl_port_unlock();
 
+    if (ret != ESP_OK) {
+        return rc_reply(reply, reply_size, false, "@err wifi %s", esp_err_to_name(ret));
+    }
     return rc_reply(reply, reply_size, true, "@ok wifi=%s", enable ? "on" : "off");
 }
 
@@ -587,6 +597,25 @@ static bool rc_cmd_reboot(char *reply, size_t reply_size) {
 }
 
 
+// Debug: print every task's backtrace to the console (ROM printing). Needs no LVGL lock, so it
+// still works when the LVGL task is stuck; decode the addresses with the matching ELF.
+static bool rc_cmd_bt(char *reply, size_t reply_size) {
+    esp_err_t ret = esp_backtrace_print_all_tasks(RC_BT_DEPTH);
+    return rc_reply(reply, reply_size, true, "@ok bt %s", ret == ESP_OK ? "complete" : "corrupt");
+}
+
+
+// Debug: take the LVGL lock and never give it back, the state of the LVGL lock freeze. The LVGL
+// task stops, its watchdog entry goes unfed, and the task watchdog panics and reboots the device.
+static bool rc_cmd_hang(char *reply, size_t reply_size) {
+    if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
+        return rc_reply(reply, reply_size, false, "@err busy");
+    }
+    // No unlock, on purpose
+    return rc_reply(reply, reply_size, true, "@ok hang");
+}
+
+
 static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     char *argv[RC_MAX_ARGS] = {0};
     int argc = 0;
@@ -606,11 +635,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
 
     const char *cmd = argv[0];
     bool is_observer = strcmp(cmd, "idle") == 0 || strcmp(cmd, "state") == 0 ||
-                       strcmp(cmd, "stats") == 0 || strcmp(cmd, "help") == 0;
+                       strcmp(cmd, "stats") == 0 || strcmp(cmd, "help") == 0 ||
+                       strcmp(cmd, "bt") == 0;
     bool is_known = is_observer ||
                     strcmp(cmd, "tap") == 0 || strcmp(cmd, "swipe") == 0 || strcmp(cmd, "tile") == 0 ||
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
-                    strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0;
+                    strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -643,6 +673,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
         }
         return rc_cmd_stats(reply, reply_size);
     }
+    if (strcmp(cmd, "bt") == 0) {
+        if (argc != 1) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        return rc_cmd_bt(reply, reply_size);
+    }
     if (strcmp(cmd, "idle") == 0) {
         if (argc != 1) {
             return rc_reply(reply, reply_size, false, "@err args");
@@ -660,6 +696,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
             return rc_reply(reply, reply_size, false, "@err args");
         }
         return rc_cmd_reboot(reply, reply_size);
+    }
+    if (strcmp(cmd, "hang") == 0) {
+        if (argc != 1) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        return rc_cmd_hang(reply, reply_size);
     }
     if (strcmp(cmd, "tap") == 0) {
         return rc_cmd_tap(argc, argv, reply, reply_size);

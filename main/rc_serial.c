@@ -15,7 +15,8 @@
 
 // rc_serial_stop() waits this long for the task to reach its stop point.
 // Longest command path: LVGL lock wait (1 s) or a gesture plus its margin (~1.2 s).
-#define RC_SERIAL_STOP_TIMEOUT_MS 5000
+// The switch calls stop from the LVGL task, so this must stay well under the 5 s LVGL watchdog.
+#define RC_SERIAL_STOP_TIMEOUT_MS 2000
 #define RC_SERIAL_STOP_POLL_MS 10
 
 // Large enough for `stats` with the per-task stack report
@@ -52,6 +53,10 @@ static void rc_serial_task(void *p) {
     char chunk[RC_SERIAL_READ_CHUNK];
     size_t line_len = 0;
     bool discarding = false;  // dropping the rest of an over-long line until its line ending
+
+    // The driver buffers input while the reader is off; never run commands typed before it started
+    while (usb_serial_jtag_read_bytes(chunk, sizeof(chunk), 0) > 0) {
+    }
 
     while (1) {
         rc_serial_park_if_requested();

@@ -20,6 +20,7 @@
 #include "bno085.h"
 #include "pmic_axp2101.h"
 #include "wifi.h"
+#include "lvgl_display.h"
 #include "main_tileview.h"
 
 #define TAG "LowPowerMode"
@@ -78,6 +79,7 @@ void delayed_exit_idle_mode(lv_timer_t * timer) {
 
 static void delayed_stop_lvgl(lv_timer_t *timer) {
     lvgl_port_stop();
+    lvgl_watchdog_pause(true);
     lv_timer_del(timer);
 }
 
@@ -101,6 +103,7 @@ void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *
 
 void wake_from_idle_mode() {
     // If LVGL timer is not running then resume the timer ifrst
+    lvgl_watchdog_pause(false);
     lvgl_port_resume();
     lv_timer_create(delayed_exit_idle_mode, 1, NULL); 
 }
@@ -314,6 +317,9 @@ void low_power_monitor_task(void *p) {
             // Update idle mode tick
             last_activity_tick = current_tick;
         }
+
+        // LVGL stopped on purpose (idle): keep its lock-up watchdog fed; no-op otherwise
+        lvgl_watchdog_feed_while_paused();
 
         if (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE) {
             // Update sleep mode tick
