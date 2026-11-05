@@ -63,3 +63,26 @@ Device, Wi-Fi off, 360 s:
 - Owner decision 2026-11-05: correct the target to 155,000 B and continue. The risk check for polling delay is corrected to `ui_ok` (not lower than Stage 2 by more than noise): 16.1 vs 16.3.
 
 Result: pass (corrected target).
+
+## Stage 4 - QSPI transfer size 4091 (2026-11-05)
+
+Static Grep: `rg -n "define LCD_QSPI_MAX_TRANSFER_SIZE" main` → `main/app_cfg.h:38: ... 4091`. `main/dev_kit_app_cfg.h` does not define it and is not included in this build. Build: pass.
+
+Device, Wi-Fi off, 120 s:
+
+- `display_prof_cfg`: `qspi_actual_max_transfer=4092`.
+- Heap (avg after 10 s): `free_int` 194,323; `largest_int` 114,688; `min_int` 189,667; `free_dma` 186,583; `largest_dma` 114,688; `min_dma` 181,927; `free_spiram` 5,626,507.
+- Failure markers: 1 `rst:` (port open), 1 allowed BNO085 abort; all others 0.
+- Display timing, windows with ≥ 10 flushes:
+
+| Capture | QSPI actual | Frames/s | Render (µs, includes flush) | Flush callback (µs) |
+|---|---:|---:|---:|---:|
+| Stage 2 (stacks internal) | 8,184 | 16.8 | 49,219 | 25,092 |
+| Stage 3 (stacks in PSRAM) | 8,184 | 19.4 | 47,517 | 24,055 |
+| Stage 4 | 4,092 | 15.8 | 54,499 | 30,434 |
+
+- `digital_level_prof`: `ui_ok` 15.7, `lock_fail` 22.7 per window.
+- First result against the plan as written: frames 15.8 < 16, fail. The earlier RCA trial had found no frame-rate difference between 4,092 and 8,184 B transfers; with stacks in PSRAM the difference is 3.6 frames/s. Cause of the difference from the RCA trial not established.
+- Owner decision 2026-11-05: keep 4091; frame-rate floor for this plan is 15 frames/s; ADR-002 step 1 owns recovering the flush cost.
+
+Result: pass (corrected floor).

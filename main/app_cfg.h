@@ -35,7 +35,7 @@
 #define LCD_DATA3                (GPIO_NUM_14)
 #define LCD_RST                  (GPIO_NUM_17)
 #define LCD_TE_OUT               (GPIO_NUM_18)
-#define LCD_QSPI_MAX_TRANSFER_SIZE 4096
+#define LCD_QSPI_MAX_TRANSFER_SIZE 4091
 
 #if USE_LCD_SH8601
     #if CONFIG_LV_COLOR_DEPTH == 32

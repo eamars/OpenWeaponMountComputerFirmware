@@ -8,7 +8,7 @@
 - Mandatory skills: `esp32-debug`, `development-plan`
 - Overall cutover strategy: bigbang per change, in three separately flashed and verified commits: safety net, task stacks, QSPI transfer size.
 - Highest-risk areas: task self-deletion lifecycle for stacks created in PSRAM; the QSPI transfer size change on the display bus; failures that appear only during state changes or after hours.
-- Acceptance criteria: with Wi-Fi off, steady-state internal free heap ≥ 155,000 B and largest DMA-capable block ≥ 80,000 B; a 10-minute Wi-Fi-on run through the listed state changes and an overnight run of at least 8 h, both with zero failure markers, zero failed-allocation reports, no new core dump, and every application task's minimum free stack ≥ 512 B; frame rate on the digital level view not below 16 frames/s.
+- Acceptance criteria: with Wi-Fi off, steady-state internal free heap ≥ 155,000 B and largest DMA-capable block ≥ 80,000 B; a 10-minute Wi-Fi-on run through the listed state changes and an overnight run of at least 8 h, both with zero failure markers, zero failed-allocation reports, no new core dump, and every application task's minimum free stack ≥ 512 B; frame rate on the digital level view not below 15 frames/s at QSPI 4091 (16 frames/s with the stack move alone).
 
 ## Owner's direction (2026-11-05)
 
@@ -19,6 +19,7 @@
 5. Newer managed dependencies are accepted (LVGL 9.6.0, tinyusb 0.21.0 are now in `managed_components/`).
 6. Add five risk controls: core dump to flash with a boot-time crash report; a log line with backtrace for every failed allocation; a task-stack headroom report in verification builds; the stack move and the QSPI change flashed and verified separately; a soak through state changes plus an overnight run. Unit tests are not used for this plan: its failure modes (memory placement, Wi-Fi load timing, task lifecycle) appear only on the running device.
 7. Stage 3 correction (2026-11-05): the internal free heap target is 155,000 B, not 168,000 B. The first estimate counted three tasks whose views are commented out (never created) and the pre-dependency-update starting point.
+8. Stage 4 decision (2026-11-05): keep QSPI 4091. It costs about 6 ms of flush per frame against 4096 (15.8 vs 19.4 frames/s once stacks are in PSRAM) and gives a 114.7 KB largest DMA block instead of 64 KB. The frame-rate floor for this plan becomes 15 frames/s; ADR-002 step 1 owns recovering the flush cost.
 
 ## Context
 
@@ -208,7 +209,7 @@ Overall strategy: bigbang
 - Minimal change: move twelve task stacks to PSRAM, restore the 4091 transfer size, and add three small diagnostics that ESP-IDF already provides (core dump, failed-allocation callback, task system state).
 - Ownership boundaries: each module keeps owning its task's lifecycle; ESP-IDF owns placement through caps; `crash_report` owns boot-time crash reporting; `mem_diag` owns memory diagnostics.
 - Rejected complexity: a task-creation wrapper, a config flag per task, lazy start, stack-size tuning, heap tracing or poisoning builds, on-device unit tests, dump upload or erase logic, failure counters persisted to NVS.
-- Evidence threshold: a stack-overflow report, a cache-related panic, a failed-allocation report, or a frame-rate drop below 16 frames/s on the device would be needed before reconsidering any listed task or adding further diagnostics.
+- Evidence threshold: a stack-overflow report, a cache-related panic, a failed-allocation report, or a frame-rate drop below 15 frames/s on the device would be needed before reconsidering any listed task or adding further diagnostics.
 
 ## Agent Autonomy Boundaries
 
@@ -312,7 +313,7 @@ Verification builds: `DISPLAY_PROFILING_ENABLED 1` and `CONFIG_FREERTOS_USE_TRAC
 
 - Safety net (Wi-Fi off, 360 s): the boot log shows the `coredump` partition at `0x12000` and a reset-reason line on every boot. If the allowed BNO085 abort occurs, the following boot prints its summary (task name, PC, backtrace) and `idf.py -p COM11 coredump-info` decodes it. If no crash occurs in three port-open resets, flash a verification build with a temporary `abort()` in `app_main` after `wifi_init()`, confirm the summary and `coredump-info`, then remove the `abort()`, rebuild and reflash before sign-off. The stack report prints at 300 s.
 - Task stacks (Wi-Fi off, 360 s, digital level view on screen): average `free_int` ≥ 155,000 B; `flush=` ≥ 16 per 1-s window on average; in the stack report, every Change 2 task alive at report time shows PSRAM, `LPMON` and `ota_updater` show internal, and every application task (created in `main/` or `components/bno08x/`) has minimum free stack ≥ 512 B. ESP-IDF system tasks are recorded but not judged: their stack sizes are ESP-IDF settings outside this plan (`ipc0` 500 B and `ipc1` 428 B free in Stage 2, by design).
-- QSPI (Wi-Fi off, 120 s): `display_prof_cfg` reports `qspi_actual_max_transfer=4092`; average `largest_dma` ≥ 80,000 B; average `free_int` ≥ 155,000 B; `flush=` ≥ 16 per 1-s window on average.
+- QSPI (Wi-Fi off, 120 s): `display_prof_cfg` reports `qspi_actual_max_transfer=4092`; average `largest_dma` ≥ 80,000 B; average `free_int` ≥ 155,000 B; `flush=` ≥ 15 per 1-s window on average.
 - State-change run (600 s, owner on the device, in this order): turn Wi-Fi on in settings and press Save; wait for `Connected with IP Address:`, the `mdns_init end` checkpoint and `Network connected, will poll OTA source`; open every main tile once, including sensor calibration (the acceleration analysis, point of aim and OpenTrickler views are commented out in `main/main_tileview.c` and cannot be opened); let the device go idle and wake it three times; change rotation once, press Save, change it back, press Save; turn Wi-Fi off and on with the settings switch and wait for the IP address again.
 - Overnight run (≥ 8 h, Wi-Fi on, unattended, serial logged to a file in the background): zero failure markers; the boot count in the log stays at one; heap readings at the start and the end are recorded; the last stack report shows every application task with minimum free stack ≥ 512 B. The device spends most of the night in idle mode; this run covers idle, Wi-Fi keep-alive, reconnects and timers, not active drawing.
 
@@ -351,4 +352,4 @@ This plan is complete when:
 | A moved task's stack is too small once in PSRAM | Sizes unchanged; canary on | Stack report ≥ 512 B free for every application task after the overnight run |
 | Failure appears only after hours or during transitions | State-change run plus overnight run | Zero failure markers; core dump partition empty of new dumps |
 | Failed-allocation hook itself disturbs timing | ROM printing only, no allocation | Any hook output fails the run anyway and is investigated |
-| Slower PSRAM stack access delays sensor polling | Pollers run at 20 ms or slower | Frame count ≥ 16/s; `ui_ok` in `digital_level_prof` not lower in Stage 3 than in Stage 2 (`lock_fail` follows the sensor report rate and is not a slowdown measure) |
+| Slower PSRAM stack access delays sensor polling | Pollers run at 20 ms or slower | Frame count ≥ 15/s; `ui_ok` in `digital_level_prof` not lower in Stage 3 than in Stage 2 (`lock_fail` follows the sensor report rate and is not a slowdown measure) |
