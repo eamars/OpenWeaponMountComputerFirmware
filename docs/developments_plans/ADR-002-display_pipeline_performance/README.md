@@ -46,6 +46,8 @@ Executable plan: [step1_staging_flush.md](step1_staging_flush.md) (approved 2026
 
 ### Step 2: tearing-effect sync on GPIO18
 
+Hardware check (2026-11-05, schematic `OpenWeaponMountComputer/pcb/owmc.kicad_sch` at `dce2f25`, netlist exported with kicad-cli 10.0; module datasheet `pcb/datasheet/DO0164FMST02_05.pdf`): the AMOLED module's pin 27 is `TE (OUT)`, "Tearing Effect", an output of the driver IC. On the board it reaches connector J1 (Panasonic AXE530127) pin 27, net `AMOLED_TE_OUT`, wired directly to ESP32-S3R8 U1 pin 24, GPIO18, with no other parts on the net. Pin orientation is consistent (module pins 23 VCI_IN, 25 VDDIO and 29 VBAT land on J1 pins carrying +3V3; pin 28 is GND on both). The firmware sends `TEON` (`0x35`, parameter `0x00`, V-blank only) in the SH8601 init (`main/bsp.c`), so the panel should already be pulsing GPIO18. The `esp_lcd_sh8601` driver has no TE support; with step 1 the project owns the flush, so step 2 can wait for the TE edge itself. Not yet verified: that TE pulses actually appear on GPIO18 (first task of step 2, by counting edges on the device).
+
 - Change: start each frame's transfer on the panel's TE pulse.
 - Why: makes the write order relative to the panel scan deterministic, which is the precondition for any partial update without tearing.
 - Gate: owner's visual check at all rotations; frame rate recorded.
