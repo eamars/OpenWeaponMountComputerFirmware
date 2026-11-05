@@ -40,8 +40,6 @@ lv_group_t * button_input_group = NULL;
 EventGroupHandle_t lvgl_display_event_group = NULL;
 
 
-extern void delayed_exit_idle_mode(lv_timer_t *timer);
-
 // External services
 extern system_config_t system_config;
 
@@ -342,8 +340,7 @@ void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
     update_low_power_mode_last_activity_event();
 
     if (is_idle_mode_activated()) {
-        lvgl_port_resume();
-        lv_timer_create(delayed_exit_idle_mode, 1, NULL); 
+        wake_from_idle_mode();
     }
 }
 
