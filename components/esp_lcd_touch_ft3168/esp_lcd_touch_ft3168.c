@@ -118,7 +118,8 @@ esp_err_t esp_lcd_touch_ft3168_del(esp_lcd_touch_handle_t ctx) {
 
 esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch_handle_t *out_touch) {
 
-    esp_lcd_touch_handle_t touch_handle = heap_caps_calloc(1, sizeof(esp_lcd_touch_t), MALLOC_CAP_DEFAULT);
+    // The handle holds a spinlock (portMUX_TYPE), which must not be in PSRAM
+    esp_lcd_touch_handle_t touch_handle = heap_caps_calloc(1, sizeof(esp_lcd_touch_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 
     if (!touch_handle) {
         return ESP_ERR_NO_MEM;
@@ -164,7 +165,7 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
         ESP_RETURN_ON_ERROR(ESP_FAIL, TAG, "Unable to establish communication with FT3168");
     }
 
-    ESP_LOGI(TAG, "FT3168 initialized successfully");
+    ESP_LOGI(TAG, "FT3168 initialized successfully, handle=%p", touch_handle);
 
     // Assign callbacks
     touch_handle->read_data = esp_lcd_touch_ft3168_read_data;

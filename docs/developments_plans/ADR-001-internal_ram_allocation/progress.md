@@ -86,3 +86,23 @@ Device, Wi-Fi off, 120 s:
 - Owner decision 2026-11-05: keep 4091; frame-rate floor for this plan is 15 frames/s; ADR-002 step 1 owns recovering the flush cost.
 
 Result: pass (corrected floor).
+
+## Stage 5, first run - failed (2026-11-05)
+
+Owner on the device, Wi-Fi on (`Connected with IP Address:192.168.2.146`), settings saved (`NS: WIFI`, `NS: CT`, `NS: DOPE` written from the LVGL task without fault). About 65 s after the Wi-Fi connected, while switching tiles: `assert failed: spinlock_acquire spinlock.h:142 (lock->count == 0)` in `taskLVGL`. The core dump (`idf.py coredump-info`) shows `esp_lcd_touch_ft3168_read_data (ctx=0x3c1bb584)` at `components/esp_lcd_touch_ft3168/esp_lcd_touch_ft3168.c:34`, called from `lvgl_port_touchpad_read`. `0x3c1bb584` is PSRAM; the handle holds `portMUX_TYPE lock`, and spinlocks are not safe in PSRAM on the ESP32-S3. The handle was allocated with `heap_caps_calloc(..., MALLOC_CAP_DEFAULT)`.
+
+Whether ADR-001 made this more likely is not established: Changes 1-3 do not touch this allocation or the heap caps policy, and the firmware before ADR-001 had no core dump to show where the handle was.
+
+Class audit: no `portMUX_TYPE` / spinlock in project code; LVGL's only one (`critSectionMux` in `lv_freertos.c`) is a static in internal RAM; `HEAPS_CAPS_ATTR` statics hold no locks; no queue, semaphore, event group, stream buffer or ring buffer is created `WithCaps`. The only spinlocks that can reach PSRAM are the `esp_lcd_touch_t` handles in the FT3168 and AXS5106 drivers.
+
+Owner observation: horizontal rotation is laggier than vertical. Measured: rotation 1 (90°) 12.9 frames/s, flush callback 43.0 ms; rotation 2 (180°) about 16 frames/s, flush 30 ms. Software 90° rotation reads PSRAM column by column. Recorded for ADR-002 step 1.
+
+Owner decision 2026-11-05: add Change 4; rerun Stage 5 from the start. A second reboot during the investigation was caused by `idf.py coredump-info` (esptool resets the chip), not by the firmware.
+
+## Stage 4a - touch handles in internal RAM (2026-11-05)
+
+Static Greps: `MALLOC_CAP_DEFAULT` in both touch drivers: no matches. `MALLOC_CAP_INTERNAL`: 2 (`esp_lcd_touch_axs5106.c:55`, `esp_lcd_touch_ft3168.c:122`). Build: pass.
+
+Device, Wi-Fi off, 120 s: `FT3168 initialized successfully, handle=0x3fcebb8c` (internal DRAM). Heap avg: `free_int` 193,359; `largest_dma` 114,539; frames 16.8/s; `qspi_actual_max_transfer=4092`. Failure markers: 1 `rst:` (port open), 1 allowed BNO085 abort; all others 0.
+
+Result: pass. Touch response is checked by the owner at the start of the Stage 5 rerun.

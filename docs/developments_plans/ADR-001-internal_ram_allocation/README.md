@@ -20,6 +20,7 @@
 6. Add five risk controls: core dump to flash with a boot-time crash report; a log line with backtrace for every failed allocation; a task-stack headroom report in verification builds; the stack move and the QSPI change flashed and verified separately; a soak through state changes plus an overnight run. Unit tests are not used for this plan: its failure modes (memory placement, Wi-Fi load timing, task lifecycle) appear only on the running device.
 7. Stage 3 correction (2026-11-05): the internal free heap target is 155,000 B, not 168,000 B. The first estimate counted three tasks whose views are commented out (never created) and the pre-dependency-update starting point.
 8. Stage 4 decision (2026-11-05): keep QSPI 4091. It costs about 6 ms of flush per frame against 4096 (15.8 vs 19.4 frames/s once stacks are in PSRAM) and gives a 114.7 KB largest DMA block instead of 64 KB. The frame-rate floor for this plan becomes 15 frames/s; ADR-002 step 1 owns recovering the flush cost.
+9. Change 4 added (2026-11-05): the Stage 5 reboot was `assert failed: spinlock_acquire (lock->count == 0)` in `esp_lcd_touch_ft3168_read_data`; the core dump puts the touch handle, which holds a `portMUX_TYPE`, at `0x3c1bb584` (PSRAM). Spinlocks are not safe in PSRAM on the ESP32-S3. Both touch drivers allocate the handle with `MALLOC_CAP_DEFAULT`; they move to internal RAM. A class audit found no other spinlock in PSRAM.
 
 ## Context
 
@@ -119,6 +120,10 @@ Adjacent improvement areas intentionally left for later plans:
 
 - Set `LCD_QSPI_MAX_TRANSFER_SIZE` in `main/app_cfg.h` back to `4091`.
 
+### Change 4: touch handles in internal RAM
+
+- In `components/esp_lcd_touch_ft3168/esp_lcd_touch_ft3168.c` (`esp_lcd_touch_new_ft3168`) and `components/esp_lcd_touch_axs5106/esp_lcd_touch_axs5106.c`, allocate the `esp_lcd_touch_t` handle with `heap_caps_calloc(1, sizeof(esp_lcd_touch_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)` instead of `MALLOC_CAP_DEFAULT`, with a one-line comment that the handle holds a spinlock, which must not be in PSRAM. In the FT3168 driver, the existing `FT3168 initialized successfully` log line also prints the handle address (`%p`). Nothing else in these files changes (B-013 stays deferred).
+
 ### All changes
 
 - Set `DISPLAY_PROFILING_ENABLED` in `main/app_cfg.h` to `0` in the final build. Verification builds set it to `1` and enable `CONFIG_FREERTOS_USE_TRACE_FACILITY` in the local `sdkconfig` only.
@@ -146,6 +151,7 @@ Overall strategy: bigbang
 | Task stack placement | bigbang | Replace `xTaskCreate` with `xTaskCreateWithCaps` at the twelve listed sites. No flag to switch back. |
 | Task deletion | bigbang | Replace the three listed `vTaskDelete` calls with `vTaskDeleteWithCaps`. |
 | QSPI transfer size | bigbang | Set `4091`. No runtime selection. |
+| Touch handle placement | bigbang | Internal RAM in both touch drivers. No switch. |
 | Profiling | bigbang | Default `0`; the code stays. |
 
 - The responsible execution agent must follow the selected policy for each area and must not choose a more conservative strategy by default.
@@ -195,6 +201,7 @@ Overall strategy: bigbang
 - `main/wifi.c`: `wifi_deinit` creation and its self-delete.
 - `main/pmic_axp2101.cpp`: monitor task creation and the delete in `axp2101_deinit`.
 - `components/bno08x/src/bno085.c`: sensor poller creation (outside `main/`; see Design Decisions).
+- `components/esp_lcd_touch_ft3168/esp_lcd_touch_ft3168.c`, `components/esp_lcd_touch_axs5106/esp_lcd_touch_axs5106.c`: touch handle allocation (Change 4; the spinlock it holds must be internal).
 - `main/app_cfg.h`: `LCD_QSPI_MAX_TRANSFER_SIZE` and `DISPLAY_PROFILING_ENABLED`.
 - `docs/developments_plans/README.md`: registry row at sign-off.
 
@@ -215,7 +222,7 @@ Overall strategy: bigbang
 
 - The responsible agent may choose local implementation mechanics only when they preserve the contracts in this plan.
 - The responsible agent must not introduce new architecture, alternate migration strategies, compatibility layers, fallback paths, or extra features.
-- Changes outside `main/`, `partitions.csv` and `sdkconfig.defaults.esp32s3` are limited to the one call site in `components/bno08x/src/bno085.c`.
+- Changes outside `main/`, `partitions.csv` and `sdkconfig.defaults.esp32s3` are limited to the one call site in `components/bno08x/src/bno085.c` and the one allocation in each touch driver (Change 4).
 - The responsible agent must not perform unrelated cleanup, formatting churn, dependency upgrades, or broad refactors.
 - If the plan and code disagree, the responsible agent must preserve the plan's stated intent and report the discrepancy.
 - If a required instruction is impossible, the responsible agent must stop and report the blocker instead of inventing a substitute.
@@ -226,6 +233,7 @@ Overall strategy: bigbang
 2. Production subagent implements Change 1. Parent regenerates `sdkconfig`, builds, erases the `coredump` region once (`esptool erase_region 0x12000 0x20000`), flashes, and runs the Stage 2 device check. Commit.
 3. Production subagent implements Change 2. Parent builds, flashes, runs the Stage 3 device check. Commit.
 4. Production subagent implements Change 3. Parent builds, flashes, runs the Stage 4 device check. Commit.
+4a. Production subagent implements Change 4. Parent builds, flashes, runs the Stage 4a device check. Commit.
 5. Parent runs the Stage 5 soak with the owner, then the overnight run.
 6. Parent restores the final configuration (profiling `0`, `sdkconfig` regenerated from defaults), builds, flashes, checks one clean boot.
 7. Independent code review, then registry update.
@@ -264,6 +272,12 @@ Overall strategy: bigbang
   - Evidence: `display_prof_cfg` line, averaged heap readings, frame counts, failure-marker counts, commit hash.
   - Handoff: next is Stage 5.
   - Sign-off: `<agent/date>`
+- [ ] Stage 4a - touch handles in internal RAM
+  - Covers: step 4a.
+  - Verify: Static Greps for Change 4; build; Device check "Touch handle".
+  - Evidence: grep output, boot log line with the handle address, failure-marker counts, commit hash.
+  - Handoff: next is Stage 5 (rerun from the start).
+  - Sign-off: `<agent/date>`
 - [ ] Stage 5 - soak
   - Covers: step 5.
   - Verify: Device checks "State-change run" and "Overnight run".
@@ -299,6 +313,11 @@ After Change 2:
 - `rg -n "vTaskDelete\(" main components/bno08x/src` returns exactly one line: the `ota_update_task` self-delete in `main/ota_mode.c`.
 - `rg -n "vTaskDeleteWithCaps\(" main components/bno08x/src` returns exactly three lines (`ota_mode.c`, `wifi.c`, `pmic_axp2101.cpp`).
 
+After Change 4:
+
+- `rg -n "MALLOC_CAP_DEFAULT" components/esp_lcd_touch_ft3168 components/esp_lcd_touch_axs5106` returns no matches (exit code 1 expected).
+- `rg -n "MALLOC_CAP_INTERNAL" components/esp_lcd_touch_ft3168 components/esp_lcd_touch_axs5106` returns exactly two lines, one per driver.
+
 After Change 3:
 
 - `rg -n "define LCD_QSPI_MAX_TRANSFER_SIZE" main/app_cfg.h` shows `4091`.
@@ -314,6 +333,7 @@ Verification builds: `DISPLAY_PROFILING_ENABLED 1` and `CONFIG_FREERTOS_USE_TRAC
 - Safety net (Wi-Fi off, 360 s): the boot log shows the `coredump` partition at `0x12000` and a reset-reason line on every boot. If the allowed BNO085 abort occurs, the following boot prints its summary (task name, PC, backtrace) and `idf.py -p COM11 coredump-info` decodes it. If no crash occurs in three port-open resets, flash a verification build with a temporary `abort()` in `app_main` after `wifi_init()`, confirm the summary and `coredump-info`, then remove the `abort()`, rebuild and reflash before sign-off. The stack report prints at 300 s.
 - Task stacks (Wi-Fi off, 360 s, digital level view on screen): average `free_int` ≥ 155,000 B; `flush=` ≥ 16 per 1-s window on average; in the stack report, every Change 2 task alive at report time shows PSRAM, `LPMON` and `ota_updater` show internal, and every application task (created in `main/` or `components/bno08x/`) has minimum free stack ≥ 512 B. ESP-IDF system tasks are recorded but not judged: their stack sizes are ESP-IDF settings outside this plan (`ipc0` 500 B and `ipc1` 428 B free in Stage 2, by design).
 - QSPI (Wi-Fi off, 120 s): `display_prof_cfg` reports `qspi_actual_max_transfer=4092`; average `largest_dma` ≥ 80,000 B; average `free_int` ≥ 155,000 B; `flush=` ≥ 15 per 1-s window on average.
+- Touch handle (Wi-Fi off, 120 s): the boot log prints the FT3168 handle address in internal DRAM (`0x3fc88000`–`0x3fcfffff`); zero failure markers; the screen responds to touch (checked by the owner at the start of Stage 5).
 - State-change run (600 s, owner on the device, in this order): turn Wi-Fi on in settings and press Save; wait for `Connected with IP Address:`, the `mdns_init end` checkpoint and `Network connected, will poll OTA source`; open every main tile once, including sensor calibration (the acceleration analysis, point of aim and OpenTrickler views are commented out in `main/main_tileview.c` and cannot be opened); let the device go idle and wake it three times; change rotation once, press Save, change it back, press Save; turn Wi-Fi off and on with the settings switch and wait for the IP address again.
 - Overnight run (≥ 8 h, Wi-Fi on, unattended, serial logged to a file in the background): zero failure markers; the boot count in the log stays at one; heap readings at the start and the end are recorded; the last stack report shows every application task with minimum free stack ≥ 512 B. The device spends most of the night in idle mode; this run covers idle, Wi-Fi keep-alive, reconnects and timers, not active drawing.
 
