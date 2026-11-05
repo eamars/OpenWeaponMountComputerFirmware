@@ -51,8 +51,7 @@ esp_err_t esp_lcd_touch_new_i2c_axs5106(i2c_master_dev_handle_t dev_handle, cons
     assert(out_touch != NULL);
 
     /* Prepare main structure */
-    // The handle holds a spinlock (portMUX_TYPE), which must not be in PSRAM
-    esp_lcd_touch_handle_t esp_lcd_touch_axs5106 = heap_caps_calloc(1, sizeof(esp_lcd_touch_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    esp_lcd_touch_handle_t esp_lcd_touch_axs5106 = heap_caps_calloc(1, sizeof(esp_lcd_touch_t), MALLOC_CAP_DEFAULT);
     ESP_GOTO_ON_FALSE(esp_lcd_touch_axs5106, ESP_ERR_NO_MEM, err, TAG, "no mem for AXS5106 controller");
 
     /* Communication interface */
