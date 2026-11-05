@@ -47,3 +47,49 @@ Verification build flashed (`874d966` + profiling and trace facility on). Owner 
 - `scenario state_change` on this build (`build/rc_logs/rc_state_change_20261106_002610.log`): `VERDICT PASS`. Readings: `largest_dma` min 114,688 (118,784 before the driver); `taskLVGL` 9,136; `sys_evt` 1,580; `rc_serial` 1,000.
 - Lines with dropped bytes (a log line cut and joined to the next): 20 of 801 received lines without the driver, 3 of 924 with it. One of the 3 is the bootloader before `app_main` (expected); two remain (at uptime 39 s during the Wi-Fi connect burst, and 113 s). The host pause that fills even a 4 KB buffer is not explained yet; the verification build prints about 1 KB/s of profiling output.
 - Overnight run restarted on this build about 00:30.
+
+## LVGL lock freeze and the lock-up watchdog (2026-11-06)
+
+- Freeze seen once, on the console-driver build, at uptime about 161 s after a passing `state_change` (capture `hang.txt`): `display_prof` lines stop, `digital_level_prof` reports `ui_ok=0 lock_fail=51` every second, remote commands answer `@err busy`; no panic, no reset. The LVGL task stopped while the LVGL lock was held. Not reproduced since (15 min `watch` run on the `bt` build, `build/rc_logs/rc_watch_20261106_003529.log`: no `@err busy`). Root cause open.
+- Diagnostics added: remote `bt` prints every task's backtrace (ROM printing, no LVGL lock needed); runner `scenario watch` sends `bt` after three `@err busy` in a row.
+- Lock-up watchdog (owner request): the LVGL task is a task watchdog user `lvgl`, fed by a 1 s LVGL timer, so it is fed only while the LVGL task runs its timers. While LVGL is stopped on purpose (idle mode, from `lvgl_port_stop()` to `lvgl_port_resume()`) the watchdog is paused and the low-power task feeds it each loop (first version fed on the idle flag; corrected after review, see below). `CONFIG_ESP_TASK_WDT_PANIC=y` (timeout 5 s): a stall panics, saves a core dump and reboots. A stall that starts while LVGL is stopped is caught 5 s after any wake call resumes it. OTA runs in its own task and takes the LVGL lock only briefly; not exercised on this build.
+- Proof (`hang` debug command takes the LVGL lock and never gives it back; `rc_run.py scenario watchdog`, `build/rc_logs/rc_watchdog_20261106_010315.log`): trigger 4.7 s after `hang` naming ` - lvgl (CPU 0/1)`, core dump saved (43,972 B), reboot, next boot `Reset reason: TASK_WDT (6)` and `Stored core dump: task=IDLE0` (the panicking context; the dump holds every task's stack, read the LVGL task with `idf.py coredump-info`). `VERDICT PASS`.
+- Boot log noise, not from this change: `task_wdt: delete_entry(240): task not found` several times after boot (also in earlier logs). Seven tasks call `esp_task_wdt_delete(NULL)` without ever having been added.
+
+## Console output loss: ESP-IDF connection monitor (2026-11-06)
+
+- The `watch` run lost 5 of 39 `stats` replies with no fragment of them on the host, plus 6 whole `LowPowerMode` lines and 2 cut lines, mostly in the first 5 minutes (Wi-Fi start/stop, idle/wake, rotations). 80 back-to-back `stats`/`help` on a quiet idle device lost none.
+- Mechanism (read in ESP-IDF v5.5.2, unchanged on master): `usb_serial_jtag_write()` (`esp_driver_usb_serial_jtag/src/usb_serial_jtag_vfs.c`) returns -1 for the whole write when `usb_serial_jtag_is_connected()` is false. That flag comes from a tick hook (`usb_serial_jtag_connection_monitor.c`) that spends one of 3 "no SOF" credits on every tick that saw no USB SOF, and refills the credits only on a disconnected-to-connected transition, never while connected. After 3 delayed or doubled ticks since connection, every further one reports a disconnect for one tick. newlib aborts the rest of a `printf` after a failed write, so a 128-byte chunk failing drops the rest of the line or reply (a `stats` reply is about 6 chunks, a log line usually 1-2).
+- Fits the evidence (whole replies lost, cut lines, losses following load) but not yet measured directly.
+- Runner fix: `wait_for_ip_address` with `accept_connected` now asks `state` first. Before, a device already on Wi-Fi printed no new IP line, the 90 s wait let it go idle (Wi-Fi off), and the run failed with `no 'Connected with IP Address:'`.
+
+## Watchdog false-alarm run (2026-11-06 01:03-01:26)
+
+- `scenario watch --watch-s 900` on the first watchdog build (`build/rc_logs/rc_watch_20261106_010343.log`): state-change routine, 4 idle entries, 3 wakes, 15 min of `state` checks. Zero task-watchdog triggers, zero resets, zero failure markers. Runner IP fix confirmed (`note: state reports the device already connected`). Verdict FAIL only from 5 lost `stats` replies (the console bug above). Readings: `largest_dma` min 114,688; `taskLVGL` 9,120; `sys_evt` 1,452; `rc_serial` 944; `LPMON` 1,848.
+
+## Stage 6 - independent code review (2026-11-06)
+
+One review subagent, scope as in the plan plus the watchdog, the debug commands and the connection-monitor patch. Clean: thread safety (every `lv_` call under the lock or in `read_cb`; no LVGL call in `rc_serial.c`; point queue and drop path), semantic commands and refactored callbacks, line handling, the `"RC"` namespace and switch lifecycle, and the connection-monitor patch ("correct and minimal"; real disconnect detection and the PM/PLL calls unchanged). Verdict: CHANGES REQUESTED, four should-fix findings, all fixed:
+
+1. Watchdog fed on the idle flag, which is set before LVGL stops and cleared by an LVGL timer: blind to a stall during idle entry/wake, and a wake landing between the idle request and its timers could leave LVGL stopped and unfed (false reboot). Fixed: `lvgl_watchdog_pause(true)` next to `lvgl_port_stop()` in `delayed_stop_lvgl`, `lvgl_watchdog_pause(false)` next to `lvgl_port_resume()` in `wake_from_idle_mode`; the low-power task calls `lvgl_watchdog_feed_while_paused()` every loop.
+2. `rc_serial_stop()` (called from the LVGL task by the switch) waited up to 5,000 ms, as long as the watchdog timeout. Fixed: 2,000 ms (longest command about 1.2 s).
+3. `wifi on` after the Wi-Fi window expired replied `@ok` though the screen disables the switch and `esp_wifi_start` fails. Fixed: `@err expired` when expired; `wifi_config_set_enable` returns the start/stop result and a failure replies `@err wifi <name>` (the switch ignores it, as before).
+4. Runner matched replies by arrival order only; the boot burst of `state` answers could shift every later reply onto the next command. Fixed: each `@ok` must carry its command's prefix (`state` and `tile` told apart by ` rot=`), and `wait_ready` drains 1 s after the first answer.
+
+Nits fixed: scenarios read 5 s more after the last command before the verdict; the `watchdog` scenario forgives only the reset, panic and abort markers and requires this crash's `Core dump has been saved to flash.` (the stored dump is never erased); the unreachable `bt` branch of `watch` removed (a stuck lock now reboots in 5 s and fails on `rst:`); `rc_serial` discards input buffered while it was off.
+
+Recorded, not changed:
+- `CONFIG_ESP_TASK_WDT_PANIC=y` also turns an idle-task starvation trip on either core from a log line into a reboot. Taken as part of the owner's "reboot when lockup" request.
+- `bt` and `hang` stay as debug commands: the interface is a debugging feature and defaults on only during development (the default flips before a release build). `bt` prints through the ROM routine, so its output can interleave with buffered log lines.
+- Lead for the open LVGL freeze (reviewer): `wifi off` (switch or remote) calls `esp_wifi_stop()` while holding the LVGL lock, and the Wi-Fi event handlers call `wifi_config_update_status()` → `lvgl_port_lock(0)`. If the event task blocks on the lock while `esp_wifi_stop()` waits on the event task, that is a lock-order cycle that looks like the freeze. Unconfirmed; the next freeze leaves a core dump.
+- Pre-existing, outside this ADR (reviewer's reading of the timer order, not seen on the device): a wake landing after `enter_idle_mode(true)` but before its `delayed_stop_lvgl` timer can leave LVGL stopped while the idle flag is clear, so the screen stays frozen until the next idle request and wake. The watchdog stays fed in that state (paused at the stop) rather than rebooting.
+
+## Stage 4 on the fixed build (2026-11-06 01:23-01:33)
+
+Build: review fixes plus the patched connection monitor (`components/esp_driver_usb_serial_jtag`), profiling and trace facility on.
+
+- `scenario state_change` (`build/rc_logs/rc_state_change_20261106_012303.log`): `VERDICT PASS`. 3 idle entries, 3 wakes, 4 IP connects, zero failure markers, zero watchdog triggers.
+- `scenario rotation_sweep` (`build/rc_logs/rc_rotation_sweep_20261106_012523.log`): `VERDICT PASS`, rotations 0-3 with 120 s each.
+- Readings (both): `largest_dma` min 114,688; `taskLVGL` 8,736; `sys_evt` 1,356; `rc_serial` 860; `LPMON` 1,848.
+- Console loss: `stats` replies 6 of 6 and 17 of 17; `LowPowerMode` once-a-second lines 140 and 487 with none missing; zero cut lines; zero replies dropped by the runner's matching. Before the patch the same `state_change` load lost about 10 lines and replies in its first 5 minutes (`rc_watch_20261106_003529.log`). The connection-monitor fix holds.
+- Remaining (owner at the device, 2026-11-07): `tap`/`swipe` (Stage 3), switch-off A/B (Stage 5), final build with profiling off and `sdkconfig` regenerated, registry Built.

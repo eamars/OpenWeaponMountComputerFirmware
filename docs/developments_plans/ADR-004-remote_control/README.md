@@ -88,7 +88,7 @@ Adjacent improvement areas intentionally left for later plans:
 
 - No web transport, authentication, JSON or screenshot support.
 - No changes to display, memory layout settings, Wi-Fi behaviour, or any existing UI behaviour beyond the three refactors.
-- No USB Serial/JTAG driver install.
+- No USB Serial/JTAG driver install. (Amended 2026-11-06 by the owner: the driver is installed, and a patched copy of the IDF component fixes false disconnects; see `progress.md`.)
 - No remote control of OTA updates or provisioning reset.
 
 ## Cutover Policy
@@ -151,11 +151,13 @@ bool rc_serial_is_running(void);
 | `swipe <left\|right\|up\|down>` | Press at the screen centre, move 60% of the screen in 6 steps over 150 ms, release | `@ok swipe <dir>` |
 | `tile <col> <row>` | Show that tile and run its enable callback exactly as a swipe would | `@ok tile=<col>,<row>`; `@err no_tile` if it does not exist |
 | `rot <0-3>` | `system_config_set_rotation` | `@ok rot=<n>` |
-| `wifi <on\|off>` | `wifi_config_set_enable` | `@ok wifi=<on\|off>` |
+| `wifi <on\|off>` | `wifi_config_set_enable` | `@ok wifi=<on\|off>`; `@err expired` after the Wi-Fi window expired (the screen disables the switch); `@err wifi <esp_err name>` if start/stop fails |
 | `save <system\|wifi>` | The same save function the page's Save button calls | `@ok save <page>`; `@err nvs <esp_err name>` on failure |
 | `idle` | `low_power_mode_request_idle` | `@ok idle` |
 | `wake` | `wake_from_idle_mode` | `@ok wake` |
 | `reboot` | Reply, flush, then `esp_restart()` after 100 ms | `@ok reboot` |
+| `bt` | Debug (added 2026-11-06): every task's backtrace on the console, no LVGL lock needed | `@ok bt <complete\|corrupt>` |
+| `hang` | Debug (added 2026-11-06): take the LVGL lock and never release it; proves the LVGL watchdog | `@ok hang`, then a watchdog panic and reboot |
 
 Errors: `@err unknown <cmd>`, `@err args`, `@err busy` (LVGL lock timeout), `@err too_long`.
 
