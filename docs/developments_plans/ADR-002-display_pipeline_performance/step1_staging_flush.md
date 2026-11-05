@@ -4,7 +4,7 @@
 
 - Goal: replace `esp_lvgl_port`'s display path with a project-owned LVGL display whose flush rotates and byte-swaps each strip of the frame straight from the PSRAM draw buffer into one of two fixed internal DMA-capable staging buffers and sends it, so a frame costs one PSRAM read pass, the SPI driver allocates nothing per transaction, and the 255 KB full-frame rotation buffer disappears.
 - Plan class: large
-- Status: draft (2026-11-05, awaiting owner approval)
+- Status: in_progress (approved by the owner 2026-11-05)
 - Mandatory skills: `esp32-debug`, `development-plan`
 - Overall cutover strategy: bigbang. The port display path is removed in one change; no switch back at runtime. Rollback is `git revert` of the step 1 commit.
 - Highest-risk areas: pixel mapping at 90°/180°/270° for partial areas; flush-done signalling (a missed signal hangs LVGL); internal DMA memory layout; tearing.

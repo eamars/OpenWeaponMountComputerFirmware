@@ -11,4 +11,4 @@ Execution follows `.agents/skills/development-plan/` (plan contract and executio
 | ADR | Title | Status | Left | Decision | Where |
 |---|---|---|---|---|---|
 | 001 | Internal RAM allocation: move non-critical memory to PSRAM | Built | Overnight soak deferred (owner) | Safety net first (core dump, failed-allocation log, stack report), then task stacks to PSRAM, then QSPI back to 4091, each flashed and verified alone; state-change soak (overnight run deferred); later stack-size fix for LVGL and the event loop; no performance change | [ADR-001](ADR-001-internal_ram_allocation/README.md) |
-| 002 | Display pipeline performance, one change at a time | Draft | Owner approval of step 1 | Each performance change is added alone and proven on the device before the next | [ADR-002](ADR-002-display_pipeline_performance/README.md) |
+| 002 | Display pipeline performance, one change at a time | Decided (step 1) | Step 1 in progress; steps 2-3 draft | Each performance change is added alone and proven on the device before the next | [ADR-002](ADR-002-display_pipeline_performance/README.md) |
