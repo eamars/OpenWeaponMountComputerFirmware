@@ -1,82 +1,63 @@
 # ADR-002 progress
 
-Execution record for [ADR-002](README.md). Times are NZDT.
+What was built for [ADR-002](README.md) and what the device showed. Times are NZDT.
 
-## Step 1, Stage 1 - starting point (2026-11-05)
+## Step 1: staging-buffer flush
 
-Branch `display_pipeline` from `main` at `c327b08`; plan approved by the owner 2026-11-05.
+### Starting point (2026-11-05)
 
-Static Greps on the unchanged tree: `lvgl_port_add_disp(` 1 (`main/lvgl_display.c`); `#define LVGL_DISPLAY_TRANS_SIZE` 1 (`main/app_cfg.h`); `display_flush_create(` 0. As expected.
+Branch `display_pipeline` from `main` at `c327b08`, approved by the owner 2026-11-05.
 
-Starting point (from ADR-001 evidence, no new capture):
+Before the change (QSPI 4,092-byte transfers, LVGL 9.6, `esp_lvgl_port` 2.7.2):
 
 | Reading | 180° | 90° |
 |---|---:|---:|
 | Frames/s | about 16 (15.8-16.8) | 12.9 |
 | Flush callback average | 30.4 ms | 43.0 ms |
-| Render average | 54.5 ms | 66.3 ms |
+| Render average (includes the flush) | 54.5 ms | 66.3 ms |
 
-Memory: `free_int` about 193 KB; `largest_dma` 114,483-114,688 B; `free_spiram` about 5,615,000 B; `taskLVGL` 8,328 B free of 16,384 under the soak.
+Memory: `free_int` about 193 KB; `largest_dma` 114,483-114,688 B; `free_spiram` about 5,615,000 B; `taskLVGL` 8,328 B free of 16,384.
 
-Result: pass.
+### The change (2026-11-05)
 
-Correction (2026-11-05): the installed port is `esp_lvgl_port` 2.7.2 (re-resolved by the component manager on 2026-11-05 within the manifest's `~2.7.1`); the plan's references to 2.7.1 are corrected to 2.7.2. The code studied for the plan was the installed 2.7.2.
-
-## Step 1, Stage 2 - production change complete (2026-11-05)
-
-- Production subagent created `main/display_flush.h` / `.c` and changed `main/lvgl_display.c` and `main/app_cfg.h`.
-- Static Greps: `lvgl_port_add_disp(|lvgl_port_display_cfg_t` 0; `LVGL_DISPLAY_TRANS_SIZE|trans_size` 0; `display_flush_create(` 3 (`display_flush.h:20`, `display_flush.c:273`, `lvgl_display.c:376`); `lv_draw_sw_rotate|lv_draw_sw_rgb565_swap` 0; `MALLOC_CAP_DMA` in `display_flush.c` 1 (line 295). Pass.
-- Mapping check by the production subagent (host simulation of the port path with LVGL 9.6's rotate functions and `lvgl_port_rotate_area`, against the new strip loops; script kept outside the repo): 244 cases (full frame and 60 random rounded partial areas per rotation), physical framebuffer identical in every case, every strip window starts even and ends odd, every strip fits the staging buffer.
-- Plan correction: rows per strip at 280 px are 28 (15,680 B; 17 strips per full frame), not 29: the plan's own even-row rule. Fixed in the plan.
-- Discrepancies reported by the subagent and accepted as written: source stride from `lv_draw_buf_width_to_stride` (equal to `w` with `CONFIG_LV_DRAW_BUF_STRIDE_ALIGN=1`); `LV_EVENT_FLUSH_FINISH` now receives LVGL's logical area, not the port's rewritten physical one (the profiler uses only its timing); rotation read with `lv_display_get_rotation` at flush time; one creation log line, a `_Static_assert` on the staging size and error logs added; failure to add callbacks counts as creation failure. Edge case recorded: if a strip fails partway through `tx_color`, chunks already queued may still be on the bus when the next flush refills that buffer; only the dropped frame's area can show wrong pixels.
-- Build: pass (`idf.py reconfigure` needed for the new source file). DIRAM 137,195 B. The only warning involving the new files is LVGL 9.6's `LV_ASSERT_HANDLER_INCLUDE is deprecated`, emitted by `lvgl.h` for every file that includes it (left for ADR-003).
-
-## Step 1, Stage 3 - device checks (in progress)
+- New `main/display_flush.h` / `.c`; `main/lvgl_display.c` creates the display through it; `LVGL_DISPLAY_TRANS_SIZE` removed from `main/app_cfg.h`. No `lvgl_port_add_disp`, `lv_draw_sw_rotate` or `lv_draw_sw_rgb565_swap` left in `main/`.
+- Pixel mapping checked on the host (a simulation of the port path with LVGL 9.6's rotate functions and `lvgl_port_rotate_area`, against the new strip loops; script kept outside the repo): 244 cases (full frame and 60 random rounded partial areas per rotation), identical framebuffer in every case, every strip window starts even and ends odd and fits the staging buffer.
+- Rows per strip at 280 px: 28 (15,680 B; 17 strips per full frame), to keep the even-start rule.
+- Details worth knowing: the source stride comes from `lv_draw_buf_width_to_stride` (equal to `w` with `CONFIG_LV_DRAW_BUF_STRIDE_ALIGN=1`); `LV_EVENT_FLUSH_FINISH` gets LVGL's logical area, not a physical one (the profiler uses only its timing); rotation is read with `lv_display_get_rotation` at flush time; failure to add callbacks counts as creation failure. Edge case: if a strip fails partway through `tx_color`, chunks already queued may still be on the bus when the next flush refills that buffer; only the dropped frame's area can show wrong pixels.
+- Build: pass (`idf.py reconfigure` needed for the new source file). DIRAM 137,195 B. The only warning in the new files is LVGL 9.6's `LV_ASSERT_HANDLER_INCLUDE is deprecated`, which `lvgl.h` emits for every file (left for the IDF upgrade).
 
 ### Boot and memory (2026-11-05, Wi-Fi off, 330 s, rotation 180°)
 
 - `Display created: draw_buf=2x255360 B (PSRAM) staging=2x16384 B (internal DMA)`; `display_prof_cfg ... staging_bytes=16384 ... qspi_actual_max_transfer=4092 ... rotation=2`.
-- Heap (avg after 10 s): `free_int` 198,028; `largest_int` 118,784; `min_int` 194,111; `free_dma` 190,288; `largest_dma` 118,784 (≥ 64,000: pass); `free_spiram` 5,875,115 (+260,115 B against 5,615,000: pass).
-- Failure markers: 1 `rst:` (port open), 1 allowed BNO085 abort; all others 0, including `alloc_failed:`. No `display_prof` gap while the screen was active; the one gap (73.7 s → 311.8 s) matches `Entering idle mode` / `Exiting idle mode` exactly.
-- Speed at 180° from this capture (windows with ≥ 10 flushes, 81 windows): frames 17.3/s, render 42.4 ms, flush callback 19.2 ms (was 30.4 ms).
-- Stack report: `sys_evt` 1,804 B free; the `taskLVGL` line was lost by the USB console after the idle period; taken from the next capture.
+- Heap (average after 10 s): `free_int` 198,028; `largest_int` 118,784; `min_int` 194,111; `free_dma` 190,288; `largest_dma` 118,784; `free_spiram` 5,875,115 (+260,115 B).
+- Failure markers: 1 `rst:` (port open), 1 BNO085 first-boot abort (known); nothing else, no `alloc_failed:`. The one gap in `display_prof` lines matches `Entering idle mode` / `Exiting idle mode` exactly.
+- Speed at 180° (81 windows with ≥ 10 flushes): 17.3 frames/s, render 42.4 ms, flush callback 19.2 ms (was 30.4 ms).
 
-### Picture and speed (2026-11-05, owner on the device, Wi-Fi off)
+### Picture and speed (2026-11-05, owner at the device, Wi-Fi off)
 
-Capture from uptime 330 s (same boot as the boot/memory check, no reset). Rotation changes in the log: 2 → 0 (532 s) → 1 (550 s) → 2 (702 s). No change to rotation 3 (270°) appears in this boot. The owner used the countdown timer to keep the screen awake and redrawing during the speed windows.
+Same boot, from uptime 330 s; rotation changes in the log: 2 → 0 (532 s) → 1 (550 s) → 2 (702 s). The owner kept the screen awake with the countdown timer.
 
-- Owner verdict: "All good now, no visible change to the ADR-001" (picture correct, no artefacts, tearing unchanged).
-- Speed (windows with ≥ 10 flushes):
+- Owner: "All good now, no visible change" against the previous firmware (picture correct, no artefacts, tearing unchanged).
 
-| Rotation | Windows | Frames/s | Render | Flush callback | ADR-001 flush |
+| Rotation | Windows | Frames/s | Render | Flush callback | Flush before |
 |---|---:|---:|---:|---:|---:|
 | 0° | 13 | 17.0 | 45,195 µs | 21,282 µs | not measured |
 | 90° | 151 | 20.2 | 38,157 µs | 16,226 µs | 43.0 ms |
 | 180° | 270 | 19.0 | 41,618 µs | 17,812 µs | 30.4 ms |
 
-  Flush at 180° ≤ 30.4 ms: pass. Flush at 90° ≤ 43.0 ms: pass.
-- Heap: `free_int` 198,068; `largest_dma` 118,784; `free_spiram` 5,874,798. Failure markers: all 0. Stack report: `taskLVGL` 8,136 B free; `sys_evt` 1,788 B free.
-- Open: 270° not exercised on the device in this capture; the host simulation covered it (identical output).
+- Heap: `free_int` 198,068; `largest_dma` 118,784; `free_spiram` 5,874,798. Failure markers: none. Stacks: `taskLVGL` 8,136 B free; `sys_evt` 1,788 B free.
 
-### 270° check (2026-11-05)
+### 270° (2026-11-05)
 
 - The owner set 270° and then 0° and reports both correct ("It is done already, 270 deg and 0 deg").
-- The 270° selection happened between two captures (uptime 971 s to 1,119 s) and is not in a log. The capture that followed starts with the device at a rotation other than the last logged 180°: flush callback 15.7 ms, 21.7 frames/s over 121 windows (logged 180° earlier: 17.8 ms, 19.0 frames/s), most likely 270°; then `Rotation updated to 1` and `to 0` two seconds apart; 0°: 181 windows, 19.9 frames/s, flush 18.3 ms.
-- Failure markers: all 0.
+- The 270° selection fell between two captures (uptime 971-1,119 s) and is not in a log. The next capture starts at a rotation other than the last logged 180°: flush 15.7 ms, 21.7 frames/s over 121 windows, most likely 270°; then `Rotation updated to 1` and `to 0` two seconds apart; 0°: 181 windows, 19.9 frames/s, flush 18.3 ms. Failure markers: none.
 
-Result for Stage 3: pass. The picture at all four rotations is confirmed by the owner; the 270° speed reading is attributed by elimination, not by a log line.
+### Stability runs (2026-11-05 to 2026-11-06)
 
-## Step 1, Stage 4 - soak (in progress)
+- 35 minutes on the step 1 build (23:39-00:15, stopped at the owner's request to continue on the remote-control build, which carries step 1 unchanged): uptime 0-2,115 s, markers only the port-open reset and the BNO085 abort; `free_int` 198,085 average, min 195,411; `largest_dma` 118,784 throughout; `taskLVGL` 9,912 B and `sys_evt` 1,452 B free in all 7 stack reports; 10 idle/Wi-Fi transitions.
+- Unattended `state_change` runs (Wi-Fi on and save, every tile, three idle/wake cycles, rotation 1 and 2 with save, Wi-Fi off/on; logs in `build/rc_logs/`): PASS on 2026-11-06 at 01:23, 09:41 and 12:23 (the last on the final build with the idle-entry fix). `rotation_sweep` (rotations 0-3, 120 s each, display active): PASS.
+- More than 600 idle/wake cycles with display flushes on the final build: `largest_dma` 114,688 B in every reading; no `alloc_failed:`.
+- Owner, 2026-11-06: no overnight soak; step 1 closes on these runs.
+- Found on the way: the LVGL freeze (a display strip transfer that never completed while idle entry stopped Wi-Fi and changed the clock). The cause was in the low-power code, not the step 1 flush; fixed in `d8d78bf`. A rarer stall in the same SPI wait remains; see "Known issue in the flush path" in the README.
 
-- Overnight run started 2026-11-05 about 23:45 NZDT on the step 1 verification build (`320bb15` code, profiling and trace facility on), Wi-Fi on, unattended, 9 h capture.
-- State-change run: not run by hand. Proposed to run it unattended with the ADR-004 remote-control runner (`scenario state_change`) once ADR-004 is built; the Settings switch for remote control gives an A/B check if the run fails. Pending the owner's approval of ADR-004.
-- Overnight run on the step 1-only build stopped after 35 minutes (23:39 to 00:15) at the owner's request: the owner asked to run the overnight on the ADR-004 firmware instead, which contains step 1 unchanged. The 35 minutes: device uptime 0 to 2,115 s, failure markers only the port-open reset and the allowed BNO085 abort; heap steady (`free_int` 198,085 avg, min 195,411; `largest_dma` 118,784 throughout; `free_spiram` 5,875,116); `taskLVGL` 9,912 B free and `sys_evt` 1,452 B free in all 7 stack-report rounds; 10 idle/Wi-Fi transitions.
-- The step 1 overnight and state-change runs continue on the ADR-004 build (owner decision 2026-11-06); a failure there is separated by switching remote control off.
-
-## Step 1, Stage 4 - result and status (2026-11-06)
-
-- Owner, 2026-11-06: no further soak unless absolutely necessary; the overnight run is not needed. Step 1 closed on the runs below, all on builds that contain step 1 unchanged (ADR-004 branch; evidence in `../ADR-004-remote_control/progress.md`).
-- `scenario state_change` PASS on the fixed ADR-004 build (01:23), the profiling build (09:41) and the final build with the idle-entry fix (12:23); `scenario rotation_sweep` PASS (rotations 0-3, 120 s each, display active).
-- More than 600 idle/wake cycles with display flushes on the final build: `largest_dma` 114,688 B in every reading (floor 80,000); no `alloc_failed:`.
-- The LVGL freeze found on the way (display strip transfer never completed while idle entry stopped Wi-Fi and changed the clock) was in the low-power code, not in the step 1 flush; fixed in `d8d78bf`. A residual stall (1 in about 630 idle cycles, same SPI wait) is open and tracked in the ADR-004 progress log; the LVGL watchdog recovers it in about 9 s.
-- Status: step 1 Built.
+Step 1: **Built 2026-11-06.**

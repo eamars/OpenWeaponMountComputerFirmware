@@ -1,4 +1,4 @@
-"""Host runner for the serial remote control (ADR-004).
+"""Host runner for the serial remote control.
 
 Drives the device over its USB Serial/JTAG console, records the whole session to a log
 file, counts failure markers and prints a verdict.
@@ -367,7 +367,7 @@ def wait_for_ip_address(session: Session, start_index: int, accept_connected: bo
 
 
 def scenario_state_change(session: Session):
-    """ADR-001 Stage 5 routine: Wi-Fi on and save, tile tour, idle/wake, rotation, Wi-Fi off/on."""
+    """State-change routine: Wi-Fi on and save, tile tour, idle/wake, rotation, Wi-Fi off/on."""
     session.stats()
 
     start_index = len(session.lines)
@@ -518,7 +518,7 @@ def parse_args(argv):
     options.add_argument("--log-dir", type=pathlib.Path, default=DEFAULT_LOG_DIR,
                          help="directory for session logs (default build/rc_logs)")
 
-    parser = argparse.ArgumentParser(description="Serial remote control runner (ADR-004)")
+    parser = argparse.ArgumentParser(description="Serial remote control runner")
     commands = parser.add_subparsers(dest="action", required=True)
     send_parser = commands.add_parser("send", parents=[options],
                                       help="send one command line and print the reply")

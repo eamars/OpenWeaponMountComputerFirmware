@@ -1,69 +1,76 @@
-# adr-002: display pipeline performance, one change at a time
+# ADR-002: display pipeline performance, one change at a time
 
-## Summary
+Status: **Open.** Step 1 Built (2026-11-06). Step 2 next, step 3 last; both are proposals until the owner approves them.
 
-- Goal: raise the display frame rate by spending the internal SRAM freed in ADR-001 on the display driver, adding one performance change at a time.
-- Plan class: medium (per step)
-- Status: draft (2026-11-05). Not executable. Each step becomes its own executable plan section, approved by the owner, only after the step before it is Built.
-- Mandatory skills: `esp32-debug`, `development-plan`
-- Overall cutover strategy: one step at a time. A step that fails its device gate is reverted before the next step starts.
-- Highest-risk areas: replacing the `esp_lvgl_port` flush path; tearing; runtime instability that appears only under Wi-Fi load.
-- Acceptance criteria: defined per step when the step is finalized.
+## What we want
 
-## Owner's direction (2026-11-05)
+A faster, smooth display, paid for with the internal SRAM that moving memory to PSRAM freed. Each change is added alone and proven on the device before the next one starts, because display performance changes have caused runtime instability before.
 
-1. Performance changes are risky (unpredictable runtime instability). Add them one at a time, each proven on the device before the next.
-2. Tearing was diagonal ("everything morphed 45°"). What is in the code around tearing is deliberate: the digital level view's full-screen redraw and `full_refresh = false`.
+## Owner's direction
+
+1. Performance changes are risky. One at a time, each proven on the device before the next.
+2. Tearing was diagonal ("everything morphed 45°"). The code around tearing is deliberate: the digital level view redraws the full screen, and `full_refresh = false`. Don't change it to chase speed.
 3. Redrawing only the changed part of the digital level view comes last.
+4. QSPI transfers stay at 4091 B (`LCD_QSPI_MAX_TRANSFER_SIZE`, one 4,092-byte DMA descriptor). It is intentional, for DMA headroom.
+5. No long soak runs unless a specific failure needs one.
 
-## Context
+## How the display works today
 
-Measured on COM11, 2026-11-05 (branch `spiram_optimization` at `c6f2c63`, QSPI 4096 → actual 8,184 B, Wi-Fi off): 17 frames/s, every frame full-screen (127,680 px). Per frame, about 24 ms is LVGL drawing into the PSRAM draw buffer and about 25 ms is the flush callback. LVGL waits only about 7 µs for the previous flush, so the frame is serial: draw, then flush.
+- Panel: SH8601 AMOLED, 280 × 456, QSPI at 40 MHz on SPI2 (the only device on that bus). The driver has no hardware rotation, so 90°, 180° and 270° are done in software.
+- LVGL 9.6 renders into two full-frame RGB565 draw buffers in PSRAM (partial render mode).
+- The project owns the flush (`main/display_flush.c`, since step 1): each frame is rotated and byte-swapped strip by strip from PSRAM into one of two internal DMA staging buffers (2 × 16,384 B, 28 rows per strip at 280 px, so 17 strips per full frame) and sent with `esp_lcd_panel_draw_bitmap`. The next strip is prepared while the previous one is on the bus.
+- A full frame is 255,360 B; bus time alone is about 12.8 ms.
+- The panel's tearing-effect output is switched on in the init sequence (`0x35` TEON, parameter `0x00`, V-blank only, `main/bsp.c`) and wired to GPIO18 (`LCD_TE_OUT` in `main/app_cfg.h`). The firmware does not read it yet.
 
-The flush callback (`esp_lvgl_port` 2.7.1, `lvgl_port_flush_callback`) does, for rotation 180°:
+Facts the flush relies on, worth knowing before touching it:
 
-1. `lv_draw_sw_rotate` of the whole frame, PSRAM draw buffer → PSRAM rotation buffer (`draw_buffs[2]`, 255,360 B).
-2. `esp_lcd_panel_draw_bitmap`, which queues SPI transactions of up to the bus max transaction length. For each transaction the SPI master allocates an internal DMA buffer and copies the chunk from PSRAM into it (`spi_master.c`, `setup_priv_desc`), with up to 10 queued.
+- The SH8601 needs every window to start on an even row and end on an odd row; strips keep that.
+- ESP-IDF's SPI panel IO waits for all in-flight transfers before sending the next window command, so a staging buffer is free again once the following `draw_bitmap` call has returned.
+- The flush-done callback runs in the SPI interrupt. It counts strips and calls `lv_display_flush_ready` after the last one; it must not block, allocate or log.
 
-Bus time alone is about 12.8 ms per frame (255,360 B at 40 MHz × 4 lines). The rest of the flush is the two full-frame copies and per-chunk allocation. An earlier trial raised the transaction size from 4,092 to 8,184 B: flush time fell from 30.3 to 25.3 ms and the frame rate did not change (`references/display-refresh-rate-rca.md`).
+## Step 1: fixed internal staging buffers (Built 2026-11-06)
 
-Starting point after ADR-001 (Built 2026-11-05, QSPI 4,092-byte transfers, LVGL 9.6): rotation 180° about 16 frames/s with a 30.4 ms flush callback; rotation 90° 12.9 frames/s with a 43.0 ms flush callback (owner: "horizontal screen is laggier than vertical"). The 90° software rotation reads the PSRAM frame column by column. With 8,184-byte transfers the 180° rate was 19.4 frames/s (flush 24.1 ms); the owner kept 4,092 for DMA headroom (largest DMA-capable block 114.7 KB). Step 1 is measured against both rotations.
+Why: before this step, every frame went through three full passes over PSRAM (rotate into a 255 KB rotation buffer, byte-swap it in place, then the SPI driver copied each 4 KB chunk into a freshly allocated internal DMA buffer). At 90° the rotation read PSRAM column by column, which made landscape the slowest.
 
-Hardware notes: SH8601 supports neither hardware `swap_xy` nor `mirror_y` in this driver (`esp_lcd_sh8601.c`), so 90°/180°/270° stay in software. The panel's tearing-effect output is enabled by init command `0x35`; `LCD_TE_OUT` (GPIO18) is defined in `main/app_cfg.h` and not read by the firmware.
+What was built: `main/display_flush.c` creates the LVGL display itself, in place of `esp_lvgl_port`'s `lvgl_port_add_disp` (the port still provides the LVGL task, lock, touch and stop/resume). One PSRAM read pass per frame, written rotated and swapped straight into the staging buffers; no per-transfer allocation; the rotation buffer is gone (+260 KB PSRAM). The pixel mapping is the same as the port's, checked by a host simulation over 244 cases.
 
-## Steps, in order
+Measured (flush callback average, frames per second):
 
-Each step lists what it changes, why, and the gate it must pass. Thresholds are fixed when the step is finalized from the numbers ADR-001 leaves behind.
+| Rotation | Before | After |
+|---|---|---|
+| 0° | not measured | 21.3 ms, 17.0 fps |
+| 90° | 43.0 ms, 12.9 fps | 16.2 ms, 20.2 fps |
+| 180° | 30.4 ms, about 16 fps | 17.8 ms, 19.0 fps |
+| 270° | not measured | about 15.7 ms, 21.7 fps (rotation attributed by elimination) |
 
-### Step 1: fixed internal staging buffers, rotate straight into DMA memory
+The owner checked the picture at all four rotations: correct, tearing unchanged. Memory: the largest internal DMA-capable block stayed at 114,688-118,784 B in every run. Evidence and run details: [progress.md](progress.md).
 
-Executable plan: [step1_staging_flush.md](step1_staging_flush.md) (approved 2026-11-05, **Built 2026-11-06**). It supersedes the sketch below where they differ: the project creates the LVGL display itself, and the 90°/270° rotation reads PSRAM row by row.
+## Step 2: start each frame on the panel's tearing-effect pulse (proposal)
 
-- Change: the project owns the flush. Two DMA-capable internal staging buffers, allocated once at display init (size fixed at finalization; 2 × 16 KB is the starting point). For each strip of the output frame, rotate from the PSRAM draw buffer directly into a free staging buffer and send it with `esp_lcd_panel_draw_bitmap`; rotate the next strip while the previous one is on the bus. Signal LVGL `lv_display_flush_ready` when the last strip completes. The full-frame rotation buffer is no longer allocated.
-- Why: one copy per frame instead of two; no per-transaction allocation by the SPI master (staging buffers are DMA-capable and aligned), so display DMA memory is fixed and does not fragment the heap or compete with Wi-Fi; 255,360 B of PSRAM freed; rotation overlaps the bus.
-- Tearing: the panel still receives one continuous frame in the same row order as today, so tearing behaviour is expected to be unchanged. This is checked on the device, not assumed.
-- Gate: device run with Wi-Fi connected, no failure markers, flush time and frame rate recorded, owner's visual check of tearing at all four rotations.
+Why: the write order relative to the panel's scan is random today, which is what makes tearing possible. Starting each frame's transfer on the TE pulse makes it deterministic. That is the precondition for step 3 (partial redraw without tearing).
 
-### Step 2: tearing-effect sync on GPIO18
+What we know: the hardware path is checked on the schematic (`OpenWeaponMountComputer/pcb/owmc.kicad_sch` at `dce2f25`): module pin 27 `TE (OUT)` → connector J1 pin 27, net `AMOLED_TE_OUT` → ESP32-S3 GPIO18, nothing else on the net. Not yet known: whether TE actually pulses on GPIO18, at what rate, and how long one frame write takes against one panel refresh.
 
-Hardware check (2026-11-05, schematic `OpenWeaponMountComputer/pcb/owmc.kicad_sch` at `dce2f25`, netlist exported with kicad-cli 10.0; module datasheet `pcb/datasheet/DO0164FMST02_05.pdf`): the AMOLED module's pin 27 is `TE (OUT)`, "Tearing Effect", an output of the driver IC. On the board it reaches connector J1 (Panasonic AXE530127) pin 27, net `AMOLED_TE_OUT`, wired directly to ESP32-S3R8 U1 pin 24, GPIO18, with no other parts on the net. Pin orientation is consistent (module pins 23 VCI_IN, 25 VDDIO and 29 VBAT land on J1 pins carrying +3V3; pin 28 is GND on both). The firmware sends `TEON` (`0x35`, parameter `0x00`, V-blank only) in the SH8601 init (`main/bsp.c`), so the panel should already be pulsing GPIO18. The `esp_lcd_sh8601` driver has no TE support; with step 1 the project owns the flush, so step 2 can wait for the TE edge itself. Not yet verified: that TE pulses actually appear on GPIO18 (first task of step 2, by counting edges on the device).
+Approach:
 
-- Change: start each frame's transfer on the panel's TE pulse.
-- Why: makes the write order relative to the panel scan deterministic, which is the precondition for any partial update without tearing.
-- Gate: owner's visual check at all rotations; frame rate recorded.
+1. Measure first, change nothing visible: count GPIO18 edges and time them; report the TE rate next to the frame rate. If there are no pulses, stop and look at the init sequence before anything else.
+2. Then sync: in the flush, wait for the next TE edge before sending the first strip of a frame. The wait has a timeout of a couple of TE periods and is counted when it expires, so a missing pulse (for example with the panel off) can never hang the display.
+3. Judge on the device: the owner's eye at all four rotations, the frame rate (waiting for TE may cost up to one panel refresh per frame), and the usual idle/wake and state-change runs for stability.
 
-### Step 3: partial redraw of the digital level view (last)
+## Step 3: partial redraw of the digital level view (last)
 
-- Change: invalidate only the regions that change instead of the whole level object.
-- Why: removes most of the 24 ms draw and most bus time per frame; this is the largest expected gain.
-- Precondition: Step 2 is Built and tearing is fixed by sync, not by full redraws.
-- Gate: owner's visual check for the diagonal tear; frame rate and invalidated pixels per frame recorded.
+Why: drawing is about 24 ms of each frame (render about 42 ms at 180°, of which about 18 ms is the flush), and nearly all of it redraws pixels that did not change. Invalidating only the changed regions is the largest expected gain.
 
-## Deferred
+Only after step 2 is Built and tearing is handled by the TE sync rather than by full redraws. Judged by the owner's eye for the diagonal tear, plus the frame rate and invalidated pixels per frame.
 
-- QSPI clock above 40 MHz, larger QSPI transactions, internal LVGL draw buffers, LVGL draw-unit count. Reconsider only with a measurement after Step 1 that shows the bus or the copy is the remaining limit.
+## Known issue in the flush path
 
-## Open questions (draft only)
+A display strip transfer occasionally never completes: the LVGL task then waits forever in `spi_device_acquire_bus` (from `display_flush_cb`) with the LVGL lock held, and the LVGL watchdog reboots the unit after 5 s (about 9 s until the UI is back).
 
-- Step 1 staging buffer size and strip height: fixed from ADR-001's largest free DMA block with Wi-Fi connected.
-- Step 1 ownership: a project flush callback replaces `esp_lvgl_port`'s flush for this display only, without patching the managed component. The exact interface (where the panel IO "color transfer done" callback is registered) is settled when Step 1 is finalized.
+- One cause was found and fixed on 2026-11-06 (`d8d78bf`): idle entry ran inside an LVGL timer pass, so a frame was still being flushed while Wi-Fi stopped and the clock config changed. Idle entry and wake now run in the low power task after LVGL has stopped and the panel has drained.
+- A rarer stall remains: 1 in about 630 idle/wake cycles on the fixed code, seen 0.4 s after a wake during the Wi-Fi scan, mid-frame. The clock change cannot explain that one (it ran with the panel drained). Cause unknown.
+- Next evidence: a core dump copied straight from flash (`read_flash 0x12000 0x20000` before anything else; reading it with `coredump-info` resets the unit, and the next boot's BNO085 abort overwrites it). The SPI driver state in it tells a transfer the hardware never finished (`cur_cs` set) from a completion the driver lost (`cur_cs` none with requests queued).
+
+## Ideas set aside
+
+QSPI clock above 40 MHz, larger QSPI transfers, internal LVGL draw buffers, more LVGL draw units. Worth revisiting only if a measurement shows the bus or the copy is the remaining limit.

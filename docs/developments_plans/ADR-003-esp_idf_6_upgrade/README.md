@@ -1,38 +1,45 @@
-# adr-003: move to the latest ESP-IDF release and drop esp_tinyusb
+# ADR-003: move to the latest ESP-IDF release and drop esp_tinyusb
 
-Status: **Draft 2026-11-05.** Starts only after ADR-002 is Built, all steps (owner 2026-11-06: no ADR-003 work, trial included, while ADR-002 is open). Not executable yet: the executable plan is written then, from a build-first trial on a throwaway branch.
+Status: **Draft.** Starts only after ADR-002 is Built, all steps. No ADR-003 work meanwhile, a build-only trial included (owner, 2026-11-06).
 
-## Owner's direction (2026-11-05)
+## What we want
 
-1. Skip ESP-IDF v5.5.6 and go straight to the latest stable release (v6.1 on 2026-11-05) to avoid a second migration.
-2. Remove `esp_tinyusb` (USB is not initialised: `usb_init()` is commented out in `app_main`).
-3. Do this after ADR-002, not mixed with it (2026-11-06: after all of ADR-002, not only step 1).
+One migration straight to the latest stable ESP-IDF (v6.1 as of 2026-11-05), so the firmware does not go through a second one, and the unused `esp_tinyusb` gone.
 
-## Context (checked 2026-11-05)
+## Owner's direction
 
-Current: ESP-IDF v5.5.2. Releases available: v5.5.6 (latest on the 5.5 line), v6.0.3, v6.1 (latest stable; v6.1 tags `v6.1-beta1`, `v6.1-rc1`, `v6.1`).
+1. Skip v5.5.6; go straight to the latest stable release.
+2. Remove `esp_tinyusb`: USB is not initialised (`usb_init()` is commented out in `app_main`).
+3. Do it after ADR-002, not mixed with it.
 
-Managed components against the registry on 2026-11-05:
+## What we know (checked 2026-11-05 unless dated)
+
+Current: ESP-IDF v5.5.2. Releases then available: v5.5.6, v6.0.3, v6.1.
+
+Managed components against the registry:
 
 | Component | Locked | Latest | Note |
 |---|---|---|---|
-| `espressif/esp_lvgl_port` | 2.7.2 | 2.9.0 | Manifest pins `~2.7.1`; after ADR-002 step 1 only the task, lock, touch and stop/resume are used. |
-| `espressif/esp_tinyusb` | 2.4.0 | 3.0.0 | To be removed (owner item 2), with `main/usb.c` and the `CONFIG_TINYUSB` line that Kconfig reports as unknown. |
-| `espressif/json_parser` (+ `jsmn`) | 1.0.3 (1.1.0) | 2.0.0 (1.2.0) | Major; used by `main/ota_mode.c` and `main/opentrickler_remote_controller_view.c`. |
+| `espressif/esp_lvgl_port` | 2.7.2 | 2.9.0 | Manifest pins `~2.7.1`; only the task, lock, touch and stop/resume are used now (the project owns the display). |
+| `espressif/esp_tinyusb` | 2.4.0 | 3.0.0 | To be removed, with `main/usb.c` and the `CONFIG_TINYUSB` line Kconfig reports as unknown. |
+| `espressif/json_parser` (+ `jsmn`) | 1.0.3 (1.1.0) | 2.0.0 (1.2.0) | Major version; used by `main/ota_mode.c` and `main/opentrickler_remote_controller_view.c`. |
 | `espressif/cmake_utilities` | 0.5.3 | 1.3.0 | Transitive. |
 | `lvgl/lvgl`, `espressif/mdns`, `espressif/esp_lcd_sh8601`, `espressif/esp_lcd_touch`, `espressif/tinyusb` | current | same | Nothing to do. |
 
-Known v6.x migration items for this codebase (from the v6.1 tree and the v6.0 migration guide):
+Known v6.x changes that hit this code:
 
-- `wifi_provisioning` is removed from ESP-IDF; it is now the managed component `espressif/network_provisioning` with renamed APIs. Affects `main/wifi.c`, `main/wifi_config.c`, `main/CMakeLists.txt`, `main/idf_component.yml`. SoftAP provisioning is part of normal use and must be verified on the device.
-- The legacy `driver` component is deprecated and no longer re-exports the `esp_driver_*` components; `main/CMakeLists.txt` lists `driver` and must list the drivers it uses instead.
-- Public driver headers no longer include FreeRTOS headers; files relying on that must include them.
-- No blocker found in I2C: `components/XPowersLib` already uses the new driver (`CONFIG_XPOWERS_ESP_IDF_NEW_API=y`) and `main/` includes no legacy driver header. The legacy `driver/i2c.h` still exists in v6.1.
-- mbedTLS memory options used by ADR-001 (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`, `CONFIG_MBEDTLS_DYNAMIC_BUFFER`) still exist in v6.1.
-- Not yet checked: every managed component's declared IDF range, `sdkconfig.defaults.esp32s3` option renames (the file is a full v5.5 dump), the OTA image format and partition compatibility for units in the field, and the core dump and heap behaviour ADR-001 relies on.
+- `wifi_provisioning` left ESP-IDF; it is now the managed component `espressif/network_provisioning`, with renamed APIs. Touches `main/wifi.c`, `main/wifi_config.c`, `main/CMakeLists.txt`, `main/idf_component.yml`. SoftAP provisioning is part of normal use.
+- The legacy `driver` component no longer re-exports the `esp_driver_*` components; `main/CMakeLists.txt` must list the drivers it uses.
+- Public driver headers no longer pull in FreeRTOS headers; files that relied on that must include them.
+- I2C is not a blocker: `components/XPowersLib` already uses the new driver (`CONFIG_XPOWERS_ESP_IDF_NEW_API=y`), and `main/` includes no legacy driver header.
+- The mbedTLS external-memory options the firmware uses (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`, `CONFIG_MBEDTLS_DYNAMIC_BUFFER`) still exist in v6.1.
+- `components/esp_driver_usb_serial_jtag` is a patched copy of the v5.5.2 component (the connection monitor never refilled its missed-SOF tolerance and dropped console output; 2026-11-06). On v6.1 either re-apply the patch to the new copy or drop it if upstream fixed it. Its README says how.
+- LVGL 9.6 warns `LV_ASSERT_HANDLER_INCLUDE is deprecated` in every file; clean up with the upgrade.
 
-## Plan outline (to be made executable after ADR-002 is Built)
+Not yet checked: every managed component's declared IDF range; option renames in `sdkconfig.defaults.esp32s3` (a full v5.5 dump); the OTA image format and partition compatibility for units in the field; the core dump, heap and task-watchdog behaviour the firmware relies on (core dump to flash at `0x12000`, failed-allocation log, LVGL lock-up watchdog).
 
-1. Throwaway trial branch: install v6.1 beside v5.5.2, build, list every error and Kconfig warning. No device time.
-2. Write the executable plan from that list: dependency changes, provisioning migration, config renames, removal of `esp_tinyusb`.
-3. Execute with the ADR-001 safety net in place; verify on the device including SoftAP provisioning, Wi-Fi, OTA polling, every tile, rotations, and an overnight run.
+## Approach
+
+1. Install v6.1 beside v5.5.2 and build the firmware on a throwaway branch in its own worktree (its own `managed_components/`, so the working tree is untouched). List every error and Kconfig warning. No device time.
+2. From that list, write down what changes: dependencies, provisioning migration, config renames, the `esp_tinyusb` removal, the USB Serial/JTAG patch. The owner approves it.
+3. Make the change and check it on the device: boot and crash reporting, SoftAP provisioning, Wi-Fi, OTA polling, every tile, all four rotations, idle/wake and the `state_change` run. A long run only if a specific risk needs one.

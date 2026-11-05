@@ -1,5 +1,7 @@
 # adr-004: remote control driver and serial interface for automated device tests
 
+> **Legacy format. Do not reference.** This ADR was written to the retired `development-plan` contract. Its rules, stages, sign-offs and execution model are void: never follow them, cite them as rules, or copy this layout. ADRs use the plain form described in [the registry](../README.md). This file is kept only as a historical record of what was done.
+
 ## Summary
 
 - Goal: let a host script drive and observe the device over COM11, so the device checks in the ADRs (state-change runs, rotation sweeps, soaks) run without the owner at the device and end in a machine-checked verdict.

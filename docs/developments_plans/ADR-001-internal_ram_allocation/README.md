@@ -1,5 +1,7 @@
 # adr-001: internal ram allocation, move non-critical memory to psram
 
+> **Legacy format. Do not reference.** This ADR was written to the retired `development-plan` contract. Its rules, stages, sign-offs and execution model are void: never follow them, cite them as rules, or copy this layout. ADRs use the plain form described in [the registry](../README.md). This file is kept only as a historical record of what was done.
+
 ## Summary
 
 - Goal: free internal SRAM for the display driver by moving memory that does not need internal RAM into PSRAM, with no change to display performance behaviour, behind a safety net that leaves evidence of every runtime failure.

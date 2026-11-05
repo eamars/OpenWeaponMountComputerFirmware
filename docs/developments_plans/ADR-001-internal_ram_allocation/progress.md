@@ -1,5 +1,7 @@
 # ADR-001 progress
 
+> **Legacy format. Do not reference.** This ADR was written to the retired `development-plan` contract. Its rules, stages, sign-offs and execution model are void: never follow them, cite them as rules, or copy this layout. ADRs use the plain form described in [the registry](../README.md). This file is kept only as a historical record of what was done.
+
 Execution record for [ADR-001](README.md). Times are NZDT.
 
 ## Stage 1 - focused contract (2026-11-05)

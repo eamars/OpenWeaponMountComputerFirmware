@@ -9,7 +9,8 @@ and master as of 2026-11-06) refills it only on a disconnected-to-connected tran
 delayed FreeRTOS ticks every later delayed tick marks the port disconnected for one tick.
 `usb_serial_jtag_write()` returns -1 for a write made in that tick and newlib drops the rest of the
 `printf`: console lines and remote-control replies vanish with the host attached.
-Evidence: `docs/developments_plans/ADR-004-remote_control/progress.md`.
+Measured 2026-11-06: about 10 lost lines and replies in the first 5 minutes of a `state_change`
+run before the patch; none in 3,595 once-a-second lines over 1 h, or in 23 of 23 `stats` replies, after it.
 
 When upgrading ESP-IDF (ADR-003): if the new release refills the tolerance while connected, delete this
 directory; otherwise copy the new release's component here again and reapply the change.
