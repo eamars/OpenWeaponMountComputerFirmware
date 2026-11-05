@@ -54,17 +54,31 @@ void wifi_config_update_status(const char * state_str) {
 }
 
 
-static void toggle_enable_wifi(lv_event_t *e) {
-    lv_obj_t * sw = lv_event_get_target_obj(e);
-    bool * state = lv_event_get_user_data(e);
-    *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
+void wifi_config_set_enable(bool enable) {
+    wifi_user_config.wifi_enable = enable;
 
-    if (*state) {
+    if (wifi_user_config.wifi_enable) {
         esp_wifi_start();
     }
     else {
         esp_wifi_stop();
     }
+
+    // Keep the switch in step when the change does not come from the switch itself
+    if (wifi_enable_switch) {
+        if (enable) {
+            lv_obj_add_state(wifi_enable_switch, LV_STATE_CHECKED);
+        }
+        else {
+            lv_obj_remove_state(wifi_enable_switch, LV_STATE_CHECKED);
+        }
+    }
+}
+
+
+static void toggle_enable_wifi(lv_event_t *e) {
+    lv_obj_t * sw = lv_event_get_target_obj(e);
+    wifi_config_set_enable(lv_obj_has_state(sw, LV_STATE_CHECKED));
 }
 
 

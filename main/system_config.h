@@ -28,6 +28,11 @@ typedef struct {
 esp_err_t load_system_config();
 esp_err_t save_system_config();
 
+/**
+ * @brief Rotate the display as the Screen Rotation dropdown does, and update the dropdown. Call with the LVGL lock held.
+ */
+void system_config_set_rotation(lv_display_rotation_t rotation);
+
 lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page);
 
 #endif  // SYSTEM_CONFIG_H_

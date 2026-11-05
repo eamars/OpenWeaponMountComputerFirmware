@@ -21,6 +21,12 @@ void prevent_sleep_mode_enter(bool prevent);
 
 void wake_from_idle_mode();
 
+/**
+ * @brief Enter idle mode the way the inactivity timeout does. Does nothing when already idle.
+ * @note Creates an LVGL timer: call with the LVGL lock held, or from the low power monitor task as before.
+ */
+void low_power_mode_request_idle();
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

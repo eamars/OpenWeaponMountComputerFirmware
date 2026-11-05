@@ -266,6 +266,21 @@ void enter_sleep_mode() {
 }
 
 
+void low_power_mode_request_idle() {
+    // Already idle: entering again would stop Wi-Fi and LVGL a second time
+    if (is_idle_mode_activated()) {
+        return;
+    }
+
+    // Set flag
+    xEventGroupSetBits(low_power_control_event, IN_IDLE_MODE);
+    last_idle_tick = xTaskGetTickCount();
+
+    // Move to idle mode
+    lv_timer_create(delayed_enter_idle_mode, 1, NULL);  // Use timer to delay the actual entering of idle mode to allow the current flow to complete, e.g. allowing the system to process the current touch event and update the UI accordingly before dimming the screen.
+}
+
+
 void low_power_monitor_task(void *p) {
     TickType_t last_poll_tick = xTaskGetTickCount();
 
@@ -322,13 +337,7 @@ void low_power_monitor_task(void *p) {
             // Have stayed in active long enough
             if (active_duration_ms > idle_timeout_ms) {
                 ESP_LOGI(TAG, "Entering idle mode due to inactivity");
-
-                // Set flag
-                xEventGroupSetBits(low_power_control_event, IN_IDLE_MODE);
-                last_idle_tick = current_tick;
-
-                // Move to idle mode
-                lv_timer_create(delayed_enter_idle_mode, 1, NULL);  // Use timer to delay the actual entering of idle mode to allow the current flow to complete, e.g. allowing the system to process the current touch event and update the UI accordingly before dimming the screen.
+                low_power_mode_request_idle();
             }
         }
 

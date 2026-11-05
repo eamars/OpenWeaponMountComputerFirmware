@@ -12,4 +12,9 @@ void wifi_config_disable_provision_interface(wireless_state_e reason);
 void wifi_config_update_status(const char * state_str);
 void wifi_config_disable_enable_interface();
 
+/**
+ * @brief Turn Wi-Fi on or off as the Enable WiFi switch does, and update the switch. Call with the LVGL lock held.
+ */
+void wifi_config_set_enable(bool enable);
+
 #endif  // WIFI_CONFIG_H_

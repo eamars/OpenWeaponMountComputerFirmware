@@ -38,6 +38,8 @@
 #include "low_power_mode.h"
 #include "mem_diag.h"
 #include "crash_report.h"
+#include "remote_control.h"
+#include "rc_serial.h"
 
 #define TAG "App"
 
@@ -45,6 +47,7 @@
 bno085_ctx_t * bno085_dev;
 axp2101_ctx_t * axp2101_dev;
 extern system_config_t system_config;
+extern remote_control_config_t remote_control_config;
 extern sensor_config_t sensor_config;
 extern uint32_t wakeup_cause;
 
@@ -142,6 +145,9 @@ void app_main(void)
     // Configure global log level
     esp_log_level_set("*", system_config.global_log_level);
 
+    // Read before the UI is created: the System page's Remote control switch shows this flag
+    ESP_ERROR_CHECK(load_remote_control_config());
+
     ESP_ERROR_CHECK(load_sensor_config());
 
     // Set buzzer
@@ -183,8 +189,19 @@ void app_main(void)
     // Initialize Display
     ESP_ERROR_CHECK(lvgl_display_init(i2c0_bus_handle));
 
+    // Remote control driver (virtual pointer for scripted taps and swipes)
+    ESP_ERROR_CHECK(remote_control_init());
+
     // Initialize WiFi and related calls
     ESP_ERROR_CHECK(wifi_init());
+
+    // Serial remote control on the console, when enabled in System settings
+    if (remote_control_config.serial_enable) {
+        ret = rc_serial_start();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to start serial remote control: %s", esp_err_to_name(ret));
+        }
+    }
 
     // Print task stack headroom periodically (verification builds only)
     mem_diag_start_stack_report();

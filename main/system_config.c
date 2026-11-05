@@ -9,6 +9,8 @@
 #include "esp_lcd_types.h"
 #include "common.h"
 #include "bsp.h"
+#include "remote_control.h"
+#include "rc_serial.h"
 
 #define TAG "SystemConfig"
 #define NVS_NAMESPACE "SC"
@@ -23,6 +25,11 @@ const system_config_t system_config_default = {
 
 extern esp_lcd_panel_io_handle_t io_handle;
 extern lv_obj_t * msg_box;
+extern remote_control_config_t remote_control_config;
+extern const remote_control_config_t remote_control_config_default;
+
+static lv_obj_t * rotation_dropdown = NULL;
+static lv_obj_t * remote_control_switch = NULL;
 
 const char rotation_options[] = "0°\n90°\n180°\n270°";
 const char screen_brightness_pct_options[] = "50%\n60%\n70%\n80%\n90%\n100%";
@@ -48,28 +55,69 @@ esp_err_t save_system_config() {
 }
 
 
-void update_rotation_event_cb(lv_event_t *e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-    
-    if (selected != system_config.rotation) {
-        system_config.rotation = (lv_display_rotation_t) selected;
+void system_config_set_rotation(lv_display_rotation_t rotation) {
+    if (rotation != system_config.rotation) {
+        system_config.rotation = rotation;
         ESP_LOGI(TAG, "Rotation updated to %d", system_config.rotation);
         lv_display_set_rotation(lv_display_get_default(), system_config.rotation);
     }
     else {
         ESP_LOGI(TAG, "Rotation not changed");
     }
+
+    // Keep the dropdown in step when the change does not come from the dropdown itself
+    if (rotation_dropdown) {
+        lv_dropdown_set_selected(rotation_dropdown, rotation);
+    }
+}
+
+
+void update_rotation_event_cb(lv_event_t *e) {
+    lv_obj_t * dropdown = lv_event_get_target(e);
+    int32_t selected = lv_dropdown_get_selected(dropdown);
+
+    system_config_set_rotation((lv_display_rotation_t) selected);
+}
+
+
+// Start or stop the serial remote control to match the flag, and show it on the switch
+static void apply_remote_control_config() {
+    if (remote_control_config.serial_enable) {
+        rc_serial_start();
+    }
+    else {
+        rc_serial_stop();
+    }
+
+    if (remote_control_switch) {
+        if (remote_control_config.serial_enable) {
+            lv_obj_add_state(remote_control_switch, LV_STATE_CHECKED);
+        }
+        else {
+            lv_obj_remove_state(remote_control_switch, LV_STATE_CHECKED);
+        }
+    }
+}
+
+
+static void toggle_remote_control_serial(lv_event_t *e) {
+    lv_obj_t * sw = lv_event_get_target_obj(e);
+    remote_control_config.serial_enable = lv_obj_has_state(sw, LV_STATE_CHECKED);
+
+    apply_remote_control_config();
 }
 
 static void on_save_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(save_system_config());
+    ESP_ERROR_CHECK(save_remote_control_config());
 
     update_info_msg_box(msg_box, "Configuration Saved");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(load_system_config());
+    ESP_ERROR_CHECK(load_remote_control_config());
+    apply_remote_control_config();
 
     update_info_msg_box(msg_box, "Previous Configuration Reloaded");
 
@@ -79,6 +127,8 @@ static void on_reload_button_pressed(lv_event_t * e) {
 static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&system_config, &system_config_default, sizeof(system_config));
+    memcpy(&remote_control_config, &remote_control_config_default, sizeof(remote_control_config));
+    apply_remote_control_config();
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
 
@@ -117,11 +167,15 @@ lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_
 
     // Rotation
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Screen Rotation");
-    config_item = create_dropdown_list(container, rotation_options, system_config.rotation, update_rotation_event_cb, NULL);
+    rotation_dropdown = create_dropdown_list(container, rotation_options, system_config.rotation, update_rotation_event_cb, NULL);
 
     // Global log level
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Global Log Level");
     config_item = create_dropdown_list(container, log_level_options, system_config.global_log_level, update_global_log_level, NULL);
+
+    // Remote control over the serial console
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Remote control");
+    remote_control_switch = create_switch(container, &remote_control_config.serial_enable, toggle_remote_control_serial);
 
     // Screene brightness (normal)
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Screen Brightness");
