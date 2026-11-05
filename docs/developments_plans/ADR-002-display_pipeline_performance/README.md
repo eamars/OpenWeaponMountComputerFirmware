@@ -27,6 +27,8 @@ The flush callback (`esp_lvgl_port` 2.7.1, `lvgl_port_flush_callback`) does, for
 
 Bus time alone is about 12.8 ms per frame (255,360 B at 40 MHz × 4 lines). The rest of the flush is the two full-frame copies and per-chunk allocation. An earlier trial raised the transaction size from 4,092 to 8,184 B: flush time fell from 30.3 to 25.3 ms and the frame rate did not change (`references/display-refresh-rate-rca.md`).
 
+Starting point after ADR-001 (Built 2026-11-05, QSPI 4,092-byte transfers, LVGL 9.6): rotation 180° about 16 frames/s with a 30.4 ms flush callback; rotation 90° 12.9 frames/s with a 43.0 ms flush callback (owner: "horizontal screen is laggier than vertical"). The 90° software rotation reads the PSRAM frame column by column. With 8,184-byte transfers the 180° rate was 19.4 frames/s (flush 24.1 ms); the owner kept 4,092 for DMA headroom (largest DMA-capable block 114.7 KB). Step 1 is measured against both rotations.
+
 Hardware notes: SH8601 supports neither hardware `swap_xy` nor `mirror_y` in this driver (`esp_lcd_sh8601.c`), so 90°/180°/270° stay in software. The panel's tearing-effect output is enabled by init command `0x35`; `LCD_TE_OUT` (GPIO18) is defined in `main/app_cfg.h` and not read by the firmware.
 
 ## Steps, in order
