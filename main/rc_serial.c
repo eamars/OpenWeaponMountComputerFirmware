@@ -1,12 +1,11 @@
 #include <stdio.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "driver/usb_serial_jtag.h"
 
 #include "rc_serial.h"
 #include "remote_control.h"
@@ -57,10 +56,10 @@ static void rc_serial_task(void *p) {
     while (1) {
         rc_serial_park_if_requested();
 
-        // Default console read without a driver: returns at once, -1 (EAGAIN or no host) when nothing is waiting
-        ssize_t received;
-        while ((received = read(STDIN_FILENO, chunk, sizeof(chunk))) > 0) {
-            for (ssize_t i = 0; i < received; i++) {
+        // Console driver read with no wait (installed in app_main): returns 0 when nothing is waiting
+        int received;
+        while ((received = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), 0)) > 0) {
+            for (int i = 0; i < received; i++) {
                 char c = chunk[i];
 
                 // CR, LF and CRLF all end a line; the empty line between CR and LF is ignored

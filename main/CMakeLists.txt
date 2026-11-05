@@ -12,6 +12,7 @@ set(ALL_DEPS
     app_update
     esp_timer
     espcoredump
+    esp_driver_usb_serial_jtag
 
     # Sensor
     bno08x

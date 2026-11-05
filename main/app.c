@@ -38,6 +38,8 @@
 #include "low_power_mode.h"
 #include "mem_diag.h"
 #include "crash_report.h"
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "remote_control.h"
 #include "rc_serial.h"
 
@@ -125,6 +127,15 @@ void app_main(void)
 
     // Report failed allocations and the previous reset before anything else runs
     mem_diag_install_alloc_failure_hook();
+
+    // Buffer the USB Serial/JTAG console. Without the driver a host pause of over 50 ms drops output.
+    usb_serial_jtag_driver_config_t console_cfg = {
+        .tx_buffer_size = CONSOLE_TX_BUFFER_SIZE,
+        .rx_buffer_size = CONSOLE_RX_BUFFER_SIZE,
+    };
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&console_cfg));
+    usb_serial_jtag_vfs_use_driver();
+
     crash_report_log_last_reset();
 
     // Create task to monitor memory usage
