@@ -93,3 +93,9 @@ Build: review fixes plus the patched connection monitor (`components/esp_driver_
 - Readings (both): `largest_dma` min 114,688; `taskLVGL` 8,736; `sys_evt` 1,356; `rc_serial` 860; `LPMON` 1,848.
 - Console loss: `stats` replies 6 of 6 and 17 of 17; `LowPowerMode` once-a-second lines 140 and 487 with none missing; zero cut lines; zero replies dropped by the runner's matching. Before the patch the same `state_change` load lost about 10 lines and replies in its first 5 minutes (`rc_watch_20261106_003529.log`). The connection-monitor fix holds.
 - Remaining (owner at the device, 2026-11-07): `tap`/`swipe` (Stage 3), switch-off A/B (Stage 5), final build with profiling off and `sdkconfig` regenerated, registry Built.
+
+## Passive capture after Stage 4 (2026-11-06 01:34-02:34)
+
+- Capture of the fixed build with nothing sent (`scratchpad/adr4_fix_overnight.log`), device idle from the start. Covers uptime 638-4,275 s, then `AXP2101: System is powering off...` at 3,601 s of idle: the unit's sleep timeout (1 h) powers it off by design, so this was 1 h of idle, not an overnight run.
+- 3,595 once-a-second `LowPowerMode` lines with none missing; zero watchdog triggers (the paused-watchdog path fed for the whole hour), zero failure markers. One cut line, at the very start: the device's TX buffer content from before the port was opened (the driver drops output while no host reads, as designed).
+- An overnight soak with the display active needs the unit kept awake (scripted activity, as `rotation_sweep` does) or a longer sleep timeout set by the owner.
