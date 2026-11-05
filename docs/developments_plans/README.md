@@ -6,7 +6,7 @@ This index says only where each ADR stands. How it got there (device captures, r
 
 Status: **Draft**, being discussed, not approved. **Decided**, approved and not built. **Open**, built and flashed, with the part under "Left" still to do. **Built**, built, flashed and verified on the device, nothing left. **Archived**, removed from the tree.
 
-Execution follows `.agents/skills/development-plan/` (plan contract and execution gates). Only a Decided or Open ADR may be executed.
+ADRs are written in plain form: owner's direction, context with measured facts, decisions, the plan, verification on the device, and what was built (`progress.md`). The `development-plan` skill was removed on 2026-11-05; ADR-001 to ADR-004 were written to its contract and keep that shape. Only a Decided or Open ADR may be executed.
 
 | ADR | Title | Status | Left | Decision | Where |
 |---|---|---|---|---|---|
