@@ -137,6 +137,6 @@ Capture from device uptime 595 s to 950 s (stopped after the owner reported "rou
 - Failure markers: all 0 (no `rst:`, panic, abort, `ESP_ERR_NO_MEM`, LCD queue failure, stack overflow, `alloc_failed:`).
 - Heap (avg after 10 s): `free_int` 194,075 (min 190,803); `largest_dma` 114,688; `min_int` 186,931; `free_spiram` 5,614,991.
 - Stack report, two rounds (604 s, 904 s): `taskLVGL` min free 8,328 B of 16,384 (8,056 B used: the old 8,192 B stack would have had about 136 B left, consistent with the 44 B reading and the overflow explanation); `sys_evt` min free 1,548 B of 3,584 (2,036 B used: about 268 B would have been left in the old 2,304 B stack). Application tasks: lowest `sensor_poller` 876, `STABILITY` 936. ESP-IDF tasks as before (`ipc1` 428, `ipc0` 500).
-- `Network connected, will poll OTA source` did not appear in this capture (the OTA poller ran and self-deleted earlier in this boot; it polls once per boot after the first connection).
+- `Network connected, will poll OTA source` did not appear in this capture: the poller logs it once per boot, after the first connection, which happened before the capture started. `ota_poller` is absent from every stack-report round in the second and third runs (it was present in Stages 2-4 with Wi-Fi off), so it finished and deleted itself through `vTaskDeleteWithCaps(NULL)` without fault.
 
 Result: pass (`taskLVGL` ≥ 2,048 B, `sys_evt` ≥ 512 B, application tasks ≥ 512 B, zero markers). Overnight run started immediately afterwards, device untouched, Wi-Fi on, rotation 1.
