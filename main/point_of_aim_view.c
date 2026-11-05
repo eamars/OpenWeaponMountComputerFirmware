@@ -261,13 +261,14 @@ void create_point_of_aim_view(lv_obj_t * parent) {
         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
     }
 
-    BaseType_t rtos_return = xTaskCreate(
+    BaseType_t rtos_return = xTaskCreateWithCaps(
         sensor_event_poller_task,
         "poi_sensor_poller",
         POI_EVENT_POLLER_TASK_STACK,
         NULL,
         POI_EVENT_POLLER_TASK_PRIORITY,
-        &sensor_event_poller_task_handle
+        &sensor_event_poller_task_handle,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for poi_sensor_poller");

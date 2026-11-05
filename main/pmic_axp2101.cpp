@@ -422,13 +422,14 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     ESP_LOGI(TAG, "Power Off Source: %d", power_off_source);
 
     // Create task to handle PMIC interrupt
-    BaseType_t rtos_return = xTaskCreate(
+    BaseType_t rtos_return = xTaskCreateWithCaps(
         axp2101_monitor_task,
         "axp2101_monitor_task",
         AXP2101_MONITOR_TASK_STACK,
         (void *) ctx,
         AXP2101_MONITOR_TASK_PRIORITY,
-        &ctx->pmic_monitor_task_handle
+        &ctx->pmic_monitor_task_handle,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to create axp2101_monitor_task");
@@ -448,7 +449,7 @@ esp_err_t axp2101_deinit(axp2101_ctx_t *ctx) {
 
     // Delete monitor task
     if (ctx->pmic_monitor_task_handle != NULL) {
-        vTaskDelete(ctx->pmic_monitor_task_handle);
+        vTaskDeleteWithCaps(ctx->pmic_monitor_task_handle);
         ctx->pmic_monitor_task_handle = NULL;
     }
     ESP_LOGI(TAG, "Monitor task deleted");

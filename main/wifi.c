@@ -111,7 +111,7 @@ void wifi_deinit_task(void *p) {
     // Update GUI
     wifi_config_disable_enable_interface();
 
-    vTaskDelete(NULL);   // safely remove this task
+    vTaskDeleteWithCaps(NULL);   // safely remove this task
 }
 
 
@@ -275,13 +275,14 @@ esp_err_t wifi_init() {
 
     // Create a task to handle the wifi deinit event
     BaseType_t rtos_return;
-    rtos_return = xTaskCreate(
+    rtos_return = xTaskCreateWithCaps(
         wifi_deinit_task, 
         "wifi_deinit",
         WIFI_DEINIT_TASK_STACK,
         NULL, 
         WIFI_DEINIT_TASK_PRIORITY,
-        &wifi_deinit_task_handle
+        &wifi_deinit_task_handle,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for wifi_state_poller_task");

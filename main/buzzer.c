@@ -119,13 +119,14 @@ esp_err_t buzzer_init() {
     }
 
     // Initialize task
-    BaseType_t rtos_return = xTaskCreate(
+    BaseType_t rtos_return = xTaskCreateWithCaps(
         buzzer_task,
         "buzzer_task",
         BUZZER_TASK_STACK,
         (void *) &buzzer_ctx,
         BUZZER_TASK_PRIORITY,
-        &buzzer_ctx.buzzer_task_handle
+        &buzzer_ctx.buzzer_task_handle,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to create buzzer_task");

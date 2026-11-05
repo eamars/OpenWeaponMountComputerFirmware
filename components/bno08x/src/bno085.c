@@ -276,13 +276,15 @@ esp_err_t _bno085_sh2_init(bno085_ctx_t *ctx) {
     }
 
     // Create task to process event
-    BaseType_t rtos_return = xTaskCreate(
+    BaseType_t rtos_return = xTaskCreateWithCaps(
         sensor_poller_task, 
         "sensor_poller",
         BNO085_SENSOR_POLLER_TASK_STACK,
         (void *) ctx, 
         BNO085_SENSOR_POLLER_TASK_PRIORITY,
-        &ctx->sensor_poller_task_handle
+        &ctx->sensor_poller_task_handle,
+        // Mirrors HEAPS_CAPS_ALLOC_DEFAULT_FLAGS (main/app_cfg.h); this component cannot see main/
+        MALLOC_CAP_SPIRAM
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for sensor_poller");

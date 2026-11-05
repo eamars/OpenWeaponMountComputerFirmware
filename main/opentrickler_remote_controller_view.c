@@ -440,13 +440,14 @@ void create_opentrickler_remote_controller_view(lv_obj_t * parent) {
     }
 
     // Initialize poller
-    BaseType_t rtos_return = xTaskCreate(
+    BaseType_t rtos_return = xTaskCreateWithCaps(
         opentrickler_rest_poller_task, 
         "OT_poller",
         OPENTRICKLER_REST_POLLER_TASK_STACK,
         NULL,
         OPENTRICKLER_REST_POLLER_TASK_PRIORITY,
-        &opentrickler_rest_poller_task_handle
+        &opentrickler_rest_poller_task_handle,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for opentrickler_rest_poller_task");

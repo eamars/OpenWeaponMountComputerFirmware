@@ -156,13 +156,14 @@ void create_sensor_calibration_view(lv_obj_t * parent) {
 
     
     // Create RV report poller
-    BaseType_t rtos_return = xTaskCreate(
+    BaseType_t rtos_return = xTaskCreateWithCaps(
         rotation_vector_poller_task,
         "RVReportPoller",
         SENSOR_CALIBRATION_VIEW_RV_REPORT_POLLER_TASK_STACK,
         NULL,
         SENSOR_CALIBRATION_VIEW_RV_REPORT_POLLER_TASK_PRIORITY,
-        NULL
+        NULL,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
 
     if (rtos_return != pdPASS) {

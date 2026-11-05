@@ -13,6 +13,7 @@
 #include "countdown_timer.h"
 #include "low_power_mode.h"
 #include "buzzer.h"
+#include "app_cfg.h"
 
 #define TAG "CountdownTimer"
 
@@ -114,13 +115,14 @@ esp_err_t countdown_timer_init(countdown_timer_t *ctx) {
         ctx->countdown_time_ms = 120 * 1000;
     }
 
-    BaseType_t rtos_return = xTaskCreate(
+    BaseType_t rtos_return = xTaskCreateWithCaps(
         countdown_timer_task,
         "countdown_timer",
         COUNTDOWN_TIMER_TASK_STACK,
         (void *) ctx,
         COUNTDOWN_TIMER_TASK_PRIORITY,
-        &ctx->countdown_timer_task_handle
+        &ctx->countdown_timer_task_handle,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
         return ESP_FAIL;

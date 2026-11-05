@@ -121,13 +121,14 @@ void create_acceleration_analysis_view(lv_obj_t *parent) {
         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
     }
 
-    BaseType_t rtos_return = xTaskCreate(
+    BaseType_t rtos_return = xTaskCreateWithCaps(
         acceleration_event_poller_task, 
         "accel_poller", 
         ACCELERATION_EVENT_POLLER_TASK_STACK,
         NULL,
         ACCELERATION_EVENT_POLLER_TASK_PRIORITY,
-        &acceleration_event_poller_task_handle
+        &acceleration_event_poller_task_handle,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for acceleration_event_poller");

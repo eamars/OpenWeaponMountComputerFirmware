@@ -375,7 +375,7 @@ void ota_poller_task(void *p) {
 
     ESP_LOGI(TAG, "Manifest downloaded, waiting for OTA update");
 
-    vTaskDelete(NULL);   // safely remove this task
+    vTaskDeleteWithCaps(NULL);   // safely remove this task
  }
 
 
@@ -610,13 +610,14 @@ void create_ota_mode_view(lv_obj_t * parent) {
     // Create the task to poll for OTA update
     BaseType_t rtos_return;
     mem_diag_log_checkpoint("ota_poller_create begin");
-    rtos_return = xTaskCreate(
+    rtos_return = xTaskCreateWithCaps(
         ota_poller_task, 
         "ota_poller",
         OTA_POLLER_TASK_STACK,
         NULL, 
         OTA_POLLER_TASK_PRIORITY,
-        &ota_poller_task_handle
+        &ota_poller_task_handle,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for ota_poller_task");

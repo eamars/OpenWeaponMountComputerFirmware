@@ -231,13 +231,14 @@ esp_err_t digital_level_view_controller_init() {
 
     BaseType_t rtos_return;
     // Create acceleration poller task
-    rtos_return = xTaskCreate(
+    rtos_return = xTaskCreateWithCaps(
         unified_sensor_poller_task,
         "sensor_poller",
         SENSOR_EVENT_POLLER_TASK_STACK,
         NULL,
         SENSOR_EVENT_POLLER_TASK_PRIORITY,
-        &sensor_poller_task_handle
+        &sensor_poller_task_handle,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for unified_ensor_poller_task");

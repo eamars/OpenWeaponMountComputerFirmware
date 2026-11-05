@@ -39,3 +39,27 @@ Device, Wi-Fi off, two captures (360 s, then 330 s after the stack-report pacing
 - Plan correction (factual): the stack criterion applies to application tasks; ESP-IDF system tasks `ipc0`/`ipc1` run at 500/428 B free by ESP-IDF's own sizing.
 
 Result: pass.
+
+## Stage 3 - task stacks in PSRAM (2026-11-05)
+
+Static Greps after Change 2: `xTaskCreate(` 3 (`low_power_mode.c` LPMON, `ota_mode.c` ota_updater, commented line in `app.c`); `xTaskCreateWithCaps(` 13 (twelve Change 2 sites + `mem_stack_rpt`); `vTaskDelete(` 1 (`ota_update_task` self-delete); `vTaskDeleteWithCaps(` 3 (`ota_mode.c`, `wifi.c`, `pmic_axp2101.cpp`). Pass.
+
+Build: pass; no warnings from changed files (pre-existing `unknown kconfig symbol` warnings from the full-dump defaults only). Firmware `v0.0.1-99-gdf140bd-dirty`.
+
+Discrepancies recorded:
+
+- `components/bno08x/src/bno085.c` passes `MALLOC_CAP_SPIRAM` directly with a comment: the component cannot include `main/app_cfg.h`, so the `HEAPS_CAPS_ALLOC_DEFAULT_FLAGS` convention cannot apply there.
+- `main/countdown_timer.c` gained `#include "app_cfg.h"`: it had reached the macro only indirectly through `buzzer.h`.
+- `accel_poller`, `poi_sensor_poller` and `OT_poller` are never created: their views are commented out in `main/main_tileview.c`. Their sites change but cannot be exercised on the device.
+- `wifi_deinit` self-deletes only after the 600 s Wi-Fi expiry timeout; `axp2101_deinit` has no callers. Both `vTaskDeleteWithCaps` paths are covered by review, not by the device.
+
+Device, Wi-Fi off, 360 s:
+
+- Heap (avg after 10 s): `free_int` 159,118 (min 153,715); `largest_int` 63,969; `min_int` 144,591; `free_dma` 151,378; `largest_dma` 63,969; `min_dma` 136,851; `free_spiram` 5,626,469. Versus Stage 2: `free_int` +36,535 B, `largest_dma` 32,768 → 63,969 B.
+- Frames 19.0/s average. `digital_level_prof` average per 1-s window: `ui_ok` 16.1 (Stage 2: 16.3), `lock_fail` 20.8 (Stage 2: 18.4).
+- Failure markers: 1 `rst:` (port open), 1 allowed BNO085 abort; all others 0, including `alloc_failed:`.
+- Stack report, complete round (`begin count=24`, 24 lines): PSRAM: `taskLVGL` 1,816, `sensor_poller` 908 and 1,780, `STABILITY` 1,064, `buzzer_task` 1,944, `axp2101_monitor` 2,112, `countdown_timer` 2,348, `RVReportPoller` 3,308, `ota_poller` 3,340, `wifi_deinit` 3,364, `mem_stack_rpt` 3,376. Internal: `LPMON` 1,916, `ota_updater` 2,844; ESP-IDF tasks unchanged from Stage 2 (`ipc1` 428, `ipc0` 500, `IDLE0` 576, `IDLE1` 584, `sys_evt` 732, ...).
+- First result against the plan as written: `free_int` 159,118 < 168,000, fail. Cause: the estimate counted 11,264 B of stack for three tasks that never exist and used the pre-update starting point (128,215 B instead of 122,583 B). The nine running tasks hold 34,816 B of stack, matching the measured gain with their control blocks.
+- Owner decision 2026-11-05: correct the target to 155,000 B and continue. The risk check for polling delay is corrected to `ui_ok` (not lower than Stage 2 by more than noise): 16.1 vs 16.3.
+
+Result: pass (corrected target).

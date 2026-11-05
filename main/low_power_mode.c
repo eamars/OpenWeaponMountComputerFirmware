@@ -409,13 +409,14 @@ void create_low_power_mode_view(lv_obj_t * parent) {
 
 #if USE_BNO085
     // Create sensor stability classifier task
-    rtos_return = xTaskCreate(
+    rtos_return = xTaskCreateWithCaps(
         sensor_stability_detector_poller_task,
         "STABILITY",
         SENSOR_STABILITY_DETECTOR_POLLER_TASK_STACK,
         NULL,
         SENSOR_STABILITY_DETECTOR_POLLER_TASK_PRIORITY,
-        &sensor_stability_detector_poller_task_handle
+        &sensor_stability_detector_poller_task_handle,
+        HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for sensor_stability_detector_poller_task");
