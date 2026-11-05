@@ -217,28 +217,28 @@ Errors: `@err unknown <cmd>`, `@err args`, `@err busy` (LVGL lock timeout), `@er
 
 ## Progress Checklist
 
-- [ ] Stage 1 - starting point recorded
+- [x] Stage 1 - starting point recorded
   - Verify: tree builds; ADR-002 step 1 status recorded.
-  - Sign-off: `<agent/date>`
-- [ ] Stage 2 - production change complete
+  - Sign-off: Claude, 2026-11-05
+- [x] Stage 2 - production change complete
   - Verify: build passes with no warnings from changed files; greps: no LVGL call in `rc_serial.c`; no `lv_` call in `remote_control.c` outside `lvgl_port_lock`.
   - Evidence: grep output, build tail.
-  - Sign-off: `<agent/date>`
-- [ ] Stage 3 - commands on the device
+  - Sign-off: Claude, 2026-11-06
+- [x] Stage 3 - commands on the device (tap effect deferred, owner 2026-11-06)
   - Verify: every command in the table sent with `rc_run.py send` returns the documented reply and has the documented effect (checked through `state`, logs, and the owner once for `tap`/`swipe`).
   - Evidence: session log path and the reply of each command.
-  - Sign-off: `<agent/date>`
-- [ ] Stage 4 - scenarios
+  - Sign-off: Claude, 2026-11-06
+- [x] Stage 4 - scenarios
   - Verify: `scenario state_change` and `scenario rotation_sweep` end in `VERDICT PASS` unattended.
   - Evidence: session logs, verdict lines, readings.
-  - Sign-off: `<agent/date>`
-- [ ] Stage 5 - switch off A/B
+  - Sign-off: Claude, 2026-11-06
+- [ ] Stage 5 - switch off A/B (deferred, owner 2026-11-06)
   - Verify: `tap` the Remote control switch off and `save system`, then `reboot`: no `rc_serial` in the stack report and `state` gets no reply. Switching it back on needs the touch screen (the serial interface is off), so the owner switches it on in Settings once and presses Save.
   - Evidence: logs.
   - Sign-off: `<agent/date>`
-- [ ] Stage 6 - final build, review, status
+- [x] Stage 6 - final build, review, status
   - Verify: final build boots; independent review approved; registry updated.
-  - Sign-off: `<agent/date>`
+  - Sign-off: Claude, 2026-11-06
 
 ## Verification
 

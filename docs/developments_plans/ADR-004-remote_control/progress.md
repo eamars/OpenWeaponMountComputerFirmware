@@ -121,3 +121,12 @@ Owner: "Fix it now"; outside ADR-004, its own commit.
 - Residual stall (open, outside ADR-004): cycle 80 of the 200-cycle run, about 0.4 s after a wake with the display active, during the Wi-Fi scan after `esp_wifi_start()`. Same place in the core dump: `display_flush_cb` → `spi_device_acquire_bus` waiting on a strip transfer that never completed (strip y 308-336, mid-frame); `taskLVGL` priority 20/4, inherited from `sys_evt` waiting on the LVGL lock. Here `esp_pm_configure` ran with LVGL stopped and the panel drained, so a clock change mid-DMA does not explain it. 100 Wi-Fi off/on toggles with the display active (`rc_wifi_toggle_20261106_105432.log`): 0 stalls, which at this rate does not clear Wi-Fi. Cost when it happens: up to 5 s frozen, watchdog reboot, UI back about 3 s later (~9 s; no BNO085 abort after a watchdog reset).
 - Next: a dump read straight from flash (`read_flash` before anything else; a `coredump-info` reset lets the BNO085 first-boot abort overwrite it) to tell a transfer the hardware never finished (`cur_cs` set, `in_isr`) from a wake-up the driver lost (`cur_cs` none with requests queued).
 - Console: 2 `stats` replies lost in about 236 sent across the fixed-code runs, both while idle; `stats` takes no lock. Separate from the stall; not chased.
+
+## Close (2026-11-06 12:40)
+
+- Owner: ADR-004 is a tool for ADR-002 and ADR-003 work while away from the unit; close it now, the hands-on checks are not blocking.
+- Stage 3 on the final build (`build/rc_logs/rc_swipe_check_20261106_123813.log`, `VERDICT PASS`): `swipe left` from home (2,1) → `state` tile=3,1; `swipe right` → 2,1; `swipe right` at 2,1 stays (no tile at 1,1); `swipe left` → 3,1. `tap 140 70` answers `@ok tap`; its on-screen effect is not checked (deferred). Gestures while idle answer `@err busy` (LVGL stopped), as recorded in Stage 2 item 3.
+- Commands answered `@ok` across today's logs: `help`, `state`, `stats`, `tile`, `rot`, `wifi`, `save`, `idle`, `wake`, `swipe`, `tap`, `hang` (watchdog scenario). `bt` and `reboot` not sent today.
+- Stage 4: `state_change` PASS on the final build with the idle-entry fix (`rc_state_change_20261106_122339.log`); `rotation_sweep` PASS on the fixed build earlier.
+- Stage 5 (switch-off A/B) deferred by the owner.
+- Status: Built. Open item outside this ADR: the residual display stall (section above).
