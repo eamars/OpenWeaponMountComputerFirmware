@@ -1,6 +1,8 @@
 # ADR-002: display pipeline performance, one change at a time
 
-Status: **Open.** Step 1 Built (2026-11-06). Step 2 next, step 3 last; both are proposals until the owner approves them.
+Status: **Open.** Step 1 Built (2026-11-06). Step 2 approved 2026-11-06, in progress. Step 3 last, a proposal until the owner approves it.
+
+ADR-002 is functional change without any dependency update (ESP-IDF v5.5.2 and today's managed components stay as they are). ADR-003 is the dependency update without functional change. The two never cross over: one is finished before the other starts (owner, 2026-11-06).
 
 ## What we want
 
@@ -45,7 +47,7 @@ Measured (flush callback average, frames per second):
 
 The owner checked the picture at all four rotations: correct, tearing unchanged. Memory: the largest internal DMA-capable block stayed at 114,688-118,784 B in every run. Evidence and run details: [progress.md](progress.md).
 
-## Step 2: start each frame on the panel's tearing-effect pulse (proposal)
+## Step 2: start each frame on the panel's tearing-effect pulse (approved 2026-11-06)
 
 Why: the write order relative to the panel's scan is random today, which is what makes tearing possible. Starting each frame's transfer on the TE pulse makes it deterministic. That is the precondition for step 3 (partial redraw without tearing).
 
@@ -69,6 +71,7 @@ A display strip transfer occasionally never completes: the LVGL task then waits 
 
 - One cause was found and fixed on 2026-11-06 (`d8d78bf`): idle entry ran inside an LVGL timer pass, so a frame was still being flushed while Wi-Fi stopped and the clock config changed. Idle entry and wake now run in the low power task after LVGL has stopped and the panel has drained.
 - A rarer stall remains: 1 in about 630 idle/wake cycles on the fixed code, seen 0.4 s after a wake during the Wi-Fi scan, mid-frame. The clock change cannot explain that one (it ran with the panel drained). Cause unknown.
+- A fix here stays within ADR-002's rule: no dependency update. If the cause turns out to be in ESP-IDF itself, it is worked around in this firmware or left for ADR-003 to bring in, never patched in by updating a dependency here.
 - Next evidence: a core dump copied straight from flash (`read_flash 0x12000 0x20000` before anything else; reading it with `coredump-info` resets the unit, and the next boot's BNO085 abort overwrites it). The SPI driver state in it tells a transfer the hardware never finished (`cur_cs` set) from a completion the driver lost (`cur_cs` none with requests queued).
 
 ## Ideas set aside

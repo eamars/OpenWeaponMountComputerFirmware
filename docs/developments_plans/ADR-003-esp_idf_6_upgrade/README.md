@@ -2,6 +2,8 @@
 
 Status: **Draft.** Starts only after ADR-002 is Built, all steps. No ADR-003 work meanwhile, a build-only trial included (owner, 2026-11-06).
 
+ADR-002 is functional change without any dependency update (ESP-IDF v5.5.2 and today's managed components stay as they are). ADR-003 is the dependency update without functional change. The two never cross over: one is finished before the other starts (owner, 2026-11-06). So the firmware behaves the same before and after this ADR; anything that would change behaviour is a separate ADR.
+
 ## What we want
 
 One migration straight to the latest stable ESP-IDF (v6.1 as of 2026-11-05), so the firmware does not go through a second one, and the unused `esp_tinyusb` gone.
