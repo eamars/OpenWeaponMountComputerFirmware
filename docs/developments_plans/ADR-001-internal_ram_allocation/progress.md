@@ -16,3 +16,26 @@ Tree at `c6f2c63` (branch `spiram_optimization`), before any ADR-001 code change
 | `DISPLAY_PROFILING_ENABLED` | - | 1 |
 
 Result: pass.
+
+## Stage 2 - safety net on the device (2026-11-05)
+
+Build: Change 1 in the working tree; `sdkconfig` regenerated from the defaults (old copy kept outside the repo). The regeneration also re-resolved managed components: LVGL 9.6.0~1, tinyusb 0.21.0~3, esp_tinyusb 2.4.0 (owner accepted newer dependencies). Kconfig now warns `unknown kconfig symbol 'TINYUSB'` from the defaults; no effect while `usb_init()` is commented out. Verification-only: `CONFIG_FREERTOS_USE_TRACE_FACILITY=y` in the local `sdkconfig`, `DISPLAY_PROFILING_ENABLED 1`.
+
+`sdkconfig` after reconfigure: `CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y`, `CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y`, `CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y`, `CONFIG_ESP_COREDUMP_CHECK_BOOT=y`, `CONFIG_ESP_COREDUMP_STACK_SIZE=1792`; branch memory options unchanged (`LV_ATTRIBUTE_FAST_MEM_USE_IRAM` off, `ESP_WIFI_STATIC_RX_BUFFER_NUM=4`, `MBEDTLS_DYNAMIC_BUFFER=y`, `NVS_ALLOCATE_CACHE_IN_SPIRAM=y`).
+
+Coredump region erased once (`esptool erase_region 0x12000 0x20000`), then flashed.
+
+Device, Wi-Fi off, two captures (360 s, then 330 s after the stack-report pacing fix):
+
+- Boot log: `coredump Unknown data 01 03 00012000 00020000`; `Found partition 'coredump' @ 12000 131072 bytes`.
+- Reset reason logged on every boot: `USB (11)` on the port-open reset, `PANIC (4)` after the allowed BNO085 abort.
+- The BNO085 abort wrote a dump: `Core dump used 1200 bytes on stack. 684 bytes left free`, `Found core dump 17700 bytes in flash`.
+- Next boot: `Stored core dump: task=main pc=0x40380b2d depth=7` plus backtrace.
+- `idf.py -p COM11 coredump-info` decodes it: `abort()` from `_esp_error_check_failed` on `bno085_init_i2c(...)` at `main/app.c:179` (`app_main`). This is the first-boot BNO085 bug the owner will fix later.
+- Failure markers: 1 `rst:` (port open), 1 `abort()` = the allowed BNO085 abort; 0 Guru, 0 `ESP_ERR_NO_MEM`, 0 LCD queue failures, 0 stack overflow, 0 `alloc_failed:`.
+- Heap (avg after 10 s): `free_int` 122,583; `largest_int` 32,768; `min_int` 111,419; `free_dma` 114,843; `largest_dma` 32,768; `min_dma` 103,679; `free_spiram` 5,661,372. Frames 16.8/s. `qspi_actual_max_transfer=8184`. Reference before ADR-001 (LVGL 9.5, no core dump): `free_int` 128,215, `largest_dma` 40,960. The drop includes the 1,792 B dump stack and the dependency update; not separated further.
+- Stack report (one round at 300 s, all `INTERNAL` except `taskLVGL` `PSRAM`): application tasks min free: `sensor_poller` 864 and 1,936, `STABILITY` 1,096, `LPMON` 1,916, `taskLVGL` 1,828, `buzzer_task` 1,948, `axp2101_monitor` 2,116, `countdown_timer` 2,336, `ota_updater` 2,844, `ota_poller` 3,252, `RVReportPoller` 3,252, `wifi_deinit` 3,280. ESP-IDF tasks (recorded, not judged): `ipc1` 428, `ipc0` 500, `sys_evt` 556, `IDLE0` 576, `IDLE1` 584, `Tmr Svc` 1,216, `tiT` 2,384, `esp_timer` 3,316, `wifi` 4,260, `swdraw` 6,504 / 6,544.
+- Known limitation: the console is the S3 USB-Serial-JTAG port. Without pacing it dropped 11 of about 30 report lines; with 20 ms pacing the first two lines of a round (`stack_rpt: begin`, `mem_stack_rpt`) were still lost after a 4-minute idle period with no other output. Root cause not known. Completeness is judged across rounds in the overnight run.
+- Plan correction (factual): the stack criterion applies to application tasks; ESP-IDF system tasks `ipc0`/`ipc1` run at 500/428 B free by ESP-IDF's own sizing.
+
+Result: pass.

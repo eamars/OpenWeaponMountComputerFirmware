@@ -37,6 +37,7 @@
 #include "lvgl_display.h"
 #include "low_power_mode.h"
 #include "mem_diag.h"
+#include "crash_report.h"
 
 #define TAG "App"
 
@@ -119,6 +120,10 @@ void app_main(void)
 {
     esp_err_t ret;
 
+    // Report failed allocations and the previous reset before anything else runs
+    mem_diag_install_alloc_failure_hook();
+    crash_report_log_last_reset();
+
     // Create task to monitor memory usage
     // xTaskCreate(mem_monitor_task, "mem_monitor_task", 4096, NULL, 3, NULL);
 
@@ -180,6 +185,9 @@ void app_main(void)
 
     // Initialize WiFi and related calls
     ESP_ERROR_CHECK(wifi_init());
+
+    // Print task stack headroom periodically (verification builds only)
+    mem_diag_start_stack_report();
 
     // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler)
     esp_pm_config_t pm_config = {

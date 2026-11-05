@@ -11,6 +11,7 @@ set(ALL_DEPS
     esp_lvgl_port
     app_update
     esp_timer
+    espcoredump
 
     # Sensor
     bno08x

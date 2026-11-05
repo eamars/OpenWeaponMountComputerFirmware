@@ -8,7 +8,7 @@
 - Mandatory skills: `esp32-debug`, `development-plan`
 - Overall cutover strategy: bigbang per change, in three separately flashed and verified commits: safety net, task stacks, QSPI transfer size.
 - Highest-risk areas: task self-deletion lifecycle for stacks created in PSRAM; the QSPI transfer size change on the display bus; failures that appear only during state changes or after hours.
-- Acceptance criteria: with Wi-Fi off, steady-state internal free heap ≥ 168,000 B and largest DMA-capable block ≥ 80,000 B; a 10-minute Wi-Fi-on run through the listed state changes and an overnight run of at least 8 h, both with zero failure markers, zero failed-allocation reports, no new core dump, and every task's minimum free stack ≥ 512 B; frame rate on the digital level view not below 16 frames/s.
+- Acceptance criteria: with Wi-Fi off, steady-state internal free heap ≥ 168,000 B and largest DMA-capable block ≥ 80,000 B; a 10-minute Wi-Fi-on run through the listed state changes and an overnight run of at least 8 h, both with zero failure markers, zero failed-allocation reports, no new core dump, and every application task's minimum free stack ≥ 512 B; frame rate on the digital level view not below 16 frames/s.
 
 ## Owner's direction (2026-11-05)
 
@@ -310,10 +310,10 @@ After Change 3:
 Verification builds: `DISPLAY_PROFILING_ENABLED 1` and `CONFIG_FREERTOS_USE_TRACE_FACILITY=y` in the local `sdkconfig`. Failure markers, counted in every capture: `Guru Meditation`, `abort()` (except one allowed BNO085 detect abort right after a reset), `ESP_ERR_NO_MEM`, `queue) color failed`, `stack overflow`, Wi-Fi buffer allocation failure, failed-allocation hook output, and `rst:` lines not caused by the capture opening the port. Each check passes only with zero failure markers. Heap readings are averaged from `display_prof` lines: `free_int`, `largest_int`, `min_int`, `free_dma`, `largest_dma`, `min_dma`, `free_spiram`.
 
 - Safety net (Wi-Fi off, 360 s): the boot log shows the `coredump` partition at `0x12000` and a reset-reason line on every boot. If the allowed BNO085 abort occurs, the following boot prints its summary (task name, PC, backtrace) and `idf.py -p COM11 coredump-info` decodes it. If no crash occurs in three port-open resets, flash a verification build with a temporary `abort()` in `app_main` after `wifi_init()`, confirm the summary and `coredump-info`, then remove the `abort()`, rebuild and reflash before sign-off. The stack report prints at 300 s.
-- Task stacks (Wi-Fi off, 360 s, digital level view on screen): average `free_int` ≥ 168,000 B; `flush=` ≥ 16 per 1-s window on average; in the stack report, every Change 2 task alive at report time shows PSRAM, `LPMON` and `ota_updater` show internal, and every task has minimum free stack ≥ 512 B.
+- Task stacks (Wi-Fi off, 360 s, digital level view on screen): average `free_int` ≥ 168,000 B; `flush=` ≥ 16 per 1-s window on average; in the stack report, every Change 2 task alive at report time shows PSRAM, `LPMON` and `ota_updater` show internal, and every application task (created in `main/` or `components/bno08x/`) has minimum free stack ≥ 512 B. ESP-IDF system tasks are recorded but not judged: their stack sizes are ESP-IDF settings outside this plan (`ipc0` 500 B and `ipc1` 428 B free in Stage 2, by design).
 - QSPI (Wi-Fi off, 120 s): `display_prof_cfg` reports `qspi_actual_max_transfer=4092`; average `largest_dma` ≥ 80,000 B; average `free_int` ≥ 168,000 B; `flush=` ≥ 16 per 1-s window on average.
 - State-change run (600 s, owner on the device, in this order): turn Wi-Fi on in settings and press Save; wait for `Connected with IP Address:`, the `mdns_init end` checkpoint and `Network connected, will poll OTA source`; open every main tile once, including acceleration analysis, point of aim, sensor calibration and the OpenTrickler remote view; let the device go idle and wake it three times; change rotation once, press Save, change it back, press Save; turn Wi-Fi off and on with the settings switch and wait for the IP address again.
-- Overnight run (≥ 8 h, Wi-Fi on, unattended, serial logged to a file in the background): zero failure markers; the boot count in the log stays at one; heap readings at the start and the end are recorded; the last stack report shows every task with minimum free stack ≥ 512 B. The device spends most of the night in idle mode; this run covers idle, Wi-Fi keep-alive, reconnects and timers, not active drawing.
+- Overnight run (≥ 8 h, Wi-Fi on, unattended, serial logged to a file in the background): zero failure markers; the boot count in the log stays at one; heap readings at the start and the end are recorded; the last stack report shows every application task with minimum free stack ≥ 512 B. The device spends most of the night in idle mode; this run covers idle, Wi-Fi keep-alive, reconnects and timers, not active drawing.
 
 ## Independent Code Review
 
@@ -347,7 +347,7 @@ This plan is complete when:
 |---|---|---|
 | A moved task runs code that needs an internal stack | Light-sleep and OTA-write tasks excluded; flash writes from PSRAM stacks are allowed in this build | State-change run with Save presses; core dump captures any panic |
 | Wrong delete API leaks or corrupts a stack | Every caps task deleted with `vTaskDeleteWithCaps` | Static Greps; Wi-Fi off/on cycle runs `wifi_deinit` paths; review gate |
-| A moved task's stack is too small once in PSRAM | Sizes unchanged; canary on | Stack report ≥ 512 B free for every task after the overnight run |
+| A moved task's stack is too small once in PSRAM | Sizes unchanged; canary on | Stack report ≥ 512 B free for every application task after the overnight run |
 | Failure appears only after hours or during transitions | State-change run plus overnight run | Zero failure markers; core dump partition empty of new dumps |
 | Failed-allocation hook itself disturbs timing | ROM printing only, no allocation | Any hook output fails the run anyway and is investigated |
 | Slower PSRAM stack access delays sensor polling | Pollers run at 20 ms or slower | Frame count ≥ 16/s; `lock_fail` in `digital_level_prof` no higher in Stage 3 than in Stage 2 |
