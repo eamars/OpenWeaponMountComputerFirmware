@@ -106,3 +106,26 @@ Static Greps: `MALLOC_CAP_DEFAULT` in both touch drivers: no matches. `MALLOC_CA
 Device, Wi-Fi off, 120 s: `FT3168 initialized successfully, handle=0x3fcebb8c` (internal DRAM). Heap avg: `free_int` 193,359; `largest_dma` 114,539; frames 16.8/s; `qspi_actual_max_transfer=4092`. Failure markers: 1 `rst:` (port open), 1 allowed BNO085 abort; all others 0.
 
 Result: pass. Touch response is checked by the owner at the start of the Stage 5 rerun.
+
+## Stage 5, second run - failed on stack headroom (2026-11-05)
+
+Capture 900 s starting at device uptime 208 s (the port open did not reset the board this time). Owner actions seen in the log: Wi-Fi connect (`Connected with IP Address:192.168.2.146`, `mdns_init end`), Wi-Fi off/on with reconnect, saves (`NS: WIFI`, `NS: CT` ×2, `NS: DOPE` ×3), rotation 2 → 1 → 3 → 2, idle entry at 418 s and wake at 1,066 s. The log stops at 1,066 s: the owner disconnected the pogo connector by accident; no reset or panic precedes it. `Network connected, will poll OTA source` did not appear in this capture.
+
+- Failure markers: all 0 (no `rst:`, panic, abort, `ESP_ERR_NO_MEM`, LCD queue failure, `alloc_failed:`).
+- Heap (avg after 10 s): `free_int` 198,692 (min 193,163); `largest_dma` 114,688; `min_int` 188,067; `free_spiram` 5,623,701. Frames 19.5/s average (includes partial-refresh windows).
+- Stack report: three complete rounds (`begin count=24` … `end`). Minimum free per task over the run: `taskLVGL` (PSRAM, 8,192 B stack set in `main/lvgl_display.c`) **44 B**; `sys_evt` (ESP-IDF event loop, 2,304 B, runs this firmware's Wi-Fi event handler) **300 B**; `ipc1` 428; `ipc0` 500; `IDLE0` 576; `IDLE1` 584; `sensor_poller` 808; `STABILITY` 932; `Tmr Svc` 1,216; `tiT` 1,824; `LPMON` 1,852; `buzzer_task` 1,912; `countdown_timer` 2,072; `axp2101_monitor` 2,112; `mdns` 2,496; `wifi_deinit` 3,280; `RVReportPoller` 3,304; `wifi` 3,376; `mem_stack_rpt` 3,388; `ota_updater` 2,840; `esp_timer` 3,108; `swdraw` 6,184.
+- Result against the plan: fail. `taskLVGL` is an application-configured task below the 512 B floor. In the Wi-Fi-off Stages 2-4 it never went below 1,816 B.
+
+### Correction to the first-run diagnosis
+
+The first-run analysis said spinlocks are not safe in PSRAM on the ESP32-S3. That is wrong for ESP-IDF v5.5.2: `esp_cpu_compare_and_set` (`components/esp_hw_support/cpu.c`, the `XCHAL_HAVE_S32C1I && CONFIG_SPIRAM` branch) detects a target in external RAM and achieves atomicity by disabling interrupts and taking an internal CAS lock. A spinlock's placement in PSRAM does not by itself corrupt it. Change 4 was therefore made on a false premise.
+
+Re-reading the first-run core dump: `taskLVGL` stack used/free at the panic was 1,456 / 6,728 B (8,184 B). With the panic frame's stack pointer `0x3c1bd140`, the stack top is about `0x3c1bd6f0` and the stack base about `0x3c1bb6f8`. The corrupted spinlock was at `0x3c1bb60c`, 236 B below that base, in the heap block directly under the LVGL task's stack. Together with the 44 B minimum seen under the same workload in the second run, the leading explanation is a `taskLVGL` stack overflow that wrote below its base without touching the canary bytes. This is not proven; no run has caught the overflow itself.
+
+## Stage 4b - Change 4 reverted, Change 5 in (2026-11-05)
+
+- Change 4 code reverted in `ab0be64` (both touch drivers back to `MALLOC_CAP_DEFAULT`; `rg` returns `esp_lcd_touch_axs5106.c:54`, `esp_lcd_touch_ft3168.c:121`). The docs from `6f5f32a` are kept.
+- Change 5: `main/lvgl_display.c:384 lvgl_cfg.task_stack = 16384;` and `sdkconfig.defaults.esp32s3:1130 CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=3584`. After deleting `sdkconfig` and `idf.py reconfigure`: `CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=3584` and the deprecated alias `CONFIG_SYSTEM_EVENT_TASK_STACK_SIZE=3584` (the old-name line in the defaults' deprecated block does not override it). Build: pass.
+- Device, Wi-Fi off, 330 s, firmware `v0.0.1-103-gab0be64-dirty`: stack report `taskLVGL` PSRAM min free 9,944 B (of 16,384), `sys_evt` internal min free 1,868 B (of 3,584). Heap avg `free_int` 193,133, `largest_dma` 114,483; frames 16.5/s. Failure markers: 1 `rst:` (port open), 1 allowed BNO085 abort; all others 0.
+
+Result: pass. Next: Stage 5 from the start.

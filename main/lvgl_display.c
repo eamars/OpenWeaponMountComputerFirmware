@@ -381,7 +381,7 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
     // Initialize LVGL
     lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
     lvgl_cfg.task_stack_caps = HEAPS_CAPS_ALLOC_DEFAULT_FLAGS;
-    lvgl_cfg.task_stack = 8192;
+    lvgl_cfg.task_stack = 16384;
     
     ret = lvgl_port_init(&lvgl_cfg);
     ESP_ERROR_CHECK(ret);
