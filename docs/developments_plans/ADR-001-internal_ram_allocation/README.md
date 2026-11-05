@@ -4,7 +4,7 @@
 
 - Goal: free internal SRAM for the display driver by moving memory that does not need internal RAM into PSRAM, with no change to display performance behaviour, behind a safety net that leaves evidence of every runtime failure.
 - Plan class: medium
-- Status: in_progress (approved by the owner 2026-11-05)
+- Status: completed (approved and accepted by the owner 2026-11-05)
 - Mandatory skills: `esp32-debug`, `development-plan`
 - Overall cutover strategy: bigbang per change, in separately flashed and verified commits: safety net, task stacks, QSPI transfer size, then (after the soak) Change 4 and its revert and Change 5 stack sizes.
 - Highest-risk areas: task self-deletion lifecycle for stacks created in PSRAM; the QSPI transfer size change on the display bus; failures that appear only during state changes or after hours.
@@ -23,6 +23,7 @@
 9. Change 4 added (2026-11-05; premise wrong, see item 10): the Stage 5 reboot was `assert failed: spinlock_acquire (lock->count == 0)` in `esp_lcd_touch_ft3168_read_data`; the core dump puts the touch handle, which holds a `portMUX_TYPE`, at `0x3c1bb584` (PSRAM). Spinlocks are not safe in PSRAM on the ESP32-S3. Both touch drivers allocate the handle with `MALLOC_CAP_DEFAULT`; they move to internal RAM. A class audit found no other spinlock in PSRAM.
 10. Change 4 reverted, Change 5 added (2026-11-05): the item 9 premise is wrong. ESP-IDF v5.5.2 handles spinlocks in PSRAM by disabling interrupts and taking an internal CAS lock (`esp_cpu_compare_and_set`). The corrupted spinlock sat 236 B below the base of the `taskLVGL` stack, and the second Stage 5 run measured `taskLVGL` at 44 B free and `sys_evt` at 300 B free. The leading explanation, not proven, is a `taskLVGL` stack overflow that wrote below its base. Change 5 raises both stacks; Change 4 is reverted because, under that explanation, it would only move the corrupted neighbour.
 11. Overnight run deferred (2026-11-05): the owner does not run the device overnight at this stage. The overnight run is removed from this plan's acceptance and left for a later soak; Stage 5 is the state-change run only.
+12. Stage 5 acceptance (2026-11-05): the owner accepts the third state-change run as it ran (355 s; tile tour not recorded in the log; rotation changed once and not back; verdict "roughly ok"), and accepts ADR-001 as Built.
 
 ## Context
 

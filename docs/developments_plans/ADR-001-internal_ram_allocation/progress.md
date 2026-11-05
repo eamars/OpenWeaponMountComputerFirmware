@@ -169,3 +169,10 @@ Findings and fixes:
 - N1 (stale dump shown after a reset without a new dump), N3 (stack report may print a deleted task's name; verification builds only), N4 (the hook depends on flash rodata in PSRAM staying readable, true while `SPI_FLASH_CACHE_NO_DISABLE` holds), N6 (probe-and-fallback allocations could trigger the hook on a healthy system; none seen): recorded, not changed.
 
 Reruns after the fixes: doc-only changes; no code changed, so Static Greps and the build are unchanged from Stage 6.
+
+## Stage 8 - lifecycle (2026-11-05)
+
+- S2 from the review closed by the owner's explicit acceptance (owner item 12): the third state-change run is accepted as it ran.
+- Plan status: completed. Registry row: Built, with the overnight soak listed as deferred by the owner.
+
+Final state on COM11: firmware from `a9a787d` (profiling and stack report off). Measured on the verification builds: internal free heap 122.6 KB → about 193 KB, largest DMA-capable block 32.8 KB → 114.7 KB, `taskLVGL` 16 KB stack in PSRAM with 8.3 KB spare under the soak, `sys_evt` 3.5 KB with 1.5 KB spare, frames about 16/s upright and 12.9/s at 90° rotation.
