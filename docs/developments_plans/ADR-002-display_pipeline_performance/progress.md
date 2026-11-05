@@ -65,3 +65,8 @@ Capture from uptime 330 s (same boot as the boot/memory check, no reset). Rotati
 - Failure markers: all 0.
 
 Result for Stage 3: pass. The picture at all four rotations is confirmed by the owner; the 270° speed reading is attributed by elimination, not by a log line.
+
+## Step 1, Stage 4 - soak (in progress)
+
+- Overnight run started 2026-11-05 about 23:45 NZDT on the step 1 verification build (`320bb15` code, profiling and trace facility on), Wi-Fi on, unattended, 9 h capture.
+- State-change run: not run by hand. Proposed to run it unattended with the ADR-004 remote-control runner (`scenario state_change`) once ADR-004 is built; the Settings switch for remote control gives an A/B check if the run fails. Pending the owner's approval of ADR-004.
