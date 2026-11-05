@@ -1,12 +1,12 @@
 # adr-003: move to the latest ESP-IDF release and drop esp_tinyusb
 
-Status: **Draft 2026-11-05.** Starts after ADR-002 step 1 is Built. Not executable yet: the executable plan is written once ADR-002 step 1 is done, from a build-first trial on a throwaway branch.
+Status: **Draft 2026-11-05.** Starts only after ADR-002 is Built, all steps (owner 2026-11-06: no ADR-003 work, trial included, while ADR-002 is open). Not executable yet: the executable plan is written then, from a build-first trial on a throwaway branch.
 
 ## Owner's direction (2026-11-05)
 
 1. Skip ESP-IDF v5.5.6 and go straight to the latest stable release (v6.1 on 2026-11-05) to avoid a second migration.
 2. Remove `esp_tinyusb` (USB is not initialised: `usb_init()` is commented out in `app_main`).
-3. Do this after ADR-002 step 1, not mixed with it.
+3. Do this after ADR-002, not mixed with it (2026-11-06: after all of ADR-002, not only step 1).
 
 ## Context (checked 2026-11-05)
 
@@ -31,7 +31,7 @@ Known v6.x migration items for this codebase (from the v6.1 tree and the v6.0 mi
 - mbedTLS memory options used by ADR-001 (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`, `CONFIG_MBEDTLS_DYNAMIC_BUFFER`) still exist in v6.1.
 - Not yet checked: every managed component's declared IDF range, `sdkconfig.defaults.esp32s3` option renames (the file is a full v5.5 dump), the OTA image format and partition compatibility for units in the field, and the core dump and heap behaviour ADR-001 relies on.
 
-## Plan outline (to be made executable after ADR-002 step 1)
+## Plan outline (to be made executable after ADR-002 is Built)
 
 1. Throwaway trial branch: install v6.1 beside v5.5.2, build, list every error and Kconfig warning. No device time.
 2. Write the executable plan from that list: dependency changes, provisioning migration, config renames, removal of `esp_tinyusb`.

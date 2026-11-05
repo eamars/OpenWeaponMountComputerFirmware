@@ -72,3 +72,11 @@ Result for Stage 3: pass. The picture at all four rotations is confirmed by the 
 - State-change run: not run by hand. Proposed to run it unattended with the ADR-004 remote-control runner (`scenario state_change`) once ADR-004 is built; the Settings switch for remote control gives an A/B check if the run fails. Pending the owner's approval of ADR-004.
 - Overnight run on the step 1-only build stopped after 35 minutes (23:39 to 00:15) at the owner's request: the owner asked to run the overnight on the ADR-004 firmware instead, which contains step 1 unchanged. The 35 minutes: device uptime 0 to 2,115 s, failure markers only the port-open reset and the allowed BNO085 abort; heap steady (`free_int` 198,085 avg, min 195,411; `largest_dma` 118,784 throughout; `free_spiram` 5,875,116); `taskLVGL` 9,912 B free and `sys_evt` 1,452 B free in all 7 stack-report rounds; 10 idle/Wi-Fi transitions.
 - The step 1 overnight and state-change runs continue on the ADR-004 build (owner decision 2026-11-06); a failure there is separated by switching remote control off.
+
+## Step 1, Stage 4 - result and status (2026-11-06)
+
+- Owner, 2026-11-06: no further soak unless absolutely necessary; the overnight run is not needed. Step 1 closed on the runs below, all on builds that contain step 1 unchanged (ADR-004 branch; evidence in `../ADR-004-remote_control/progress.md`).
+- `scenario state_change` PASS on the fixed ADR-004 build (01:23), the profiling build (09:41) and the final build with the idle-entry fix (12:23); `scenario rotation_sweep` PASS (rotations 0-3, 120 s each, display active).
+- More than 600 idle/wake cycles with display flushes on the final build: `largest_dma` 114,688 B in every reading (floor 80,000); no `alloc_failed:`.
+- The LVGL freeze found on the way (display strip transfer never completed while idle entry stopped Wi-Fi and changed the clock) was in the low-power code, not in the step 1 flush; fixed in `d8d78bf`. A residual stall (1 in about 630 idle cycles, same SPI wait) is open and tracked in the ADR-004 progress log; the LVGL watchdog recovers it in about 9 s.
+- Status: step 1 Built.

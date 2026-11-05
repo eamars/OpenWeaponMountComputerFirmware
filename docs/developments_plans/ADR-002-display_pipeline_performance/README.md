@@ -37,7 +37,7 @@ Each step lists what it changes, why, and the gate it must pass. Thresholds are 
 
 ### Step 1: fixed internal staging buffers, rotate straight into DMA memory
 
-Executable plan: [step1_staging_flush.md](step1_staging_flush.md) (approved 2026-11-05, in progress). It supersedes the sketch below where they differ: the project creates the LVGL display itself, and the 90°/270° rotation reads PSRAM row by row.
+Executable plan: [step1_staging_flush.md](step1_staging_flush.md) (approved 2026-11-05, **Built 2026-11-06**). It supersedes the sketch below where they differ: the project creates the LVGL display itself, and the 90°/270° rotation reads PSRAM row by row.
 
 - Change: the project owns the flush. Two DMA-capable internal staging buffers, allocated once at display init (size fixed at finalization; 2 × 16 KB is the starting point). For each strip of the output frame, rotate from the PSRAM draw buffer directly into a free staging buffer and send it with `esp_lcd_panel_draw_bitmap`; rotate the next strip while the previous one is on the bus. Signal LVGL `lv_display_flush_ready` when the last strip completes. The full-frame rotation buffer is no longer allocated.
 - Why: one copy per frame instead of two; no per-transaction allocation by the SPI master (staging buffers are DMA-capable and aligned), so display DMA memory is fixed and does not fragment the heap or compete with Wi-Fi; 255,360 B of PSRAM freed; rotation overlaps the bus.
