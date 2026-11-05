@@ -120,7 +120,7 @@ Overall strategy: bigbang
 | Topic | Decision | Rationale |
 |---|---|---|
 | Who creates the LVGL display | The project (`display_flush_create`), not `lvgl_port_add_disp` | Replacing only the flush callback would leave the port allocating an unused 255 KB rotation buffer (`sw_rotate=true`) or calling unsupported hardware rotation on every rotation change (`sw_rotate=false`), plus a second `on_color_trans_done` owner. |
-| Staging size | 2 × 16,384 B, `MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL`, allocated once | 29 full rows (16,240 B) per strip at 280 px; 32 KB fits in the 114.7 KB largest DMA block with ≥ 64 KB left. |
+| Staging size | 2 × 16,384 B, `MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL`, allocated once | 28 full rows (15,680 B) per strip at 280 px after rounding down to an even count (17 strips per full frame); 32 KB fits in the 114.7 KB largest DMA block with ≥ 64 KB left. |
 | Rows per strip | `floor(DISPLAY_FLUSH_STAGING_BYTES / (physical_width × 2))`, rounded down to an even number | Keeps every window start even and end odd for the SH8601. |
 | Overlap | Two buffers alternate; no semaphore | `draw_bitmap` for strip k+1 returns only after strip k has left the bus (ESP-IDF waits in `tx_param`), so the buffer of strip k is free when strip k+1's call returns. |
 | Flush done | Count strips; the ISR callback calls `lv_display_flush_ready` when the done count reaches the frame's strip count | Callbacks of earlier strips can arrive while the next `draw_bitmap` waits; a "last strip" flag set beforehand would fire early. |
