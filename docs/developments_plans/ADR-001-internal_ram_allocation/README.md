@@ -6,7 +6,7 @@
 - Plan class: medium
 - Status: in_progress (approved by the owner 2026-11-05)
 - Mandatory skills: `esp32-debug`, `development-plan`
-- Overall cutover strategy: bigbang per change, in three separately flashed and verified commits: safety net, task stacks, QSPI transfer size.
+- Overall cutover strategy: bigbang per change, in separately flashed and verified commits: safety net, task stacks, QSPI transfer size, then (after the soak) Change 4 and its revert and Change 5 stack sizes.
 - Highest-risk areas: task self-deletion lifecycle for stacks created in PSRAM; the QSPI transfer size change on the display bus; failures that appear only during state changes or after hours.
 - Acceptance criteria: with Wi-Fi off, steady-state internal free heap ≥ 155,000 B and largest DMA-capable block ≥ 80,000 B; a 10-minute Wi-Fi-on run through the listed state changes, with zero failure markers, zero failed-allocation reports, no new core dump, and every application task's minimum free stack ≥ 512 B; frame rate on the digital level view not below 15 frames/s at QSPI 4091 (16 frames/s with the stack move alone).
 
@@ -20,8 +20,8 @@
 6. Add five risk controls: core dump to flash with a boot-time crash report; a log line with backtrace for every failed allocation; a task-stack headroom report in verification builds; the stack move and the QSPI change flashed and verified separately; a soak through state changes plus an overnight run. Unit tests are not used for this plan: its failure modes (memory placement, Wi-Fi load timing, task lifecycle) appear only on the running device.
 7. Stage 3 correction (2026-11-05): the internal free heap target is 155,000 B, not 168,000 B. The first estimate counted three tasks whose views are commented out (never created) and the pre-dependency-update starting point.
 8. Stage 4 decision (2026-11-05): keep QSPI 4091. It costs about 6 ms of flush per frame against 4096 (15.8 vs 19.4 frames/s once stacks are in PSRAM) and gives a 114.7 KB largest DMA block instead of 64 KB. The frame-rate floor for this plan becomes 15 frames/s; ADR-002 step 1 owns recovering the flush cost.
-9. Change 4 added (2026-11-05): the Stage 5 reboot was `assert failed: spinlock_acquire (lock->count == 0)` in `esp_lcd_touch_ft3168_read_data`; the core dump puts the touch handle, which holds a `portMUX_TYPE`, at `0x3c1bb584` (PSRAM). Spinlocks are not safe in PSRAM on the ESP32-S3. Both touch drivers allocate the handle with `MALLOC_CAP_DEFAULT`; they move to internal RAM. A class audit found no other spinlock in PSRAM.
-10. Change 4 reverted, Change 5 added (2026-11-05): the item 9 premise is wrong. ESP-IDF v5.5.2 handles spinlocks in PSRAM by disabling interrupts and taking an internal CAS lock (`esp_cpu_compare_and_set`). The corrupted spinlock sat 236 B below the base of the `taskLVGL` stack, and the second Stage 5 run measured `taskLVGL` at 44 B free and `sys_evt` at 300 B free. Change 5 raises both stacks; Change 4 is reverted because it only moved the corrupted neighbour.
+9. Change 4 added (2026-11-05; premise wrong, see item 10): the Stage 5 reboot was `assert failed: spinlock_acquire (lock->count == 0)` in `esp_lcd_touch_ft3168_read_data`; the core dump puts the touch handle, which holds a `portMUX_TYPE`, at `0x3c1bb584` (PSRAM). Spinlocks are not safe in PSRAM on the ESP32-S3. Both touch drivers allocate the handle with `MALLOC_CAP_DEFAULT`; they move to internal RAM. A class audit found no other spinlock in PSRAM.
+10. Change 4 reverted, Change 5 added (2026-11-05): the item 9 premise is wrong. ESP-IDF v5.5.2 handles spinlocks in PSRAM by disabling interrupts and taking an internal CAS lock (`esp_cpu_compare_and_set`). The corrupted spinlock sat 236 B below the base of the `taskLVGL` stack, and the second Stage 5 run measured `taskLVGL` at 44 B free and `sys_evt` at 300 B free. The leading explanation, not proven, is a `taskLVGL` stack overflow that wrote below its base. Change 5 raises both stacks; Change 4 is reverted because, under that explanation, it would only move the corrupted neighbour.
 11. Overnight run deferred (2026-11-05): the owner does not run the device overnight at this stage. The overnight run is removed from this plan's acceptance and left for a later soak; Stage 5 is the state-change run only.
 
 ## Context
@@ -167,9 +167,9 @@ Overall strategy: bigbang
 
 ## Target State
 
-- Every boot logs its reset reason. After a panic or watchdog reset, the boot log shows the crashed task, exception PC and backtrace, and `idf.py coredump-info` reads the full dump from the `coredump` partition.
+- Every boot logs its reset reason. On units flashed over serial with this partition table (an OTA update does not rewrite the partition table, so OTA-updated units have no `coredump` partition and log `ESP_ERR_NOT_FOUND`): after a panic or watchdog reset, the boot log shows the crashed task, exception PC and backtrace, and `idf.py coredump-info` reads the full dump from the `coredump` partition.
 - Every failed heap allocation prints its size, caps and a backtrace.
-- Twelve application task stacks and TCBs live in PSRAM; `LPMON`, `ota_updater`, LVGL draw threads and ESP-IDF system tasks keep internal stacks.
+- Twelve application task stacks live in PSRAM (their TCBs stay internal: `xTaskCreateWithCaps` allocates the TCB with `pvPortMalloc`, internal only); `LPMON`, `ota_updater`, LVGL draw threads and ESP-IDF system tasks keep internal stacks.
 - Each LCD color transaction is one 4,092-byte DMA descriptor (`display_prof_cfg` reports `qspi_actual_max_transfer=4092`).
 - The final firmware does not print `display_prof`, `digital_level_prof` or stack-report lines.
 - Behaviour visible to the user is unchanged: same screens, same frame rate, settings save, Wi-Fi connect, OTA manifest polling.
@@ -183,7 +183,7 @@ Overall strategy: bigbang
 | Dump lifecycle | Kept until the next crash overwrites it; summary printed only on a crash reset | A summary on every boot would look like a new crash. |
 | Allocation hook output | `esp_rom_printf` + `esp_backtrace_print` | The hook can run in ISRs and critical sections; `ESP_LOG` and allocation are not allowed there. The heap passes only its own function name, so the backtrace identifies the caller. |
 | Stack report switch | `CONFIG_FREERTOS_USE_TRACE_FACILITY` | `uxTaskGetSystemState` needs it anyway; no new project flag. |
-| Stack API | `xTaskCreateWithCaps` / `vTaskDeleteWithCaps` | ESP-IDF's supported way to place a task's stack and TCB in PSRAM; self-deletion is supported in v5.5.2 (`freertos/esp_additions/idf_additions.c`). Core dumps accept PSRAM stacks (`espcoredump/src/port/xtensa/core_dump_port.c`). |
+| Stack API | `xTaskCreateWithCaps` / `vTaskDeleteWithCaps` | ESP-IDF's supported way to place a task's stack in PSRAM (the TCB stays internal); self-deletion is supported in v5.5.2 (`freertos/esp_additions/idf_additions.c`). Core dumps accept PSRAM stacks (`espcoredump/src/port/xtensa/core_dump_port.c`). |
 | Caps value | `HEAPS_CAPS_ALLOC_DEFAULT_FLAGS` | Existing project convention for "this belongs in PSRAM". |
 | `bno08x` component edit | Allowed | The BNO085 poller is created inside the component; moving its stack cannot be done from `main/`. One call site changes. |
 | `LPMON`, `ota_updater` stay internal | Fixed | Light sleep and OTA flash writes are the two paths this plan cannot verify on the device. |
@@ -218,7 +218,7 @@ Overall strategy: bigbang
 ### Keep
 
 - `sdkconfig.defaults.esp32s3` as on the branch apart from the core dump options: `LV_ATTRIBUTE_FAST_MEM_USE_IRAM=n`, the reduced Wi-Fi/LWIP buffers, mbedTLS in external memory with dynamic buffers, NVS cache and mDNS task in PSRAM.
-- `main/lvgl_display.c`, `mem_diag_log_checkpoint()`, the display profiler code.
+- `mem_diag_log_checkpoint()` and the display profiler code in `main/lvgl_display.c` (only `lvgl_cfg.task_stack` changes there).
 
 ## Overdesign Guardrail
 
@@ -351,7 +351,7 @@ Verification builds: `DISPLAY_PROFILING_ENABLED 1` and `CONFIG_FREERTOS_USE_TRAC
 - Safety net (Wi-Fi off, 360 s): the boot log shows the `coredump` partition at `0x12000` and a reset-reason line on every boot. If the allowed BNO085 abort occurs, the following boot prints its summary (task name, PC, backtrace) and `idf.py -p COM11 coredump-info` decodes it. If no crash occurs in three port-open resets, flash a verification build with a temporary `abort()` in `app_main` after `wifi_init()`, confirm the summary and `coredump-info`, then remove the `abort()`, rebuild and reflash before sign-off. The stack report prints at 300 s.
 - Task stacks (Wi-Fi off, 360 s, digital level view on screen): average `free_int` ≥ 155,000 B; `flush=` ≥ 16 per 1-s window on average; in the stack report, every Change 2 task alive at report time shows PSRAM, `LPMON` and `ota_updater` show internal, and every application task (created in `main/` or `components/bno08x/`) has minimum free stack ≥ 512 B. ESP-IDF system tasks are recorded but not judged: their stack sizes are ESP-IDF settings outside this plan (`ipc0` 500 B and `ipc1` 428 B free in Stage 2, by design).
 - QSPI (Wi-Fi off, 120 s): `display_prof_cfg` reports `qspi_actual_max_transfer=4092`; average `largest_dma` ≥ 80,000 B; average `free_int` ≥ 155,000 B; `flush=` ≥ 15 per 1-s window on average.
-- Stacks (Wi-Fi off, 330 s): stack report shows `taskLVGL` in PSRAM with minimum free ≥ 8,192 B and `sys_evt` with minimum free ≥ 1,024 B; zero failure markers. In Stage 5 and the overnight run, `taskLVGL` must keep ≥ 2,048 B free and `sys_evt` ≥ 512 B.
+- Stacks (Wi-Fi off, 330 s): stack report shows `taskLVGL` in PSRAM with minimum free ≥ 8,192 B and `sys_evt` with minimum free ≥ 1,024 B; zero failure markers. In Stage 5, `taskLVGL` must keep ≥ 2,048 B free and `sys_evt` ≥ 512 B.
 - State-change run (600 s, owner on the device, in this order): turn Wi-Fi on in settings and press Save; wait for `Connected with IP Address:`, the `mdns_init end` checkpoint and `Network connected, will poll OTA source`; open every main tile once, including sensor calibration (the acceleration analysis, point of aim and OpenTrickler views are commented out in `main/main_tileview.c` and cannot be opened); let the device go idle and wake it three times; change rotation once, press Save, change it back, press Save; turn Wi-Fi off and on with the settings switch and wait for the IP address again.
 - Overnight run: deferred by the owner (item 11); not part of this plan's acceptance.
 
@@ -377,7 +377,7 @@ This plan is complete when:
 - The Static Greps, the builds and every device check pass as written above.
 - A crash on this firmware leaves a decodable core dump and a boot-log summary, shown once on the device.
 - The final flashed build has profiling and the stack report off and boots cleanly.
-- The three changes are three commits.
+- Each change is its own commit.
 - The independent code review has approved, and `progress.md` holds the evidence.
 - The registry row for ADR-001 says Built.
 

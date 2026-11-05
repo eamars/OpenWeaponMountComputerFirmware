@@ -35,7 +35,7 @@ Device, Wi-Fi off, two captures (360 s, then 330 s after the stack-report pacing
 - Failure markers: 1 `rst:` (port open), 1 `abort()` = the allowed BNO085 abort; 0 Guru, 0 `ESP_ERR_NO_MEM`, 0 LCD queue failures, 0 stack overflow, 0 `alloc_failed:`.
 - Heap (avg after 10 s): `free_int` 122,583; `largest_int` 32,768; `min_int` 111,419; `free_dma` 114,843; `largest_dma` 32,768; `min_dma` 103,679; `free_spiram` 5,661,372. Frames 16.8/s. `qspi_actual_max_transfer=8184`. Reference before ADR-001 (LVGL 9.5, no core dump): `free_int` 128,215, `largest_dma` 40,960. The drop includes the 1,792 B dump stack and the dependency update; not separated further.
 - Stack report (one round at 300 s, all `INTERNAL` except `taskLVGL` `PSRAM`): application tasks min free: `sensor_poller` 864 and 1,936, `STABILITY` 1,096, `LPMON` 1,916, `taskLVGL` 1,828, `buzzer_task` 1,948, `axp2101_monitor` 2,116, `countdown_timer` 2,336, `ota_updater` 2,844, `ota_poller` 3,252, `RVReportPoller` 3,252, `wifi_deinit` 3,280. ESP-IDF tasks (recorded, not judged): `ipc1` 428, `ipc0` 500, `sys_evt` 556, `IDLE0` 576, `IDLE1` 584, `Tmr Svc` 1,216, `tiT` 2,384, `esp_timer` 3,316, `wifi` 4,260, `swdraw` 6,504 / 6,544.
-- Known limitation: the console is the S3 USB-Serial-JTAG port. Without pacing it dropped 11 of about 30 report lines; with 20 ms pacing the first two lines of a round (`stack_rpt: begin`, `mem_stack_rpt`) were still lost after a 4-minute idle period with no other output. Root cause not known. Completeness is judged across rounds in the overnight run.
+- Known limitation: the console is the S3 USB-Serial-JTAG port. Without pacing it dropped 11 of about 30 report lines; with 20 ms pacing the first two lines of a round (`stack_rpt: begin`, `mem_stack_rpt`) were still lost after a 4-minute idle period with no other output. Root cause not known. Completeness was judged across rounds in later runs (the overnight run was deferred).
 - Plan correction (factual): the stack criterion applies to application tasks; ESP-IDF system tasks `ipc0`/`ipc1` run at 500/428 B free by ESP-IDF's own sizing.
 
 Result: pass.
@@ -59,7 +59,7 @@ Device, Wi-Fi off, 360 s:
 - Frames 19.0/s average. `digital_level_prof` average per 1-s window: `ui_ok` 16.1 (Stage 2: 16.3), `lock_fail` 20.8 (Stage 2: 18.4).
 - Failure markers: 1 `rst:` (port open), 1 allowed BNO085 abort; all others 0, including `alloc_failed:`.
 - Stack report, complete round (`begin count=24`, 24 lines): PSRAM: `taskLVGL` 1,816, `sensor_poller` 908 and 1,780, `STABILITY` 1,064, `buzzer_task` 1,944, `axp2101_monitor` 2,112, `countdown_timer` 2,348, `RVReportPoller` 3,308, `ota_poller` 3,340, `wifi_deinit` 3,364, `mem_stack_rpt` 3,376. Internal: `LPMON` 1,916, `ota_updater` 2,844; ESP-IDF tasks unchanged from Stage 2 (`ipc1` 428, `ipc0` 500, `IDLE0` 576, `IDLE1` 584, `sys_evt` 732, ...).
-- First result against the plan as written: `free_int` 159,118 < 168,000, fail. Cause: the estimate counted 11,264 B of stack for three tasks that never exist and used the pre-update starting point (128,215 B instead of 122,583 B). The nine running tasks hold 34,816 B of stack, matching the measured gain with their control blocks.
+- First result against the plan as written: `free_int` 159,118 < 168,000, fail. Cause: the estimate counted 11,264 B of stack for three tasks that never exist and used the pre-update starting point (128,215 B instead of 122,583 B). The nine running tasks hold 34,816 B of stack against a measured gain of 36,535 B; the extra ~1.7 KB is not explained (TCBs stay internal with `xTaskCreateWithCaps`).
 - Owner decision 2026-11-05: correct the target to 155,000 B and continue. The risk check for polling delay is corrected to `ui_ok` (not lower than Stage 2 by more than noise): 16.1 vs 16.3.
 
 Result: pass (corrected target).
@@ -89,7 +89,7 @@ Result: pass (corrected floor).
 
 ## Stage 5, first run - failed (2026-11-05)
 
-Owner on the device, Wi-Fi on (`Connected with IP Address:192.168.2.146`), settings saved (`NS: WIFI`, `NS: CT`, `NS: DOPE` written from the LVGL task without fault). About 65 s after the Wi-Fi connected, while switching tiles: `assert failed: spinlock_acquire spinlock.h:142 (lock->count == 0)` in `taskLVGL`. The core dump (`idf.py coredump-info`) shows `esp_lcd_touch_ft3168_read_data (ctx=0x3c1bb584)` at `components/esp_lcd_touch_ft3168/esp_lcd_touch_ft3168.c:34`, called from `lvgl_port_touchpad_read`. `0x3c1bb584` is PSRAM; the handle holds `portMUX_TYPE lock`, and spinlocks are not safe in PSRAM on the ESP32-S3. The handle was allocated with `heap_caps_calloc(..., MALLOC_CAP_DEFAULT)`.
+Owner on the device, Wi-Fi on (`Connected with IP Address:192.168.2.146`), settings saved (`NS: WIFI`, `NS: CT`, `NS: DOPE` written from the LVGL task without fault). About 65 s after the Wi-Fi connected, while switching tiles: `assert failed: spinlock_acquire spinlock.h:142 (lock->count == 0)` in `taskLVGL`. The core dump (`idf.py coredump-info`) shows `esp_lcd_touch_ft3168_read_data (ctx=0x3c1bb584)` at `components/esp_lcd_touch_ft3168/esp_lcd_touch_ft3168.c:34`, called from `lvgl_port_touchpad_read`. `0x3c1bb584` is PSRAM; the handle holds `portMUX_TYPE lock`, and spinlocks are not safe in PSRAM on the ESP32-S3 (wrong: see the correction under the second run). The handle was allocated with `heap_caps_calloc(..., MALLOC_CAP_DEFAULT)`.
 
 Whether ADR-001 made this more likely is not established: Changes 1-3 do not touch this allocation or the heap caps policy, and the firmware before ADR-001 had no core dump to show where the handle was.
 
@@ -152,3 +152,20 @@ Overnight run: started after the third run, stopped after a few minutes at the o
 - `git status --short` before this commit: only `M main/app_cfg.h`.
 
 Result: pass.
+
+## Stage 7 - independent code review (2026-11-05)
+
+Reviewer: one independent review subagent, read-only (no build, flash or serial access), diff `c6f2c63..HEAD` plus the plan and this record.
+
+Verdict: approve with fixes. No code findings that block. All scope checks passed: create/delete sites and handles; v5.5.2 self-delete support; the failed-allocation hook's context rules (`IRAM_ATTR`, no allocation, `DRAM_STR`, called after the heap lock is released); crash report formatting and no-dump path; stack report compiled out without the trace facility; partition row with no overlap; `sdkconfig.defaults.esp32s3` diff exactly the four core dump options and the event task stack size (the old-name line in the deprecated block does not override it); Change 4 revert byte-identical to `c6f2c63`; change surface; the corrected spinlock diagnosis (`cpu.c:203-228`) and `SPI_FLASH_CACHE_NO_DISABLE` (`spi_flash_os_func_app.c:29`).
+
+Findings and fixes:
+
+- S1 (doc): TCBs do not move to PSRAM: `xTaskCreateWithCaps` allocates the TCB with `pvPortMalloc` (internal). Fixed in README Target State and Design Decisions and in the Stage 3 record (the ~1.7 KB above the moved stack total is now stated as unexplained).
+- S2 (evidence): the third Stage 5 run is shorter and narrower than the plan's state-change run (355 s, tile tour not recorded, rotation not changed back, owner verdict "roughly ok"). Open: needs the owner's explicit acceptance or a rerun of the missing steps.
+- S3 (doc): README item 10 stated the stack-overflow cause as fact; it now carries "not proven". Items that said spinlocks are unsafe in PSRAM are marked wrong where they stand.
+- N2 (doc): OTA-updated units keep their old partition table and get no core dumps; Target State now says so.
+- N5 (doc): stale "three commits" and overnight wording fixed; registry row updated; `main/lvgl_display.c` no longer listed under Keep and Modify at once.
+- N1 (stale dump shown after a reset without a new dump), N3 (stack report may print a deleted task's name; verification builds only), N4 (the hook depends on flash rodata in PSRAM staying readable, true while `SPI_FLASH_CACHE_NO_DISABLE` holds), N6 (probe-and-fallback allocations could trigger the hook on a healthy system; none seen): recorded, not changed.
+
+Reruns after the fixes: doc-only changes; no code changed, so Static Greps and the build are unchanged from Stage 6.
