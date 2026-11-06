@@ -110,4 +110,5 @@ Owner: the list and order are approved; B13 is a placeholder, not a bug; B2 move
 
 ### B23: `scenario watchdog` wakes the unit first (2026-11-06)
 
-The scenario now sends `wake` and waits 2 s before `hang`, because the LVGL watchdog is paused while idle. Proof to run: start it with the unit idle; it must still end in the watchdog panic, the reboot, the `TASK_WDT` reset reason and a stored core dump.
+The scenario now sends `wake` and waits 2 s before `hang`, because the LVGL watchdog is paused while idle. Proof (`bd4d102`, `logs/rc/rc_watchdog_20261106_222240.log`): with the unit put into idle first (`idle=1`), the scenario woke it, `hang` locked LVGL, the watchdog named `lvgl` and rebooted the unit, which reported `TASK_WDT` and a stored core dump. PASS.
+- Noted on the way: before the hang, `min_int` read 140,588 B (about 150,400 B near boot) with `free_int` 185,863 B, so some time in the session internal RAM dipped about 10 KB lower than near boot; the owner's SoftAP provisioning test is the likely moment, not checked.
