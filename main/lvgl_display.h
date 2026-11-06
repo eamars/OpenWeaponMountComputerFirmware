@@ -12,7 +12,8 @@ extern "C" {
 esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle);
 
 // Pause the LVGL lock-up watchdog exactly while LVGL is stopped on purpose (lvgl_port_stop()
-// to lvgl_port_resume()). While paused, lvgl_watchdog_feed_while_paused() feeds it.
+// to lvgl_port_resume()). While paused, lvgl_watchdog_feed_while_paused() feeds it, but only while the
+// LVGL lock is free, so a lock held through the whole timeout still reboots the unit.
 void lvgl_watchdog_pause(bool pause);
 
 // Called every second by the low-power task; feeds only while paused

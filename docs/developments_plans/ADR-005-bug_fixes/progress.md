@@ -148,3 +148,10 @@ To test it, the remote control gained `bnoreset` (debug, like `hang`): it pulses
 ### B11: no Wi-Fi password in the console (2026-11-06)
 
 The `NETWORK_PROV_WIFI_CRED_RECV` log now names the SSID only. Proof without a fresh provisioning (which would replace the saved credentials): the built firmware no longer contains the `Password : %s` format string (1 occurrence before, 0 after), and the new line is present. Flashed; the unit answers.
+
+### B4: a stuck LVGL lock during idle now reboots the unit (2026-11-06)
+
+While the screen is off, the LVGL watchdog is paused and the low-power task fed it on every pass, so a task stuck holding the LVGL lock went unnoticed until the next wake. `lvgl_watchdog_feed_while_paused()` now feeds only if it can take the lock within 100 ms; idle holders keep it for milliseconds, and one that holds it for the whole 5 s timeout stops the feeds.
+- Before: `idle`, then `hang` (takes the LVGL lock for good): no watchdog and no reset in the 15 s watched.
+- After: the same steps, `hang` at 23:06:58.5, the task watchdog fired naming `lvgl` at 23:07:03.1 (4.6 s later, no wake), the unit rebooted and reported `Reset reason: TASK_WDT (6)`.
+- No false trips: 54 idle/wake cycles in 10 minutes, 7 s idle each (longer than the timeout), `rc_idle_cycles_20261106_230729.log`: PASS, no watchdog, `largest_dma` 110,592 B at its lowest.

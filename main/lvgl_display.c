@@ -358,6 +358,8 @@ void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
 
 
 #define LVGL_WATCHDOG_FEED_PERIOD_MS 1000
+// While idle, how long the low-power task waits for the LVGL lock before it skips a watchdog feed
+#define LVGL_WATCHDOG_IDLE_LOCK_PROBE_MS 100
 
 static esp_task_wdt_user_handle_t lvgl_watchdog_user = NULL;
 static volatile bool lvgl_watchdog_paused = false;
@@ -379,7 +381,15 @@ void lvgl_watchdog_pause(bool pause) {
 
 
 void lvgl_watchdog_feed_while_paused() {
-    if (lvgl_watchdog_paused && lvgl_watchdog_user != NULL) {
+    if (!lvgl_watchdog_paused || lvgl_watchdog_user == NULL) {
+        return;
+    }
+
+    // Feed only if the LVGL lock is free. Its holders while idle keep it for milliseconds; one that
+    // holds it for the whole watchdog timeout is a lock-up, and must reboot the unit then, not at the
+    // next wake (ADR-005 B4)
+    if (lvgl_port_lock(LVGL_WATCHDOG_IDLE_LOCK_PROBE_MS)) {
+        lvgl_port_unlock();
         esp_task_wdt_reset_user(lvgl_watchdog_user);
     }
 }
