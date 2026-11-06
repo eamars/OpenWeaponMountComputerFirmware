@@ -61,3 +61,30 @@ Same boot, from uptime 330 s; rotation changes in the log: 2 → 0 (532 s) → 1
 - Found on the way: the LVGL freeze (a display strip transfer that never completed while idle entry stopped Wi-Fi and changed the clock). The cause was in the low-power code, not the step 1 flush; fixed in `d8d78bf`. A rarer stall in the same SPI wait remains; see "Known issue in the flush path" in the README.
 
 Step 1: **Built 2026-11-06.**
+
+## Step 2: TE sync
+
+### Measurement (2026-11-06, `41da7b5`, profiling build)
+
+GPIO18 counts the TE pulse on both edges; the flush times each frame from its first strip queued to its last strip done (`te_prof` line, once a second). Display active on the digital level tile, Wi-Fi on (`build/rc_logs/rc_te_probe_20261106_125714.log`).
+
+- TE pulses on GPIO18: 60-61 a second, period 16.5-16.9 ms, high about 0.56 ms (V-blank). The init sequence's `TEON` works as wired.
+- Frame write time, average (max): 0° 21.8 ms (22.4); 90° 22.4 ms (23.4); 180° 21.8 ms (22.4); 270° 20.3 ms (20.8).
+- So one frame takes longer than one panel scan and well under two. Starting the write on the TE falling edge (the scan starts at row 0) keeps the scan ahead of the write for the whole first refresh, and the second refresh would only meet the write pointer about 60 ms in, long after the write ends (≤ 23.4 ms). Every refresh then shows one whole frame. This assumes the panel scans from row 0 down like the write; the owner's eye confirms it.
+- 10 minutes display active with the TE interrupt running (`rc_te_on_watch_20261106_130015.log`): 0 stalls. A stall 15 s after the post-flash boot on this build was the known flush-path stall (same SPI wait in the dump; the dump keeps no driver state, as the core dump saves task stacks only).
+
+### Sync (2026-11-06, `a91987d`)
+
+The flush waits for the TE falling edge before the first strip (binary semaphore given by the TE ISR; any edge that passed before the frame was ready is dropped first). Timeout 40 ms, counted in `te_timeouts`; on timeout the frame is sent anyway.
+
+| Rotation | Frames/s | Wait avg (max) | Write avg (max) | Timeouts |
+|---|---:|---:|---:|---:|
+| 0° | 15-16 | 8.4 ms (16.7) | 21.2 ms (22.8) | 0 |
+| 90° | 16 | 7.9 ms (16.8) | 22.2 ms (23.0) | 0 |
+| 180° | 16 | 8.3 ms (16.8) | 21.1 ms (21.9) | 0 |
+| 270° | 16-17 | 8.2 ms (16.7) | 20.3 ms (20.9) | 0 |
+
+Before the sync: 17 frames/s at every rotation (same build otherwise). Cost: about one frame a second.
+
+- `scenario state_change` (`rc_state_change_20261106_131438.log`): PASS, `taskLVGL` ≥ 2,048 B and `largest_dma` ≥ 80,000 B floors met, 0 TE timeouts across idle/wake, rotation saves and Wi-Fi off/on.
+- Left for step 2: the owner's visual check at all four rotations (no tear line, no diagonal tear), then the final build.
