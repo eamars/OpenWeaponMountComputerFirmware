@@ -337,3 +337,20 @@ For the owner (README, "For the owner to decide", items 4 and 5): BNO085 needs n
 The owner accepted both recommendations ("Accept both"): no BNO085 service change, and low power keeps its display calls. Step 3 is the Wi-Fi pilot, the PMIC service and the low-power start-up change, plus removing the display readiness check they left unused.
 
 Still to check by hand (needs the owner): the power-key long press opens the power menu; Power Off and the sleep-timeout power-off; a tap wakes the unit without pressing a widget; the battery icon and the Power Management page look right; the Wi-Fi status after a new provisioning.
+
+## Step 4: the remaining code issues (approved 2026-11-07, "Approve, start")
+
+### C2: BNO085 report index — checked, not a bug (2026-11-07)
+
+`sh2_sensor_callback` indexes its 60-entry table only after `sh2_decodeSensorEvent()` succeeded, and the decoder returns `SH2_ERR` for any report ID it has no case for (`sh2_SensorValue.c`, `default:`); its highest case is `0x2E` (46). A corrupted packet either carries a known ID, in bounds, or is dropped before the index. `bno085_configure_report` is only called with the five constant IDs. The review missed the decoder's check. Left for C4: the table is sized with `SH2_MAX_SENSOR_EVENT_LEN` (a byte length, 60) where the sensor-ID count (`SH2_MAX_SENSOR_ID + 1`, 47) is meant.
+
+### C3: FT3168 I2C timeouts (2026-11-07)
+
+The FT3168 shares I2C0 with the PMIC, and the ESP-IDF I2C driver waits for the bus lock with the caller's timeout (`i2c_master.c`, `s_i2c_synchronous_transaction`). With `-1`, a touch read, which runs in the LVGL task at every input poll, could wait forever behind the bus. Now:
+- `FT3168_I2C_TIMEOUT_MS` (100 ms, as the BNO085 and AXS5106 drivers use) for init and both reads.
+- A read publishes the point count with its coordinates, after both reads succeed; before, the count was set first, so a failed coordinate read left a count with stale coordinates.
+- Both GPIO-config error paths free the handle.
+
+Not changed: XPowersLib (third-party) also passes `-1` on the same bus; a stuck bus would then hang the PMIC task, while touch now times out.
+
+Proof (`rc_c3_20261107_122011.log`): reboot, `FT3168: Successfully wrote to FT3168` at 1.7 s, then only the two known boot lines; 40 s awake with tile flips and one idle/wake, no FT3168 or other error lines (the reads run at every input poll, touched or not). Not tested: a real touch after this change (needs a finger) and a stuck bus.

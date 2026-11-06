@@ -5,6 +5,11 @@
 
 #define TAG "FT3168"
 
+// The touch controller shares I2C0 with the PMIC, and the driver also waits for the bus lock with this timeout.
+// Touch reads run in the LVGL task, so a finite wait turns a stuck bus into a missed touch, not a hung display
+// (ADR-005 C3). A transfer takes well under 1 ms at 300 kHz
+#define FT3168_I2C_TIMEOUT_MS 100
+
 
 esp_err_t esp_lcd_touch_ft3168_read_data(esp_lcd_touch_handle_t ctx) {
     if (!ctx) {
@@ -22,7 +27,7 @@ esp_err_t esp_lcd_touch_ft3168_read_data(esp_lcd_touch_handle_t ctx) {
         (i2c_master_dev_handle_t) ctx->config.driver_data,
         &write_cmd, 1,
         &touch_points, 1,
-        -1), TAG, "Failed to read touch points");
+        FT3168_I2C_TIMEOUT_MS), TAG, "Failed to read touch points");
 
     if (touch_points == 0) {
         return ESP_OK;
@@ -30,33 +35,33 @@ esp_err_t esp_lcd_touch_ft3168_read_data(esp_lcd_touch_handle_t ctx) {
 
     touch_points = (touch_points > 2 ? 2 : touch_points);  // make sure we are not reading more than needed
 
-    // Enter critical section to protect data
+    // Read every point first, then publish them together: a failed read leaves no point count with stale
+    // coordinates behind
+    uint16_t xs[2];
+    uint16_t ys[2];
+    uint8_t read_buf[4];
+
+    for (int i = 0; i < touch_points; i++) {
+        write_cmd = 0x03 + i * 6;
+
+        ESP_RETURN_ON_ERROR(i2c_master_transmit_receive(
+            (i2c_master_dev_handle_t) ctx->config.driver_data,
+            &write_cmd, 1,
+            read_buf, 4,
+            FT3168_I2C_TIMEOUT_MS), TAG, "Failed to read touch coordinates %d", i);
+
+        ys[i] = (((uint16_t)read_buf[0] & 0x0f)<<8) | (uint16_t)read_buf[1];
+        xs[i] = (((uint16_t)read_buf[2] & 0x0f)<<8) | (uint16_t)read_buf[3];
+    }
+
     portENTER_CRITICAL(&ctx->data.lock);
+    for (int i = 0; i < touch_points; i++) {
+        ctx->data.coords[i].x = xs[i];
+        ctx->data.coords[i].y = ys[i];
+    }
     ctx->data.points = touch_points;
     portEXIT_CRITICAL(&ctx->data.lock);
 
-    uint8_t read_buf[4];
-
-    // Find all coordinates
-    for (int i = 0; i < touch_points; i++) {
-        // Read all coordinates
-        write_cmd = 0x03 + i * 6;
-        
-        ESP_RETURN_ON_ERROR(i2c_master_transmit_receive(
-            (i2c_master_dev_handle_t) ctx->config.driver_data, 
-            &write_cmd, 1,
-            read_buf, 4,
-            -1), TAG, "Failed to read touch coordinates %d", i);
-
-        // Write data to the handle
-        portENTER_CRITICAL(&ctx->data.lock);
-        ctx->data.coords[i].y = (((uint16_t)read_buf[0] & 0x0f)<<8) | (uint16_t)read_buf[1];
-        ctx->data.coords[i].x = (((uint16_t)read_buf[2] & 0x0f)<<8) | (uint16_t)read_buf[3];
-        portEXIT_CRITICAL(&ctx->data.lock);
-
-        // ESP_LOGI(TAG, "Touch %d: x=%d, y=%d", i, ctx->data.coords[i].x, ctx->data.coords[i].y);
-    }
-    
     return ESP_OK;
 }
 
@@ -135,7 +140,11 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
             .mode = GPIO_MODE_OUTPUT,
             .pin_bit_mask = BIT64(touch_handle->config.rst_gpio_num)
         };
-        ESP_RETURN_ON_ERROR(gpio_config(&rst_gpio_config), TAG, "GPIO config failed");
+        esp_err_t ret = gpio_config(&rst_gpio_config);
+        if (ret != ESP_OK) {
+            free(touch_handle);
+            ESP_RETURN_ON_ERROR(ret, TAG, "Reset GPIO config failed");
+        }
 
         // Perform a reset
         gpio_set_level(touch_handle->config.rst_gpio_num, touch_handle->config.levels.reset);
@@ -149,7 +158,8 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
     uint8_t write_buf[2] = {0x0, 0x0};  // write 0x0 to addr 0x0 to switch to working mode
 
     while (retry > 0) {
-        esp_err_t ret = i2c_master_transmit((i2c_master_dev_handle_t) config->driver_data, write_buf, 2, -1);
+        esp_err_t ret = i2c_master_transmit((i2c_master_dev_handle_t) config->driver_data, write_buf, 2,
+                                            FT3168_I2C_TIMEOUT_MS);
         if (ret != ESP_OK) {
             ESP_LOGW(TAG, "Failed to write to FT3168: %s, %d", esp_err_to_name(ret), retry);
             vTaskDelay(pdMS_TO_TICKS(200));
@@ -189,7 +199,11 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
             .pin_bit_mask = BIT64(touch_handle->config.int_gpio_num)
         };
         
-        ESP_RETURN_ON_ERROR(gpio_config(&int_gpio_config), TAG, "GPIO config failed");
+        esp_err_t ret = gpio_config(&int_gpio_config);
+        if (ret != ESP_OK) {
+            free(touch_handle);
+            ESP_RETURN_ON_ERROR(ret, TAG, "Interrupt GPIO config failed");
+        }
 
         /* Register interrupt callback */
         if (touch_handle->config.interrupt_callback)
