@@ -13,13 +13,26 @@ Every module mapped to its known bugs and performance issues, from a review of e
 3. The ADR starts with each module mapped to its known bugs and performance issues; only the bugs are addressed in ADR-005.
 4. At system level, LVGL, the BNO085, Wi-Fi, the PMIC and the other peripherals are reviewed one by one, so the system-level interactions are covered too.
 5. Bug fixes are functional changes on today's dependencies (ESP-IDF v6.1 and the managed components as locked by ADR-003). No dependency update inside this ADR.
+6. Review not just the code but the life cycle of each submodule: the BNO085 from init to sleep, Wi-Fi from provisioning to auto shut-off, the LVGL locks and multi-thread rendering.
+7. Most of the code is hand-written: check styling and consistency too.
 
 ## Step 1: the review and the module map
 
-One review per subsystem. Each reads the code end to end and checks:
-- the lifecycle of every piece of state: created, used, released, and what happens across idle/wake and a restart;
-- every place it meets another subsystem: the LVGL lock, shared variables, event groups, tasks and their priorities and stacks, the watchdog, power management and the idle/wake sequence;
+One review per subsystem, done as a walk through each life cycle rather than file by file:
+
+- **LVGL and the display:** start-up (port task, lock, display, touch and button input, the two software draw units, `CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2`), every task that takes the LVGL lock and for how long, what the draw units touch while the LVGL task renders, timers, stop/resume across idle, the LVGL watchdog user, and the panel's on/off, brightness and TE input.
+- **BNO085:** power-on and reset, detection (where the first-boot abort lives), report configuration, the sensor poller, calibration, sleep on idle, wake, and recovery from "BNO085 Reset Unexpectly".
+- **Wi-Fi and network:** init, provisioned or not, SoftAP provisioning (PoP, QR, timeout), credentials, connect and retry, IP, mDNS, OTA polling and download, the OpenTrickler client, the expiry watchdog and auto shut-off, stop/start across idle, the user's on/off switch and provisioning reset.
+- **PMIC:** init, interrupts, the monitor task, charge and battery reporting, power-off and shut-down paths.
+- **Other peripherals:** FT3168 touch, the external button (GPIO0), buzzer (LEDC), both I2C buses and who shares them, the USB Serial/JTAG console and remote control, NVS settings (load, CRC, defaults, save, reset).
+- **System:** `app_main` start-up order, active/idle/wake and power management, crash reporting and memory diagnostics, every task with its priority, core and stack, and the task watchdog.
+
+Each walk checks:
+- every piece of state through its whole life: created, used, released, and what happens across idle/wake and a restart;
+- every place it meets another subsystem: the LVGL lock, shared variables, event groups, task priorities, the watchdog, power management and the idle/wake order;
 - on the device, only where reading the code cannot settle a question (short scenarios, cycle tests of at most 10 minutes, nothing that blanks or resets the screen while the owner is at the unit).
+
+Styling and consistency are checked against the project's own rules: `.agents/skills/c-style` for all C and C++, and `.agents/skills/lvgl-layout` and `lvgl-widget` for the views. Also checked: naming, error handling, logging and comments that differ from module to module. Third-party code (`components/XPowersLib`, the `sh2` library) is out of scope for style.
 
 | Review | Modules |
 |---|---|
@@ -32,7 +45,7 @@ One review per subsystem. Each reads the code end to end and checks:
 
 The 1.47" display and its touch controller (`esp_lcd_jd9853`, `esp_lcd_touch_axs5106`) belong to the dev kit, not to this unit. They are checked only so far as they still build.
 
-The map is a table per module: known bugs (fixed in step 2) and performance issues (recorded only). Each entry says how it is known: seen on the device, read in a log, or found in the code with its effect worked out. The map goes to the owner, who approves the bug list for step 2.
+The map is a table per module: known bugs (fixed in step 2), performance issues (recorded only) and style and consistency findings. Each entry says how it is known: seen on the device, read in a log, or found in the code with its effect worked out. The map goes to the owner, who approves the bug list for step 2.
 
 ### Already known, to be placed on the map
 
@@ -74,3 +87,4 @@ Known risk, not a bug yet: the core dump routine had 436 B of its 1,792 B stack 
 
 1. Is the BNO085 first-boot abort (3) in this round, or yours to fix?
 2. The core dump stack margin: leave it, or raise it at a small internal RAM cost?
+3. Style findings: recommended as a separate pass after the bug fixes, module by module, so each bug fix stays a small change that is easy to check. Kept out of the bug-fix changes either way. In this ADR as step 3, or a later ADR?
