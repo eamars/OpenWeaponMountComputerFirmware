@@ -104,7 +104,7 @@ OTA over plain HTTP with no image signing; OpenTrickler discovered only once per
 - Only the bugs the owner approves from the map; performance issues stay on the map.
 - One bug per change, each built, flashed and proven on the device before the next. The proof shows the failure before the fix where it can be reproduced, and shows it gone after.
 - Tooling first (B22, B23), so the evidence for the rest is kept.
-- Order after that (owner approved 2026-11-06): B16, B3, B5 then B7 then B6, B8, B10, B9, B11, B15, B4, B14, B12, B18, B20, B24, and B19 as one change. The open causes (B1, B17, B21) are investigated alongside; each fix is proposed once its cause is known. B2 moved to step 3; B13 is not a bug. The BNO085 first-boot abort is left out of B7 for now (owner).
+- Order after that (owner approved 2026-11-06): B16, B3, B5 then B7 then B6, B8, B10, B9, B11, B15, B4, B14, B12, B18, B20, B24, and B19 as one change. The open causes (B1, B17, B21) are investigated alongside; each fix is proposed once its cause is known. B2 moved to step 3; B13 is not a bug. The BNO085 first-boot abort is in, as part of B7 (owner, 2026-11-06).
 - The cause before the fix. Where the cause is unknown, the first step is to find it, and the fix is proposed once it is known.
 - The boot-log noise as one change.
 
@@ -123,6 +123,6 @@ Wi-Fi is the pilot (with B2 and the lock ordering folded in), then PMIC, BNO085 
 
 ## For the owner to decide
 
-1. The BNO085 first-boot abort: left out for now (owner, 2026-11-06); the likely cause is in the progress notes.
+1. The BNO085 first-boot abort: in this round, as part of B7 (owner, 2026-11-06); the likely cause is in the progress notes.
 2. The core dump stack margin: leave it, or raise it at a small internal RAM cost?
 3. Style findings: recommended as a separate pass after the bug fixes, module by module, so each bug fix stays a small change that is easy to check. Kept out of the bug-fix changes either way. In this ADR as step 3, or a later ADR?

@@ -23,7 +23,8 @@ import serial
 DEFAULT_PORT = "COM11"
 BAUD_RATE = 115200
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-DEFAULT_LOG_DIR = REPO_ROOT / "build" / "rc_logs"
+# Outside build/: idf.py fullclean and set-target delete build/, and with it the evidence (ADR-005 B22)
+DEFAULT_LOG_DIR = REPO_ROOT / "logs" / "rc"
 
 COMMAND_TIMEOUT_S = 5.0
 READY_TIMEOUT_S = 60.0
@@ -516,7 +517,7 @@ def parse_args(argv):
     options.add_argument("--watch-s", type=float, default=600.0,
                          help="watch scenario: seconds to keep checking after state_change")
     options.add_argument("--log-dir", type=pathlib.Path, default=DEFAULT_LOG_DIR,
-                         help="directory for session logs (default build/rc_logs)")
+                         help="directory for session logs (default logs/rc)")
 
     parser = argparse.ArgumentParser(description="Serial remote control runner")
     commands = parser.add_subparsers(dest="action", required=True)
