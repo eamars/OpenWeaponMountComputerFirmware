@@ -112,3 +112,8 @@ Owner: the list and order are approved; B13 is a placeholder, not a bug; B2 move
 
 The scenario now sends `wake` and waits 2 s before `hang`, because the LVGL watchdog is paused while idle. Proof (`bd4d102`, `logs/rc/rc_watchdog_20261106_222240.log`): with the unit put into idle first (`idle=1`), the scenario woke it, `hang` locked LVGL, the watchdog named `lvgl` and rebooted the unit, which reported `TASK_WDT` and a stored core dump. PASS.
 - Noted on the way: before the hang, `min_int` read 140,588 B (about 150,400 B near boot) with `free_int` 185,863 B, so some time in the session internal RAM dipped about 10 KB lower than near boot; the owner's SoftAP provisioning test is the likely moment, not checked.
+
+### B16: the touch controller is reset on its own pin (2026-11-06)
+
+`esp_lcd_touch_new_ft3168` now copies the config into the handle before the reset block, so the reset pulses GPIO16 (the FT3168's reset line) instead of GPIO0, the external button. Proof (`logs/rc/rc_reboot_20261106_222444.log`): no `conflict found for GPIO[0]` in the boot log (0 lines; it printed on every v6.1 boot before), and the FT3168 initialises after its reset ("Successfully wrote to FT3168" at 824 ms). Still to see: the owner's check that touch and the button work.
+- Seen on the way: the first boot after the app flash (an RTS reset) reported the previous reset as `PANIC` with a core dump in task `main`, the BNO085 first-boot abort (B7) reproducing as expected.

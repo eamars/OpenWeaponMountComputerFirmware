@@ -124,6 +124,10 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
         return ESP_ERR_NO_MEM;
     }
 
+    // Save config first: the reset below reads the pins from it (read from the zeroed handle, the reset
+    // pulsed GPIO0, the external button, and never reset the controller; ADR-005 B16)
+    memcpy(&touch_handle->config, config, sizeof(esp_lcd_touch_config_t));
+
     // Prepare pin for touch controller reset
     if (touch_handle->config.rst_gpio_num != GPIO_NUM_NC)
     {
@@ -175,9 +179,6 @@ esp_err_t esp_lcd_touch_new_ft3168(esp_lcd_touch_config_t *config, esp_lcd_touch
 
     /* Mutex */
     touch_handle->data.lock.owner = portMUX_FREE_VAL;
-
-    /* Save config */
-    memcpy(&touch_handle->config, config, sizeof(esp_lcd_touch_config_t));
 
     // Prepare pin for touch interrupt
     if (touch_handle->config.int_gpio_num != GPIO_NUM_NC)
