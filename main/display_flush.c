@@ -6,7 +6,11 @@
 #include "esp_heap_caps.h"
 #include "esp_attr.h"
 #include "esp_err.h"
+#include "esp_check.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "driver/gpio.h"
+#include "hal/gpio_ll.h"
 #include "freertos/FreeRTOS.h"
 
 #include <inttypes.h>
@@ -29,10 +33,26 @@ typedef struct {
     // Protected by display_flush_strip_lock (written by the LVGL task and the SPI ISR)
     uint32_t strips_total;
     uint32_t strips_done;
+    int64_t frame_start_us;
 } display_flush_ctx_t;
+
+// Window totals behind display_flush_take_timing(); protected by display_flush_timing_lock
+typedef struct {
+    uint32_t te_pulses;
+    int64_t te_last_rise_us;
+    uint32_t te_period_min_us;
+    uint32_t te_period_max_us;
+    uint64_t te_high_us_total;
+    uint32_t te_high_count;
+    uint32_t frames;
+    uint64_t write_us_total;
+    uint32_t write_max_us;
+} display_flush_timing_acc_t;
 
 static display_flush_ctx_t display_flush_ctx;
 static portMUX_TYPE display_flush_strip_lock = portMUX_INITIALIZER_UNLOCKED;
+static display_flush_timing_acc_t display_flush_timing_acc;
+static portMUX_TYPE display_flush_timing_lock = portMUX_INITIALIZER_UNLOCKED;
 
 
 static inline uint16_t display_flush_swap(uint16_t px) {
@@ -139,16 +159,96 @@ static bool IRAM_ATTR display_flush_trans_done_cb(esp_lcd_panel_io_handle_t pane
     lv_display_t *disp = (lv_display_t *) user_ctx;
     bool frame_done;
 
+    int64_t frame_start_us;
+
     portENTER_CRITICAL_ISR(&display_flush_strip_lock);
     display_flush_ctx.strips_done++;
     frame_done = (display_flush_ctx.strips_done == display_flush_ctx.strips_total);
+    frame_start_us = display_flush_ctx.frame_start_us;
     portEXIT_CRITICAL_ISR(&display_flush_strip_lock);
 
     if (frame_done) {
+        uint32_t write_us = (uint32_t) (esp_timer_get_time() - frame_start_us);
+
+        portENTER_CRITICAL_ISR(&display_flush_timing_lock);
+        display_flush_timing_acc.frames++;
+        display_flush_timing_acc.write_us_total += write_us;
+        if (write_us > display_flush_timing_acc.write_max_us) {
+            display_flush_timing_acc.write_max_us = write_us;
+        }
+        portEXIT_CRITICAL_ISR(&display_flush_timing_lock);
+
         lv_display_flush_ready(disp);
     }
 
     return false;
+}
+
+
+// GPIO ISR on both TE edges: counts pulses, times the period (rising to rising) and the high time
+static void IRAM_ATTR display_flush_te_isr(void *arg) {
+    (void) arg;
+
+    const int64_t now_us = esp_timer_get_time();
+    const bool high = gpio_ll_get_level(&GPIO, LCD_TE_OUT) != 0;
+
+    portENTER_CRITICAL_ISR(&display_flush_timing_lock);
+    if (high) {
+        if (display_flush_timing_acc.te_last_rise_us != 0) {
+            uint32_t period_us = (uint32_t) (now_us - display_flush_timing_acc.te_last_rise_us);
+            if (display_flush_timing_acc.te_period_min_us == 0 || period_us < display_flush_timing_acc.te_period_min_us) {
+                display_flush_timing_acc.te_period_min_us = period_us;
+            }
+            if (period_us > display_flush_timing_acc.te_period_max_us) {
+                display_flush_timing_acc.te_period_max_us = period_us;
+            }
+        }
+        display_flush_timing_acc.te_pulses++;
+        display_flush_timing_acc.te_last_rise_us = now_us;
+    }
+    else if (display_flush_timing_acc.te_last_rise_us != 0) {
+        display_flush_timing_acc.te_high_us_total += (uint64_t) (now_us - display_flush_timing_acc.te_last_rise_us);
+        display_flush_timing_acc.te_high_count++;
+    }
+    portEXIT_CRITICAL_ISR(&display_flush_timing_lock);
+}
+
+
+void display_flush_take_timing(display_flush_timing_t *timing) {
+    display_flush_timing_acc_t acc;
+
+    portENTER_CRITICAL(&display_flush_timing_lock);
+    acc = display_flush_timing_acc;
+    // Keep the last rising edge so the next window's first period is measured
+    const int64_t last_rise_us = display_flush_timing_acc.te_last_rise_us;
+    display_flush_timing_acc = (display_flush_timing_acc_t) {0};
+    display_flush_timing_acc.te_last_rise_us = last_rise_us;
+    portEXIT_CRITICAL(&display_flush_timing_lock);
+
+    timing->te_pulses = acc.te_pulses;
+    timing->te_period_min_us = acc.te_period_min_us;
+    timing->te_period_max_us = acc.te_period_max_us;
+    timing->te_high_avg_us = acc.te_high_count ? (uint32_t) (acc.te_high_us_total / acc.te_high_count) : 0;
+    timing->frames = acc.frames;
+    timing->write_avg_us = acc.frames ? (uint32_t) (acc.write_us_total / acc.frames) : 0;
+    timing->write_max_us = acc.write_max_us;
+}
+
+
+static esp_err_t display_flush_te_init() {
+    const gpio_config_t te_conf = {
+        .pin_bit_mask = (1ULL << LCD_TE_OUT),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE,
+    };
+
+    ESP_RETURN_ON_ERROR(gpio_config(&te_conf), TAG, "TE GPIO config failed");
+    // The GPIO ISR service is installed in app_main before the display is created
+    ESP_RETURN_ON_ERROR(gpio_isr_handler_add(LCD_TE_OUT, display_flush_te_isr, NULL), TAG, "TE ISR add failed");
+
+    return ESP_OK;
 }
 
 
@@ -219,6 +319,7 @@ static void display_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t 
     portENTER_CRITICAL(&display_flush_strip_lock);
     display_flush_ctx.strips_total = strips;
     display_flush_ctx.strips_done = 0;
+    display_flush_ctx.frame_start_us = esp_timer_get_time();
     portEXIT_CRITICAL(&display_flush_strip_lock);
 
     // Two staging buffers alternate. The next strip's draw_bitmap() returns only after the previous strip has left
@@ -326,6 +427,12 @@ lv_display_t *display_flush_create(esp_lcd_panel_io_handle_t io_handle,
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register panel IO callback: %s", esp_err_to_name(ret));
         goto err;
+    }
+
+    // Timing only for now: a missing TE input costs the measurement, not the display
+    ret = display_flush_te_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "TE input not set up: %s", esp_err_to_name(ret));
     }
 
     ESP_LOGI(TAG, "Display created: draw_buf=2x%u B (PSRAM) staging=2x%d B (internal DMA)",

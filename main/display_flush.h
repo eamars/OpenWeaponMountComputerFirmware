@@ -20,6 +20,20 @@ extern "C" {
 lv_display_t *display_flush_create(esp_lcd_panel_io_handle_t io_handle,
                                    esp_lcd_panel_handle_t panel_handle);
 
+// Panel tearing-effect (TE, GPIO18) and frame write timing since the last call
+typedef struct {
+    uint32_t te_pulses;          // TE rising edges
+    uint32_t te_period_min_us;   // shortest rising-to-rising interval (0 with fewer than two pulses)
+    uint32_t te_period_max_us;
+    uint32_t te_high_avg_us;     // average time TE stays high
+    uint32_t frames;             // flushes whose last strip completed
+    uint32_t write_avg_us;       // first strip queued to last strip done
+    uint32_t write_max_us;
+} display_flush_timing_t;
+
+// Copy the timing gathered since the previous call and start a new window
+void display_flush_take_timing(display_flush_timing_t *timing);
+
 #ifdef __cplusplus
 }
 #endif
