@@ -331,3 +331,9 @@ Proof:
 - Not tested: the touch wake wrapper (needs a finger; the same two calls, now made at start-up instead of in the view), and the sleep timeout (1 hour at the owner's setting).
 
 For the owner (README, "For the owner to decide", items 4 and 5): BNO085 needs no service change, and low power keeps driving the display itself; both are recommendations, not built. If both are accepted, step 3 is complete with the three changes above.
+
+### Step 3 done (2026-11-07)
+
+The owner accepted both recommendations ("Accept both"): no BNO085 service change, and low power keeps its display calls. Step 3 is the Wi-Fi pilot, the PMIC service and the low-power start-up change, plus removing the display readiness check they left unused.
+
+Still to check by hand (needs the owner): the power-key long press opens the power menu; Power Off and the sleep-timeout power-off; a tap wakes the unit without pressing a widget; the battery icon and the Power Management page look right; the Wi-Fi status after a new provisioning.
