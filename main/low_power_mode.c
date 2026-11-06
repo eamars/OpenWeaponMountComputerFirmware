@@ -394,7 +394,9 @@ void low_power_monitor_task(void *p) {
             // Have sayed in idle long enough
             if (idle_duration_ms > sleep_timeout_ms) {
                 // enter_sleep_mode();
-                pmic_power_off();
+                // The PMIC service shuts the unit down from its own task (ADR-005 step 3). Without a PMIC
+                // there is nothing to do: the request returns ESP_ERR_INVALID_STATE
+                (void) pmic_request_power_off();
             }
         }
 

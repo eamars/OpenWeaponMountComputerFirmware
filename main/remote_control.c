@@ -24,6 +24,8 @@
 #include "common.h"
 #include "bno085.h"
 #include "low_power_mode.h"
+#include "pmic_axp2101.h"
+#include "ui_bridge.h"
 #include "system_config.h"
 #include "wifi.h"
 #include "wifi_config.h"
@@ -48,7 +50,7 @@
 #define RC_MAX_ARGS 4
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats bt tap swipe tile rot wifi save idle wake reboot hang bnoreset"
+#define RC_HELP_COMMANDS "help state stats bt pmic tap swipe tile rot wifi save idle wake reboot hang bnoreset"
 
 
 typedef struct {
@@ -599,6 +601,27 @@ static bool rc_cmd_reboot(char *reply, size_t reply_size) {
 }
 
 
+// The PMIC service's newest reading, and the battery level the UI bridge holds for the status bar icon
+// (101 = USB icon), so a script can see a reading reach the UI (ADR-005 step 3)
+static bool rc_cmd_pmic(char *reply, size_t reply_size) {
+    axp2101_status_t status = pmic_get_status();
+
+    if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
+        return rc_reply(reply, reply_size, false, "@err busy");
+    }
+    int32_t icon = lv_subject_get_int(&ui_battery_level);
+    const axp2101_status_t *shown = (const axp2101_status_t *) lv_subject_get_pointer(&ui_pmic_status);
+    unsigned shown_vbat = shown->vbatt_voltage_mv;
+    lvgl_port_unlock();
+
+    return rc_reply(reply, reply_size, true,
+                    "@ok pmic valid=%d soc=%d vbat=%u vbus=%u vsys=%u usb=%d chg=%d icon=%ld shown_vbat=%u",
+                    status.valid ? 1 : 0, status.battery_percentage, (unsigned) status.vbatt_voltage_mv,
+                    (unsigned) status.vbus_voltage_mv, (unsigned) status.vsys_voltage_mv,
+                    status.is_usb_connected ? 1 : 0, status.charge_status, (long) icon, shown_vbat);
+}
+
+
 // Debug: print every task's backtrace to the console (ROM printing). Needs no LVGL lock, so it
 // still works when the LVGL task is stuck; decode the addresses with the matching ELF.
 static bool rc_cmd_bt(char *reply, size_t reply_size) {
@@ -649,7 +672,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     const char *cmd = argv[0];
     bool is_observer = strcmp(cmd, "idle") == 0 || strcmp(cmd, "state") == 0 ||
                        strcmp(cmd, "stats") == 0 || strcmp(cmd, "help") == 0 ||
-                       strcmp(cmd, "bt") == 0;
+                       strcmp(cmd, "bt") == 0 || strcmp(cmd, "pmic") == 0;
     bool is_known = is_observer ||
                     strcmp(cmd, "tap") == 0 || strcmp(cmd, "swipe") == 0 || strcmp(cmd, "tile") == 0 ||
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
@@ -692,6 +715,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
             return rc_reply(reply, reply_size, false, "@err args");
         }
         return rc_cmd_bt(reply, reply_size);
+    }
+    if (strcmp(cmd, "pmic") == 0) {
+        if (argc != 1) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        return rc_cmd_pmic(reply, reply_size);
     }
     if (strcmp(cmd, "idle") == 0) {
         if (argc != 1) {

@@ -50,6 +50,7 @@ REPLY_PREFIXES = {
     "state": "@ok tile=",
     "stats": "@ok free_int=",
     "bt": "@ok bt",
+    "pmic": "@ok pmic",
     "tap": "@ok tap",
     "swipe": "@ok swipe",
     "tile": "@ok tile=",

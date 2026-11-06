@@ -1,4 +1,6 @@
 #include "pmic_axp2101.h"
+#include "pmic_config.h"
+#include "ui_bridge.h"
 #include "esp_crc.h"
 #include "esp_log.h"
 #include "esp_check.h"
@@ -183,20 +185,22 @@ void on_reboot_button_pressed(lv_event_t * e);
 void on_power_off_button_pressed(lv_event_t * e) {
     ESP_LOGI(TAG, "Shutting down");
 
-    pmic_power_off();
- }
+    // The PMIC service's task does the shutdown; it is the only code that talks to the chip (ADR-005 step 3)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(pmic_request_power_off());
+}
 
 
-void power_management_view_update_status(axp2101_ctx_t *ctx) {
-    snprintf(status_str_l1, sizeof(status_str_l1), "SoC:%d,VBAT:%dmV", ctx->status.battery_percentage, ctx->status.vbatt_voltage_mv);
-    snprintf(status_str_l2, sizeof(status_str_l2), "VBUS:%dmV,VSYS:%dmV", ctx->status.vbus_voltage_mv, ctx->status.vsys_voltage_mv);
+// Bound to the UI bridge's PMIC status subject (LVGL context). Both labels change together, so one observer
+// on the first label sets both
+static void power_management_status_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
+    const axp2101_status_t * status = (const axp2101_status_t *) lv_subject_get_pointer(subject);
 
-    if (power_management_status_label_1) {
-        lv_label_set_text_static(power_management_status_label_1, status_str_l1);
-    }
-    if (power_management_status_label_2) {
-        lv_label_set_text_static(power_management_status_label_2, status_str_l2);
-    }
+    snprintf(status_str_l1, sizeof(status_str_l1), "SoC:%d,VBAT:%dmV", status->battery_percentage, status->vbatt_voltage_mv);
+    snprintf(status_str_l2, sizeof(status_str_l2), "VBUS:%dmV,VSYS:%dmV", status->vbus_voltage_mv, status->vsys_voltage_mv);
+
+    // Setting the same static buffer again still marks the label for re-measuring and redrawing
+    lv_label_set_text_static(power_management_status_label_1, status_str_l1);
+    lv_label_set_text_static(power_management_status_label_2, status_str_l2);
 }
 
 
@@ -237,7 +241,9 @@ static void create_power_menu(lv_obj_t * parent) {
 
 
 void power_menu_make_visible() {
-    lv_obj_clear_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+    if (power_menu != NULL) {
+        lv_obj_clear_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 
@@ -247,12 +253,11 @@ lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * pare
 
     lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
-    // Set initial status
-    power_management_view_update_status(axp2101_dev);
-
-    // Battery status label
+    // Battery status labels; the observer sets their text now and on every new reading
     power_management_status_label_1 = create_config_label_static(sub_page_config_view, status_str_l1);
     power_management_status_label_2 = create_config_label_static(sub_page_config_view, status_str_l2);
+    lv_subject_add_observer_obj(&ui_pmic_status, power_management_status_observer_cb,
+                                power_management_status_label_1, NULL);
 
     // Idle timeout
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Idle Timeout");

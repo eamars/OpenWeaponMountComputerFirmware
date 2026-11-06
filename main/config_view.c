@@ -13,6 +13,7 @@
 #include "ui_bridge.h"
 #include "ota_mode.h"
 #include "pmic_axp2101.h"
+#include "pmic_config.h"
 
 #define TAG "ConfigView"
 
@@ -24,9 +25,8 @@ static lv_obj_t * status_bar;
 static lv_obj_t * status_bar_wireless_state;
 static lv_obj_t * status_bar_battery_state;
 
-HEAPS_CAPS_ATTR static char status_bar_battery_state_str[4] = {0};
-
 static void status_bar_wifi_observer_cb(lv_observer_t * observer, lv_subject_t * subject);
+static void status_bar_battery_observer_cb(lv_observer_t * observer, lv_subject_t * subject);
 
 extern system_config_t system_config;
 
@@ -430,9 +430,7 @@ void create_config_view(lv_obj_t *parent) {
 
     // Battery icon
     status_bar_battery_state = lv_label_create(status_bar);
-    memset(status_bar_battery_state_str, 0, sizeof(status_bar_battery_state_str));
-    lv_label_set_text_static(status_bar_battery_state, status_bar_battery_state_str);
-    status_bar_update_battery_level(101);
+    lv_subject_add_observer_obj(&ui_battery_level, status_bar_battery_observer_cb, status_bar_battery_state, NULL);
 
     // Create menu item
     config_menu = lv_menu_create(parent_container);
@@ -506,21 +504,25 @@ static void status_bar_wifi_observer_cb(lv_observer_t * observer, lv_subject_t *
                       status_bar_wifi_symbol((wireless_state_e) lv_subject_get_int(subject)));
 }
 
-void status_bar_update_battery_level(int level_percentage) {
-    if (level_percentage < 0) {
-        // Unknown state
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_WARNING, sizeof(LV_SYMBOL_WARNING));
-    } else if (level_percentage < 10) {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_EMPTY, sizeof(LV_SYMBOL_BATTERY_EMPTY));
-    } else if (level_percentage < 40) {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_1, sizeof(LV_SYMBOL_BATTERY_1));
-    } else if (level_percentage < 70) {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_2, sizeof(LV_SYMBOL_BATTERY_2));
-    } else if (level_percentage < 90) {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_3, sizeof(LV_SYMBOL_BATTERY_3));
-    } else if (level_percentage <= 100) {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_FULL, sizeof(LV_SYMBOL_BATTERY_FULL));
+// The battery icon follows the PMIC service the same way (the battery half of B2)
+static const char * status_bar_battery_symbol(int32_t level) {
+    if (level < 0) {
+        return LV_SYMBOL_WARNING;  // unknown
+    } else if (level < 10) {
+        return LV_SYMBOL_BATTERY_EMPTY;
+    } else if (level < 40) {
+        return LV_SYMBOL_BATTERY_1;
+    } else if (level < 70) {
+        return LV_SYMBOL_BATTERY_2;
+    } else if (level < 90) {
+        return LV_SYMBOL_BATTERY_3;
+    } else if (level <= 100) {
+        return LV_SYMBOL_BATTERY_FULL;
     } else {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_USB, sizeof(LV_SYMBOL_USB));
+        return LV_SYMBOL_USB;
     }
+}
+
+static void status_bar_battery_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
+    lv_label_set_text(lv_observer_get_target_obj(observer), status_bar_battery_symbol(lv_subject_get_int(subject)));
 }
