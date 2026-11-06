@@ -87,4 +87,5 @@ The flush waits for the TE falling edge before the first strip (binary semaphore
 Before the sync: 17 frames/s at every rotation (same build otherwise). Cost: about one frame a second.
 
 - `scenario state_change` (`rc_state_change_20261106_131438.log`): PASS, `taskLVGL` ≥ 2,048 B and `largest_dma` ≥ 80,000 B floors met, 0 TE timeouts across idle/wake, rotation saves and Wi-Fi off/on.
+- 20 minutes of idle/wake cycles on the digital level tile (`rc_idle_cycles_20261106_131736.log`, 106 cycles; the owner caps cycle tests at 20 min): 0 stalls, 0 TE timeouts in 428 one-second windows, so the first frame after each wake finds its TE edge. `stats` 38 of 40 answered (console loss, seen before; `stats` takes no lock).
 - Left for step 2: the owner's visual check at all four rotations (no tear line, no diagonal tear), then the final build.
