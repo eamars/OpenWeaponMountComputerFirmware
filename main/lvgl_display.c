@@ -23,11 +23,6 @@
 #define TAG "LVGLDisplay"
 
 
-typedef enum {
-    LVGL_DISPLAY_IS_READY = (1 << 0),
-} lvgl_display_stateful_event_e;
-
-
 // Initialize SPI touch screen and I2C display
 esp_lcd_panel_io_handle_t io_handle = NULL;
 esp_lcd_panel_handle_t panel_handle = NULL;
@@ -36,10 +31,6 @@ esp_lcd_touch_handle_t touch_handle = NULL;
 // LVGL touch input device
 lv_indev_t *lvgl_touch_handle = NULL;  // allow the low power module to inject callback
 lv_group_t * button_input_group = NULL;
-
-// Event control
-EventGroupHandle_t lvgl_display_event_group = NULL;
-
 
 // External services
 extern system_config_t system_config;
@@ -298,19 +289,6 @@ static void display_profile_start(lv_display_t *disp) {
 #endif  // DISPLAY_PROFILING_ENABLED
 
 
-static inline esp_err_t create_lvgl_display_event_group() {
-    // If not created, then create the event group. This function may be called before the `lvgl_display_init()`. 
-    if (lvgl_display_event_group == NULL) {
-        lvgl_display_event_group = xEventGroupCreate();
-        if (lvgl_display_event_group == NULL) {
-            ESP_LOGE(TAG, "Failed to create lvgl_display_event_group");
-            return ESP_FAIL;
-        }
-    }
-    return ESP_OK;
-}
-
-
 #if USE_EXT_BUTTON
 // button
 volatile bool ext_button_interrupt_occurred = false;
@@ -399,9 +377,6 @@ void lvgl_watchdog_feed_while_paused() {
 esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
     esp_err_t ret;
 
-    // Create event group
-    ESP_ERROR_CHECK(create_lvgl_display_event_group());
-
     // Initialize display modules
     ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, system_config.screen_brightness_normal_pct));
     ESP_LOGI(TAG, "Display initialized successfully");
@@ -484,38 +459,8 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
         lvgl_port_unlock();
     }
 
-    // Set display ready event
-    xEventGroupSetBits(lvgl_display_event_group, LVGL_DISPLAY_IS_READY);
-
     ESP_LOGI(TAG, "LVGL display initialized successfully");
 
     return ret;
 }
 
-
-esp_err_t lvgl_display_wait_for_ready(uint32_t block_wait_ms) {
-    create_lvgl_display_event_group();
-
-    // Wait for display ready event
-    EventBits_t asserted_bits = xEventGroupWaitBits(
-        lvgl_display_event_group, 
-        LVGL_DISPLAY_IS_READY, 
-        pdFALSE,        // don't clear on assert
-        pdTRUE,         // wait for all bits to assert
-        pdMS_TO_TICKS(block_wait_ms)
-    );
-
-    if (asserted_bits & LVGL_DISPLAY_IS_READY) {
-        return ESP_OK;
-    }
-
-    return ESP_ERR_TIMEOUT;
-}
-
-
-bool lvgl_display_is_ready() {
-    create_lvgl_display_event_group();
-    EventBits_t asserted_bits = xEventGroupGetBits(lvgl_display_event_group);
-
-    return asserted_bits & LVGL_DISPLAY_IS_READY;
-}

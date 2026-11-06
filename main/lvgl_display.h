@@ -20,10 +20,6 @@ void lvgl_watchdog_pause(bool pause);
 void lvgl_watchdog_feed_while_paused();
 
 
-esp_err_t lvgl_display_wait_for_ready(uint32_t block_wait_ms);
-bool lvgl_display_is_ready(); 
-
-
 #ifdef __cplusplus
 }
 #endif
