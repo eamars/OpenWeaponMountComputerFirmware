@@ -55,3 +55,24 @@ Per library, most moves are the v6 reorganisation (`hal` split into `esp_hal_*`,
 ### Warnings
 
 94 warnings in project code, all of kinds v5.5.2 already shows: LVGL 9.6 deprecations (77) and unused variables or functions in existing code. LVGL's `LV_ASSERT_HANDLER_INCLUDE is deprecated` still prints once per file. GCC 15 adds no new kinds.
+
+## Step 2: the change (2026-11-06, `80de986`)
+
+Owner approved the whole list, items 8 and 9 included ("Approve all").
+
+- Items 2-7 are the trial edits (`9978ecf`) applied to `esp_idf_upgrade`; item 7's README now describes the v6.1 copy.
+- Item 1: this project's `.vscode/settings.json` (untracked, local) points at v6.1 and the 15.2.0 toolchain; global settings unchanged.
+- Item 8: `.gitmodules` registers `components/XPowersLib` (`lewisxhe/XPowersLib`) and `components/bno08x/sh2` (`ceva-dsp/sh2`); both tracked commits exist upstream. A fresh `git clone --recurse-submodules` of the branch gets both libraries at the tracked commits.
+- Item 9: `sdkconfig.defaults.esp32s3` is now the v6.1 `save-defconfig` set (86 settings, from 2,326 lines); `sdkconfig.defaults` stays empty. Acceptance check: the `sdkconfig` generated from the old file and from the new one are identical in all 2,076 settings, and v6.1 reports no unknown options.
+- Build in this checkout: PASS, same size as the trial (DIRAM 148,346 B, image 2,006,870 B).
+
+## Step 3: on the device (2026-11-06)
+
+Owner, 2026-11-06: no unit has ever been deployed in the field, so an OTA from an old bootloader does not need testing. The ADR's open question on OTA and partition compatibility for field units is therefore closed. (One run of that path was made before the owner said so: the v6.1 app flashed alone over the v5.5.2 bootloader booted and passed `state_change`.)
+
+- Full flash (v6.1 bootloader, partition table, app). Boot, from a `reboot`: `ESP-IDF v6.1 2nd stage bootloader`, app `ESP-IDF: v6.1`, core dump to flash initialised and the stored dump found, `CrashReport` reset reason `SW`. Wi-Fi connects with the saved credentials; saved settings (rotation 180°, Wi-Fi on) kept.
+- Boot errors and warnings against v5.5.2's boot log: one new line, `W gpio: conflict found for GPIO[0]`, when the external button (GPIO0) is configured. No project code configures GPIO0 elsewhere, and SPI ignores the unset `data4`-`7` fields (all 0 counts as unused). v6.1's GPIO driver only warns and still configures the pin. To check: the button works (owner).
+- OTA polling logs `couldn't get hostname` for both sources, the same as on v5.5.2. Not caused by the upgrade: the second source in `main/ota_mode.c` is `"http://owmc_update.vfnz.pro"`, passed as a host name. A fix is functional and belongs in its own change.
+- Task watchdog and crash evidence (`scenario watchdog`, after `wake`): PASS. The watchdog names `lvgl`, the core dump is saved (42,272 B; the dump routine had 436 B of its stack left), the reboot reports `TASK_WDT` and the stored dump's backtrace. The first try ran with the unit idle, where the LVGL watchdog is paused by design, so `hang` only locked the unit until a `reboot`. The scenario does not wake the unit first; that is a gap in the test, not in v6.1.
+- Memory, Wi-Fi on, steady state: `free_int` about 186,900 B (v5.5.2 about 191,000 B), `largest_dma` 106,496-110,592 B (v5.5.2 114,688 B), as expected from the 6.6 KB more static DIRAM. `min_int` reads about 150,400 B against about 187,000 B before. Before any project code runs, v6.1's own start-up borrows about 32 KB of internal RAM and gives it back (`memopt: nvs_init begin` at 3 ms shows `free_int` 282,287 but `min_int` 250,256; on v5.5.2 the two were equal). The dip is the same with a 17.7 KB and with a 42 KB stored core dump, so the dump check is not the cause. Cause not found yet. It is a one-off at boot, but `min_int` no longer shows runtime pressure.
+- `scenario state_change --min-largest-dma 80000` (v6.1 app on the old bootloader, same app as the full flash): PASS, `largest_dma` 106,496 B throughout.

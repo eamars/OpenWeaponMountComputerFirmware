@@ -131,3 +131,5 @@ The 90°/270° retries: a thin band there is a full-height panel column written 
 - Final build: `DISPLAY_PROFILING_ENABLED 0`, `sdkconfig` regenerated from the defaults (trace facility off, task watchdog panic on); no new compiler warnings in the changed files. `scenario state_change --min-largest-dma 80000` (`rc_state_change_20261106_202058.log`): PASS, `largest_dma` 114,688 B throughout.
 
 Step 3: **Built 2026-11-06.** ADR-002: **Built 2026-11-06.**
+
+Note, 2026-11-06 (ADR-003): the raw device-test logs named above lived in `build/rc_logs/` and were deleted when the build folder was regenerated for the ESP-IDF v6.1 move (`idf.py set-target` removes `build/`). The numbers in this file are what those logs showed; the files themselves are gone.
