@@ -108,18 +108,19 @@ static void toggle_remote_control_serial(lv_event_t *e) {
 }
 
 static void on_save_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(save_system_config());
-    ESP_ERROR_CHECK(save_remote_control_config());
+    // Both are tried; the first failure is shown
+    esp_err_t ret = save_system_config();
+    esp_err_t rc_ret = save_remote_control_config();
 
-    update_info_msg_box(msg_box, "Configuration Saved");
+    update_info_msg_box_result(msg_box, ret != ESP_OK ? ret : rc_ret, "Configuration Saved", "Save failed");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(load_system_config());
-    ESP_ERROR_CHECK(load_remote_control_config());
+    esp_err_t ret = load_system_config();
+    esp_err_t rc_ret = load_remote_control_config();
     apply_remote_control_config();
 
-    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
+    update_info_msg_box_result(msg_box, ret != ESP_OK ? ret : rc_ret, "Previous Configuration Reloaded", "Reload failed");
 
     // TODO: Update current displayed values
 }

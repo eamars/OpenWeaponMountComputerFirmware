@@ -288,7 +288,7 @@ void enable_countdown_timer_config_view(bool enable) {
         // There is no action to perform when enabling the countdown timer config view
     }
     else {
-        // Write to NVS flash automatically when swiped away
-        ESP_ERROR_CHECK(save_countdown_timer_config());
+        // Write to NVS flash automatically when swiped away; a failure is logged and the presets stay in RAM
+        ESP_ERROR_CHECK_WITHOUT_ABORT(save_countdown_timer_config());
     }
 }

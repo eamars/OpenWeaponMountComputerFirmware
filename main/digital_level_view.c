@@ -228,15 +228,11 @@ static void update_roll_offset(lv_event_t *e) {
 
 
 static void on_save_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(save_digital_level_view_config());
-
-    update_info_msg_box(msg_box, "Configuration Saved");
+    update_info_msg_box_result(msg_box, save_digital_level_view_config(), "Configuration Saved", "Save failed");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(load_digital_level_view_config());
-
-    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
+    update_info_msg_box_result(msg_box, load_digital_level_view_config(), "Previous Configuration Reloaded", "Reload failed");
 
     // TODO: Update current displayed values
 }

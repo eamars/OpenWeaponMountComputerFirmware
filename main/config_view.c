@@ -1,5 +1,7 @@
 #include "config_view.h"
 
+#include <stdio.h>
+
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
@@ -358,6 +360,17 @@ void update_info_msg_box(lv_obj_t * msg_box, const char * text) {
     lv_label_set_text(msg_box_label, text);
 
     lv_obj_clear_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
+}
+
+void update_info_msg_box_result(lv_obj_t * msg_box, esp_err_t ret, const char * done_text, const char * failed_text) {
+    if (ret == ESP_OK) {
+        update_info_msg_box(msg_box, done_text);
+        return;
+    }
+
+    char text[64];
+    snprintf(text, sizeof(text), "%s: %s", failed_text, esp_err_to_name(ret));
+    update_info_msg_box(msg_box, text);
 }
 
 void set_rotation_config_view(lv_display_rotation_t rotation) {

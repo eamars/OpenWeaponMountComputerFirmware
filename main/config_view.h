@@ -36,6 +36,14 @@ lv_obj_t * create_info_msg_box(lv_obj_t *parent, lvgl_additional_init_func callb
 
 void update_info_msg_box(lv_obj_t * msg_box, const char * text);
 
+/**
+ * @brief Show the outcome of a settings page's Save or Reload in its message box
+ * @param ret The action's result; the cause of a failure is logged where it happened
+ * @param done_text Shown on ESP_OK
+ * @param failed_text Shown with the error name otherwise
+ */
+void update_info_msg_box_result(lv_obj_t * msg_box, esp_err_t ret, const char * done_text, const char * failed_text);
+
 
 #ifdef __cplusplus
 }

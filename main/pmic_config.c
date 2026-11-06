@@ -134,18 +134,18 @@ static void update_battery_charge_voltage_event_cb(lv_event_t *e) {
 
 
 static void on_save_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(save_pmic_config());
+    esp_err_t ret = save_pmic_config();
 
-    // The charge settings take effect now, not at the next boot (ADR-005 B15)
-    axp2101_request_apply_charge_settings(axp2101_dev);
+    // The charge settings take effect now, not at the next boot (ADR-005 B15); a failed save applies nothing
+    if (ret == ESP_OK) {
+        axp2101_request_apply_charge_settings(axp2101_dev);
+    }
 
-    update_info_msg_box(msg_box, "Configuration Saved");
+    update_info_msg_box_result(msg_box, ret, "Configuration Saved", "Save failed");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(load_pmic_config());
-
-    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
+    update_info_msg_box_result(msg_box, load_pmic_config(), "Previous Configuration Reloaded", "Reload failed");
 
     // TODO: Update current displayed values
 }
