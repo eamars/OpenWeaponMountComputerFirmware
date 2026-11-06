@@ -10,8 +10,8 @@
 #include "low_power_mode.h"
 #include "mem_diag.h"
 
-#include "wifi_provisioning/manager.h"
-#include "wifi_provisioning/scheme_softap.h"
+#include "network_provisioning/manager.h"
+#include "network_provisioning/scheme_softap.h"
 #include "esp_wifi.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -97,7 +97,7 @@ void wifi_deinit_task(void *p) {
     ESP_LOGW(TAG, "Wifi is not active in time. Will disable WiFI completely");
 
     // Stop provisioning manager
-    wifi_prov_mgr_deinit();
+    network_prov_mgr_deinit();
 
     // Stop wifi and free resource
     esp_wifi_stop();
@@ -116,7 +116,7 @@ void wifi_deinit_task(void *p) {
 
 
 void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
-    if (event_base == WIFI_PROV_EVENT) {
+    if (event_base == NETWORK_PROV_EVENT) {
         wifi_provision_event_handler(arg, event_id, event_data);
     }
     else if (event_base == WIFI_EVENT) {
@@ -231,7 +231,7 @@ esp_err_t wifi_init() {
     // Initialize WiFi stack
     ESP_ERROR_CHECK(esp_netif_init());
     // Register Wifi events
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_PROV_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(NETWORK_PROV_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(PROTOCOMM_SECURITY_SESSION_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
@@ -246,14 +246,14 @@ esp_err_t wifi_init() {
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
     // Configure the provision manager
-    wifi_prov_mgr_config_t config = {
-        .wifi_prov_conn_cfg = {
+    network_prov_mgr_config_t config = {
+        .network_prov_wifi_conn_cfg = {
             .wifi_conn_attempts = 5,
         },
-        .scheme = wifi_prov_scheme_softap,
-        .scheme_event_handler = WIFI_PROV_EVENT_HANDLER_NONE,
+        .scheme = network_prov_scheme_softap,
+        .scheme_event_handler = NETWORK_PROV_EVENT_HANDLER_NONE,
     };
-    ESP_ERROR_CHECK(wifi_prov_mgr_init(config));
+    ESP_ERROR_CHECK(network_prov_mgr_init(config));
 
 
     // Setup a watchdog timer to check provisioning status after the configured time
@@ -291,7 +291,7 @@ esp_err_t wifi_init() {
 
     // Check if the system is already provisioned
     bool is_provisioned = false;
-    ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&is_provisioned));
+    ESP_ERROR_CHECK(network_prov_mgr_is_wifi_provisioned(&is_provisioned));
 
     if (!is_provisioned) {
         wifi_provision_init();
@@ -306,7 +306,7 @@ esp_err_t wifi_init() {
         xEventGroupSetBits(wireless_event_group, WIRELESS_STATEFUL_IS_PROVISIONED);
 
         // Already provisioned, we can start the WiFi directly
-        wifi_prov_mgr_deinit(); // Deinitialize the manager as we don't need it anymore
+        network_prov_mgr_deinit(); // Deinitialize the manager as we don't need it anymore
 
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
         ESP_ERROR_CHECK(esp_wifi_start());

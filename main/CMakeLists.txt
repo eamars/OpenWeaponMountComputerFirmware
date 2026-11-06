@@ -4,7 +4,10 @@ set(ALL_DEPS
     # Base requirements
     freertos
     lvgl
-    driver
+    esp_driver_gpio
+    esp_driver_i2c
+    esp_driver_ledc
+    esp_driver_spi
     esp_lcd
     nvs_flash
     esp_lcd_touch
@@ -27,7 +30,7 @@ set(ALL_DEPS
 
     # Wifi part
     esp_wifi
-    wifi_provisioning
+    network_provisioning
     esp_event
     esp_http_server
     esp_http_client
@@ -45,8 +48,6 @@ set(ALL_DEPS
     XPowersLib
     esp_pm
 
-    # USB driver
-    esp_tinyusb
 )
 
 

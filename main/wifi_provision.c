@@ -1,6 +1,6 @@
 #include "wifi_provision.h"
-#include "wifi_provisioning/manager.h"
-#include "wifi_provisioning/scheme_softap.h"
+#include "network_provisioning/manager.h"
+#include "network_provisioning/scheme_softap.h"
 
 #include "esp_random.h"
 #include "esp_log.h"
@@ -24,14 +24,14 @@ extern wireless_state_e wireless_state;
 void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data) {
     switch (event_id)
     {
-    case WIFI_PROV_START:
+    case NETWORK_PROV_START:
         ESP_LOGI(TAG, "Provisioning started");
         
         wireless_state = WIRELESS_STATE_PROVISIONING;
         status_bar_update_wireless_state(wireless_state);
 
         break;
-    case WIFI_PROV_CRED_RECV: {
+    case NETWORK_PROV_WIFI_CRED_RECV: {
         wifi_sta_config_t *wifi_sta_cfg = (wifi_sta_config_t *) event_data;
         ESP_LOGI(TAG, "Received WiFi credentials"
                      "\n\tSSID     : %s"
@@ -44,11 +44,11 @@ void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data)
 
         break;
     }
-    case WIFI_PROV_CRED_FAIL: {
-        wifi_prov_sta_fail_reason_t *reason = (wifi_prov_sta_fail_reason_t *)event_data;
+    case NETWORK_PROV_WIFI_CRED_FAIL: {
+        network_prov_wifi_sta_fail_reason_t *reason = (network_prov_wifi_sta_fail_reason_t *)event_data;
         ESP_LOGE(TAG, "Provisioning failed!\n\tReason : %s"
                     "\n\tPlease reset to factory and retry provisioning",
-                    (*reason == WIFI_PROV_STA_AUTH_ERROR) ?
+                    (*reason == NETWORK_PROV_WIFI_STA_AUTH_ERROR) ?
                     "Wi-Fi station authentication failed" : "Wi-Fi access-point not found");
         
         wireless_state = WIRELESS_STATE_PROVISION_FAILED;
@@ -62,7 +62,7 @@ void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data)
 
         break;
     }
-    case WIFI_PROV_CRED_SUCCESS:
+    case NETWORK_PROV_WIFI_CRED_SUCCESS:
         ESP_LOGI(TAG, "Provisioning successful");
 
         // Restart the watchdog timer
@@ -72,7 +72,7 @@ void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data)
 
         break;
 
-    case WIFI_PROV_END:
+    case NETWORK_PROV_END:
         ESP_LOGI(TAG, "Provisioning ended");
 
         wireless_state = WIRELESS_STATE_PROVISIONED;
@@ -93,7 +93,7 @@ void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data)
 
 
 void wifi_provision_reset() {
-    ESP_ERROR_CHECK(wifi_prov_mgr_reset_provisioning());
+    ESP_ERROR_CHECK(network_prov_mgr_reset_wifi_provisioning());
 }
 
 
@@ -105,8 +105,8 @@ void wifi_provision_init() {
     wifi_provision_state.pop[sizeof(wifi_provision_state.pop) - 1] = '\0';
 
     // Start provisioning
-    ESP_ERROR_CHECK(wifi_prov_mgr_start_provisioning(
-        WIFI_PROV_SECURITY_1, 
+    ESP_ERROR_CHECK(network_prov_mgr_start_provisioning(
+        NETWORK_PROV_SECURITY_1, 
         (const void *) wifi_provision_state.pop, 
         wifi_provision_state.service_name, 
         NULL));

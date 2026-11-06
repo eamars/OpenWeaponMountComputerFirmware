@@ -1,0 +1,6 @@
+[submodule "components/XPowersLib"]
+	path = components/XPowersLib
+	url = https://github.com/lewisxhe/XPowersLib.git
+[submodule "components/bno08x/sh2"]
+	path = components/bno08x/sh2
+	url = https://github.com/ceva-dsp/sh2.git

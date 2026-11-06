@@ -1,3 +1,3 @@
 idf_component_register(SRCS "esp_lcd_jd9853.c"
                     INCLUDE_DIRS "include"
-                    REQUIRES "esp_lcd" "driver")
+                    REQUIRES "esp_lcd" "esp_driver_gpio")

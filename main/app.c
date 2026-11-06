@@ -32,7 +32,6 @@
 #include "wifi.h"
 #include "wifi_provision.h"
 #include "pmic_axp2101.h"
-#include "usb.h"
 #include "buzzer.h"
 #include "lvgl_display.h"
 #include "low_power_mode.h"
@@ -169,7 +168,6 @@ void app_main(void)
     i2c_master_bus_handle_t i2c1_bus_handle;
 
     // Initialize USB
-    // ESP_ERROR_CHECK(usb_init());
 
     // Initialize shared I2C bus
     i2c0_bus_handle = i2c0_master_init();
