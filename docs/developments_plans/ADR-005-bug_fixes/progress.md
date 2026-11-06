@@ -65,3 +65,29 @@ Life cycle as built: `axp2101_init` at boot (load config, ISR on the IRQ pin, `P
 - **R, code:** power-off with USB connected: whether the AXP2101 then restarts at once is not known.
 - **P, code:** the monitor task reads six PMIC values over I2C every 2 s also while idle, and updates LVGL labels while LVGL is stopped.
 - **S:** the event-group error says "sensor_event_control" (copied from the BNO085 driver); `axp2101_deinit` is unused.
+
+### Other peripherals (touch, button, buzzer, NVS settings, console)
+
+- **B, code: the touch controller's reset drives GPIO0 instead of its reset pin.** `esp_lcd_touch_new_ft3168` reads `touch_handle->config.rst_gpio_num` before it copies the config in (`esp_lcd_touch_ft3168.c`: `calloc`, reset block, then `memcpy(&touch_handle->config, ...)`), so it sees pin 0. It configures GPIO0 (the external button) as an output and pulses it low for 10 ms, and never pulses the real reset pin (GPIO16). This is the cause of v6.1's `conflict found for GPIO[0]` warning (known bug 8): the button later re-configures GPIO0 as an input, which is why the button still works.
+- **R, code:** the FT3168 init writes with an infinite I2C timeout (`-1`), and its GPIO-config error paths leak the handle.
+- **B, code (minor):** `buzzer_run` ignores a full command queue (depth 1, no wait) and returns `ESP_OK`, so a beep requested while another is pending is dropped silently.
+- NVS settings (`common.c`): blobs carry a CRC; a missing, short, corrupt or differently sized blob falls back to the defaults and is rewritten. So a change to a settings struct's layout resets that page to defaults, by design.
+- **B, code (minor):** `parse_git_describe_version` ignores `sscanf`'s result, so a version string without the leading `v` leaves the fields as uninitialised stack values for the OTA version compare.
+- **S:** `crc32_wrapper` passes `0xEDB88320` as `esp_crc32_le`'s initial value but names it the polynomial (consistent on both sides, so it works).
+- Console and remote control: reviewed in ADR-004; the reply loss (known bug 5) stays open. `rc_serial` keeps about 944 B of stack free at its lowest, the same before and after ADR-003.
+
+### LVGL views and the tile life cycle (`main_tileview.c`, views, `countdown_timer.c`, `crash_report.c`)
+
+- Each tile carries an enable callback; a tile change disables the old one and enables the new one, all in the LVGL task. The level tile's callback switches BNO085 reports (see the BNO085 lock bug).
+- Checked and fine: the countdown timer's state is behind a mutex, its nested `lvgl_port_lock` calls are safe (the port's lock is recursive), and a running countdown counts as activity. Panel commands from LVGL events (brightness) are safe because `tx_param` waits for strips still in flight.
+- **B, code (minor): after a task-watchdog reset the crash report names the wrong task.** It prints the core dump's interrupted task (`IDLE0` in the 2026-11-06 watchdog test), not the watchdog user that hung (`lvgl`, which only the pre-reset log shows).
+- Dead code in the build: the point-of-aim, acceleration-analysis and OpenTrickler tiles are commented out in `main_tileview.c`, so their modules compile but never run; `circular_buffer.c` is used only by the acceleration view.
+
+### Cross-cutting style and consistency (against `.agents/skills/c-style`)
+
+- **Fatal checks in runtime paths:** 136 `ESP_ERROR_CHECK` in `main/`, many in UI callbacks and task bodies (Rule 4 reserves it for initialisation where failure is fatal). This is what turns several of the bugs above into reboots.
+- **Globals shared through `extern`:** 77 `extern` declarations in `.c` files instead of headers (Rule 1).
+- **Formatting:** 7 function definitions indented by one space (`digital_level_view.c:80`, `ota_mode.c:157`, `:386`, `:544`, `:549`, ...); one tab-indented function in `app.c`; `%d` used for `uint32_t` in several modules.
+- **Tags:** mostly `CamelCase` (`LowPowerMode`, `WiFiConfig`), with `BUZZER`, `BSP`, `AXP2101`, `POIView` and `OTAMode` breaking the pattern.
+- **Commented-out code:** about 95 lines of commented-out calls across `main/` (the owner keeps some on purpose, e.g. in `low_power_mode.c`).
+- **Typos and stale text:** listed per module above.
