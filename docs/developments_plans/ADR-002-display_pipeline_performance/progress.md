@@ -95,3 +95,31 @@ Before the sync: 17 frames/s at every rotation (same build otherwise). Cost: abo
 - Final build: `DISPLAY_PROFILING_ENABLED 0`, `sdkconfig` regenerated from the defaults (trace facility off, task watchdog panic on). `scenario state_change --min-largest-dma 80000` (`rc_state_change_20261106_190815.log`): PASS, `largest_dma` 114,688 B throughout, two idle/wake transitions, rotation save, Wi-Fi off/on.
 
 Step 2: **Built 2026-11-06.**
+
+## Step 3: partial redraw of the digital level view
+
+### The change (2026-11-06, profiling build)
+
+- `main/display_flush.c`: `display_flush_wait_scan` starts each area at a point of the scan where the scan cannot cross the write; the README gives the rule. Writes slower than the scan (full-width rows) start right behind it. Writes faster than the scan (narrow areas) start late enough to reach their last row after the scan. A full frame starts on the TE falling edge as in step 2. The first strip is filled before the wait. New `te_prof` counters: `te_retries` (woke past the safe window and waited one more pass) and `te_late` (sent past it after that retry).
+- `main/digital_level_view_type_1.c`: each update invalidates only the rows between the old and new triangle band and level lines (full width, 2 px margin), the whole view when the colour class, triangle on/off or the view config changes, and nothing when the angles are unchanged. `main/digital_level_view.c`: the angle label is set only when its number changes.
+- Found while building: the proposal's first rule (start once the scan passed the area's first row) would tear narrow areas, which are written faster than the scan. Corrected before the first flash.
+
+### Owner's check (2026-11-06, `rc_partial_probe_20261106_192937.log`)
+
+Owner at the unit, all four rotations, near level and past the colour change: "It is good".
+
+| Rotation | Flushes/s, avg (max) | Full frames | px per flush, avg | Write avg | Wait avg | Retries / late |
+|---|---:|---:|---:|---:|---:|---:|
+| 0° | 24.2 (56) | 43 | 35,140 | 5.8 ms | 7.9 ms | 0 / 0 |
+| 90° | 28.7 (47) | 48 | 17,134 | 2.9 ms | 12.1 ms | 289 / 235 |
+| 270° | 11.0 (37) | 24 | 24,236 | 3.9 ms | 10.0 ms | 32 / 29 |
+| 180° | 4.4 (10) | 0 | 118,717 | 20.0 ms | 8.4 ms | 0 / 0 |
+
+Each row covers 44 one-second windows. Near level at 0°, a whole second ran at 56 flushes with 6,790 px per flush on average (was 17 frames of 127,680 px). At 180° the unit lay at a steep tilt, where the triangle covers almost the whole screen, so that row shows no near-level data. Flushes per second count only changes: a still unit draws nothing.
+
+The 90°/270° retries: a thin band there is a full-height panel column written in about 1 ms, and its safe start window is about as long as its write, about 0-2 ms. The LVGL task (priority 4) often wakes later than that. Most retries were late again (235 of 289 at 90°). A late start can show part of the thin band one refresh (16.7 ms) late; the owner saw nothing.
+
+### Settle tests (2026-11-06, owner away)
+
+- `scenario state_change --min-lvgl-stack 2048 --min-largest-dma 80000`: first run FAIL on two lost `stats` replies (the known console loss; no markers, display fine). Rerun (`rc_state_change_20261106_193645.log`): PASS, `taskLVGL` 9,120 B free at least, `largest_dma` 114,688 B throughout.
+- 100 idle/wake cycles on the digital level tile, 18.6 min (`rc_idle_cycles_20261106_193923.log`): PASS, no markers, 0 TE timeouts, retries or late starts in 405 windows, `stats` 38 of 38. `rc_serial` 948 B free at least, the same as in step 2's runs.

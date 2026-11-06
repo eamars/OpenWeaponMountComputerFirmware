@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <math.h>
 
 #include "freertos/FreeRTOS.h"
@@ -73,8 +74,16 @@ void tilt_angle_button_short_press_cb(lv_event_t * e) {
     ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
 }
 
+// Degrees the label shows; INT_MIN when the label is new and still shows "--"
+static int tilt_angle_label_deg = INT_MIN;
+
  void update_roll_deg_indicator(float roll_rad) {
-    lv_label_set_text_fmt(tilt_angle_label, "%d", (int) roundf(RAD_TO_DEG(roll_rad)));
+    // Setting the text redraws the label, so set it only when the shown number changes
+    const int deg = (int) roundf(RAD_TO_DEG(roll_rad));
+    if (deg != tilt_angle_label_deg) {
+        lv_label_set_text_fmt(tilt_angle_label, "%d", deg);
+        tilt_angle_label_deg = deg;
+    }
 }
 
 
@@ -118,6 +127,7 @@ void create_roll_deg_indicator(lv_obj_t * parent) {
     // Create label on the button
     tilt_angle_label = lv_label_create(tilt_angle_button);
     lv_label_set_text(tilt_angle_label, "--");
+    tilt_angle_label_deg = INT_MIN;
     lv_obj_set_style_text_color(tilt_angle_label, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_text_font(tilt_angle_label, &lv_font_montserrat_32, LV_PART_MAIN);
     lv_obj_align(tilt_angle_label, LV_ALIGN_CENTER, 0, 0);

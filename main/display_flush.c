@@ -25,6 +25,16 @@
 // Longest wait for the TE falling edge before a frame is sent anyway: a little over two panel refreshes (~16.7 ms)
 #define DISPLAY_FLUSH_TE_TIMEOUT_MS 40
 
+// Panel scan model (ADR-002 steps 2 and 3): the TE falling edge is where the panel starts scanning at physical row 0,
+// and the scan covers all DISP_V_RES_PIXEL rows within one TE period. Row time is taken as period / rows, which can
+// only overstate it. Until the first period is measured, the longest measured period is used.
+#define DISPLAY_FLUSH_TE_PERIOD_DEFAULT_US 16900
+// Write time per pixel in ns: bounds around the measured 159-183 ns/px (full frames, all four rotations)
+#define DISPLAY_FLUSH_WRITE_NS_PER_PX_MIN 150
+#define DISPLAY_FLUSH_WRITE_NS_PER_PX_MAX 190
+// Kept free inside the safe start window for the model's timing error
+#define DISPLAY_FLUSH_START_MARGIN_US 1000
+
 // Two rows of the widest possible window must fit, so a strip always holds an even number of rows (at least 2)
 _Static_assert(DISPLAY_FLUSH_STAGING_BYTES >= 2 * DISP_V_RES_PIXEL * sizeof(uint16_t),
                "staging buffer must hold at least two rows of the widest window");
@@ -40,10 +50,16 @@ typedef struct {
     int64_t frame_start_us;
 } display_flush_ctx_t;
 
+// Last TE edges: written by the TE ISR, protected by display_flush_timing_lock, never reset
+typedef struct {
+    int64_t last_rise_us;
+    int64_t last_fall_us;
+    uint32_t period_us;          // last rising-to-rising interval, 0 until measured
+} display_flush_te_state_t;
+
 // Window totals behind display_flush_take_timing(); protected by display_flush_timing_lock
 typedef struct {
     uint32_t te_pulses;
-    int64_t te_last_rise_us;
     uint32_t te_period_min_us;
     uint32_t te_period_max_us;
     uint64_t te_high_us_total;
@@ -55,16 +71,24 @@ typedef struct {
     uint64_t te_wait_us_total;
     uint32_t te_wait_max_us;
     uint32_t te_timeouts;
+    uint32_t te_retries;
+    uint32_t te_late;
 } display_flush_timing_acc_t;
 
 static display_flush_ctx_t display_flush_ctx;
 static portMUX_TYPE display_flush_strip_lock = portMUX_INITIALIZER_UNLOCKED;
 static display_flush_timing_acc_t display_flush_timing_acc;
+static display_flush_te_state_t display_flush_te_state;
 static portMUX_TYPE display_flush_timing_lock = portMUX_INITIALIZER_UNLOCKED;
 
 // Given on each TE falling edge (end of V-blank: the panel starts scanning from row 0)
 static StaticSemaphore_t display_flush_te_sem_buf;
 static SemaphoreHandle_t display_flush_te_sem = NULL;
+
+// One-shot timer that wakes the flush at the planned start time
+static StaticSemaphore_t display_flush_start_sem_buf;
+static SemaphoreHandle_t display_flush_start_sem = NULL;
+static esp_timer_handle_t display_flush_start_timer = NULL;
 
 
 static inline uint16_t display_flush_swap(uint16_t px) {
@@ -162,6 +186,28 @@ static void display_flush_fill_270(const uint16_t *src, int32_t src_stride, int3
 }
 
 
+// Fill staging rows [r0, r1) of the physical window for the given rotation
+static void display_flush_fill_strip(const uint16_t *src, int32_t src_stride, int32_t w, int32_t h,
+                                     lv_display_rotation_t rotation, uint16_t *dst, int32_t pw,
+                                     int32_t r0, int32_t r1) {
+    switch (rotation) {
+        case LV_DISPLAY_ROTATION_90:
+            display_flush_fill_90(src, src_stride, w, h, dst, pw, r0, r1);
+            break;
+        case LV_DISPLAY_ROTATION_180:
+            display_flush_fill_180(src, src_stride, w, h, dst, r0, r1);
+            break;
+        case LV_DISPLAY_ROTATION_270:
+            display_flush_fill_270(src, src_stride, h, dst, pw, r0, r1);
+            break;
+        case LV_DISPLAY_ROTATION_0:
+        default:
+            display_flush_fill_0(src, src_stride, w, dst, r0, r1);
+            break;
+    }
+}
+
+
 // SPI ISR context: no allocation, blocking or logging
 static bool IRAM_ATTR display_flush_trans_done_cb(esp_lcd_panel_io_handle_t panel_io,
                                                   esp_lcd_panel_io_event_data_t *edata, void *user_ctx) {
@@ -206,8 +252,9 @@ static void IRAM_ATTR display_flush_te_isr(void *arg) {
 
     portENTER_CRITICAL_ISR(&display_flush_timing_lock);
     if (high) {
-        if (display_flush_timing_acc.te_last_rise_us != 0) {
-            uint32_t period_us = (uint32_t) (now_us - display_flush_timing_acc.te_last_rise_us);
+        if (display_flush_te_state.last_rise_us != 0) {
+            uint32_t period_us = (uint32_t) (now_us - display_flush_te_state.last_rise_us);
+            display_flush_te_state.period_us = period_us;
             if (display_flush_timing_acc.te_period_min_us == 0 || period_us < display_flush_timing_acc.te_period_min_us) {
                 display_flush_timing_acc.te_period_min_us = period_us;
             }
@@ -216,11 +263,14 @@ static void IRAM_ATTR display_flush_te_isr(void *arg) {
             }
         }
         display_flush_timing_acc.te_pulses++;
-        display_flush_timing_acc.te_last_rise_us = now_us;
+        display_flush_te_state.last_rise_us = now_us;
     }
-    else if (display_flush_timing_acc.te_last_rise_us != 0) {
-        display_flush_timing_acc.te_high_us_total += (uint64_t) (now_us - display_flush_timing_acc.te_last_rise_us);
-        display_flush_timing_acc.te_high_count++;
+    else {
+        if (display_flush_te_state.last_rise_us != 0) {
+            display_flush_timing_acc.te_high_us_total += (uint64_t) (now_us - display_flush_te_state.last_rise_us);
+            display_flush_timing_acc.te_high_count++;
+        }
+        display_flush_te_state.last_fall_us = now_us;
     }
     portEXIT_CRITICAL_ISR(&display_flush_timing_lock);
 
@@ -239,10 +289,7 @@ void display_flush_take_timing(display_flush_timing_t *timing) {
 
     portENTER_CRITICAL(&display_flush_timing_lock);
     acc = display_flush_timing_acc;
-    // Keep the last rising edge so the next window's first period is measured
-    const int64_t last_rise_us = display_flush_timing_acc.te_last_rise_us;
     display_flush_timing_acc = (display_flush_timing_acc_t) {0};
-    display_flush_timing_acc.te_last_rise_us = last_rise_us;
     portEXIT_CRITICAL(&display_flush_timing_lock);
 
     timing->te_pulses = acc.te_pulses;
@@ -255,19 +302,102 @@ void display_flush_take_timing(display_flush_timing_t *timing) {
     timing->te_wait_avg_us = acc.te_waits ? (uint32_t) (acc.te_wait_us_total / acc.te_waits) : 0;
     timing->te_wait_max_us = acc.te_wait_max_us;
     timing->te_timeouts = acc.te_timeouts;
+    timing->te_retries = acc.te_retries;
+    timing->te_late = acc.te_late;
 }
 
 
-// Start a frame where the panel starts its scan, so a frame never shows two halves: the write (20-23 ms) stays behind
-// the first scan (16.7 ms) and finishes long before the second scan could catch it. Never blocks longer than the timeout.
-static void display_flush_wait_te() {
+static void display_flush_start_timer_cb(void *arg) {
+    (void) arg;
+    xSemaphoreGive(display_flush_start_sem);
+}
+
+
+// Wait until `target_us` (esp_timer time); returns at once if it has passed
+static void display_flush_wait_until(int64_t target_us) {
+    const int64_t remaining_us = target_us - esp_timer_get_time();
+    if (remaining_us <= 0) {
+        return;
+    }
+    xSemaphoreTake(display_flush_start_sem, 0);
+    if (esp_timer_start_once(display_flush_start_timer, (uint64_t) remaining_us) != ESP_OK) {
+        return;
+    }
+    if (xSemaphoreTake(display_flush_start_sem,
+                       pdMS_TO_TICKS(remaining_us / 1000 + DISPLAY_FLUSH_TE_TIMEOUT_MS)) != pdTRUE) {
+        esp_timer_stop(display_flush_start_timer);
+    }
+}
+
+
+// Start writing a physical window (rows [y0, y0 + h), pw pixels wide) at a point where the panel scan cannot cross
+// the write, so the panel never shows the window half old and half new.
+//
+// The scan takes s per row and the write v per row (pw pixels, v_min..v_max). The write starts when the scan is
+// h * max(0, s - v_min) past row y0. A write slower than the scan (full-width rows) starts right behind it. A faster
+// one (narrow windows) starts far enough behind that it reaches the window's last row only after the scan has.
+// The next pass of the scan then finds the window finished, or the write ahead of it and pulling away. Starting
+// later than planned is safe for up to P - h * (max(0, s - v_min) + max(0, v_max - s)), where P is the TE period;
+// later than that, the next pass would cross the write, so the flush waits one more pass. A full-width window at
+// row 0 (every full frame) starts on the TE falling edge, as in step 2.
+static void display_flush_wait_scan(int32_t y0, int32_t h, int32_t pw) {
     if (display_flush_te_sem == NULL) {
         return;
     }
 
     const int64_t start_us = esp_timer_get_time();
-    xSemaphoreTake(display_flush_te_sem, 0);  // drop an edge that passed before this frame was ready
-    const bool got_edge = xSemaphoreTake(display_flush_te_sem, pdMS_TO_TICKS(DISPLAY_FLUSH_TE_TIMEOUT_MS)) == pdTRUE;
+
+    portENTER_CRITICAL(&display_flush_timing_lock);
+    const display_flush_te_state_t te = display_flush_te_state;
+    portEXIT_CRITICAL(&display_flush_timing_lock);
+
+    const int64_t period_us = te.period_us ? te.period_us : DISPLAY_FLUSH_TE_PERIOD_DEFAULT_US;
+    const int64_t s_ns = (period_us * 1000 + DISP_V_RES_PIXEL - 1) / DISP_V_RES_PIXEL;
+    const int64_t v_min_ns = (int64_t) pw * DISPLAY_FLUSH_WRITE_NS_PER_PX_MIN;
+    const int64_t v_max_ns = (int64_t) pw * DISPLAY_FLUSH_WRITE_NS_PER_PX_MAX;
+    const int64_t lead_ns = (int64_t) h * (s_ns > v_min_ns ? s_ns - v_min_ns : 0);
+    const int64_t lap_ns = (int64_t) h * (v_max_ns > s_ns ? v_max_ns - s_ns : 0);
+    const int64_t offset_us = ((int64_t) y0 * s_ns + lead_ns + 999) / 1000;
+    int64_t budget_us = period_us - (lead_ns + lap_ns) / 1000 - DISPLAY_FLUSH_START_MARGIN_US;
+    if (budget_us < 0) {
+        budget_us = 0;
+    }
+
+    xSemaphoreTake(display_flush_te_sem, 0);  // drop an edge that passed before this window was ready
+
+    // The pass under way is used only while its start point is still ahead; otherwise wait for the next pass
+    int64_t target_us = te.last_fall_us + offset_us;
+    if (te.last_fall_us == 0 || start_us - te.last_fall_us > period_us || target_us < start_us) {
+        target_us = 0;
+    }
+
+    bool got_edge = true;
+    bool retried = false;
+    bool late = false;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (target_us == 0) {
+            got_edge = xSemaphoreTake(display_flush_te_sem, pdMS_TO_TICKS(DISPLAY_FLUSH_TE_TIMEOUT_MS)) == pdTRUE;
+            if (!got_edge) {
+                break;
+            }
+            portENTER_CRITICAL(&display_flush_timing_lock);
+            target_us = display_flush_te_state.last_fall_us + offset_us;
+            portEXIT_CRITICAL(&display_flush_timing_lock);
+        }
+
+        display_flush_wait_until(target_us);
+
+        late = esp_timer_get_time() - target_us > budget_us;
+        if (!late) {
+            break;
+        }
+        if (attempt == 0) {
+            retried = true;
+            target_us = 0;
+            xSemaphoreTake(display_flush_te_sem, 0);
+        }
+    }
+
     const uint32_t wait_us = (uint32_t) (esp_timer_get_time() - start_us);
 
     portENTER_CRITICAL(&display_flush_timing_lock);
@@ -278,6 +408,12 @@ static void display_flush_wait_te() {
     }
     if (!got_edge) {
         display_flush_timing_acc.te_timeouts++;
+    }
+    if (retried) {
+        display_flush_timing_acc.te_retries++;
+    }
+    if (got_edge && late) {
+        display_flush_timing_acc.te_late++;
     }
     portEXIT_CRITICAL(&display_flush_timing_lock);
 }
@@ -291,6 +427,16 @@ static esp_err_t display_flush_te_init() {
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_ANYEDGE,
     };
+
+    const esp_timer_create_args_t start_timer_args = {
+        .callback = display_flush_start_timer_cb,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "flush_start",
+    };
+
+    display_flush_start_sem = xSemaphoreCreateBinaryStatic(&display_flush_start_sem_buf);
+    ESP_RETURN_ON_ERROR(esp_timer_create(&start_timer_args, &display_flush_start_timer), TAG,
+                        "start timer create failed");
 
     display_flush_te_sem = xSemaphoreCreateBinaryStatic(&display_flush_te_sem_buf);
 
@@ -366,7 +512,11 @@ static void display_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t 
     }
     const uint32_t strips = (uint32_t) ((ph + rows - 1) / rows);
 
-    display_flush_wait_te();
+    // Strip 0 is filled before the wait, so the write starts as close to the planned point as possible
+    display_flush_fill_strip(src, src_stride, w, h, rotation, display_flush_ctx.staging[0], pw, 0,
+                             (rows < ph) ? rows : ph);
+
+    display_flush_wait_scan(py1, ph, pw);
 
     portENTER_CRITICAL(&display_flush_strip_lock);
     display_flush_ctx.strips_total = strips;
@@ -382,20 +532,8 @@ static void display_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t 
         const int32_t r1 = (r0 + rows < ph) ? (r0 + rows) : ph;
         uint16_t *dst = display_flush_ctx.staging[queued & 1];
 
-        switch (rotation) {
-            case LV_DISPLAY_ROTATION_90:
-                display_flush_fill_90(src, src_stride, w, h, dst, pw, r0, r1);
-                break;
-            case LV_DISPLAY_ROTATION_180:
-                display_flush_fill_180(src, src_stride, w, h, dst, r0, r1);
-                break;
-            case LV_DISPLAY_ROTATION_270:
-                display_flush_fill_270(src, src_stride, h, dst, pw, r0, r1);
-                break;
-            case LV_DISPLAY_ROTATION_0:
-            default:
-                display_flush_fill_0(src, src_stride, w, dst, r0, r1);
-                break;
+        if (r0 > 0) {
+            display_flush_fill_strip(src, src_stride, w, h, rotation, dst, pw, r0, r1);
         }
 
         esp_err_t ret = esp_lcd_panel_draw_bitmap(display_flush_ctx.panel_handle,

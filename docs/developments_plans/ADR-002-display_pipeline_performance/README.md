@@ -1,6 +1,6 @@
 # ADR-002: display pipeline performance, one change at a time
 
-Status: **Open.** Step 1 Built (2026-11-06). Step 2 Built (2026-11-06). Step 3 last, a proposal until the owner approves it.
+Status: **Open.** Step 1 Built (2026-11-06). Step 2 Built (2026-11-06). Step 3 approved 2026-11-06, in progress.
 
 ADR-002 is functional change without any dependency update (ESP-IDF v5.5.2 and today's managed components stay as they are). ADR-003 is the dependency update without functional change. The two never cross over: one is finished before the other starts (owner, 2026-11-06).
 
@@ -61,7 +61,7 @@ Approach:
 
 What was built: TE pulses on GPIO18 at about 60 Hz (period 16.5-16.9 ms); one frame write takes 20-23 ms, more than one panel refresh and well under two. `main/display_flush.c` waits for the TE falling edge before the first strip of each frame (40 ms timeout, counted; the frame is sent anyway). The owner saw no tearing at any of the four rotations. Cost: about one frame a second (17 to 16 frames/s). Details in [progress](progress.md).
 
-## Step 3: partial redraw of the digital level view (proposal, for the owner's approval)
+## Step 3: partial redraw of the digital level view (approved 2026-11-06)
 
 Why: the level view redraws the whole screen for every frame, although between two frames only a band of rows changes. Drawing and sending fewer pixels is the largest gain left, and the level reads smoother at a higher frame rate.
 
@@ -74,7 +74,7 @@ What we know (step 2 profiling build, digital level tile, 0°, `rc_te_on_watch_2
 
 Approach, built in this order, as one step:
 
-1. Flush: start each area once the scan has passed its first physical row, at the TE falling edge plus `y0` × row time (the ISR records the edge time; a one-shot timer wakes the flush). The scan is then ahead of the write and stays ahead, the same as for a full frame. A full frame and every area at 90° and 270° (bands there are panel columns, `y0` = 0) start on the edge exactly as now. The average wait stays about the same, half a refresh. The row time is taken as the measured TE period / 456, which can only overstate it, so the start can only fall late, never early. Late is safe only within limits: started more than about 10 ms after the scan passed `y0`, the next scan pass catches the write. So the flush checks the time just before it queues the first strip and waits for the next pass when it is past that window. Each area LVGL sends gets this rule on its own, so the angle label and the band may land one refresh (16.7 ms) apart, but no area is ever shown half old and half new.
+1. Flush: start each area at a point of the scan where the scan cannot cross the write (`display_flush_wait_scan` in `main/display_flush.c`). The write's speed matters as well as its first row, which the proposal first missed. Full-width rows are written slower than the panel scans them, so they start right behind the scan, once it has passed the area's first physical row `y0`. Narrow areas are written faster than the scan: the angle label, and every band at 90° and 270°, which is a full-height panel column there. Starting right behind the scan, such a write would overtake it inside the area. So it starts far enough behind that it reaches the area's last row only after the scan has. One formula covers both. The scan takes `s` per row (TE period / 456, which can only overstate it), and the write `v` per row (`pw` px at 150-190 ns/px around the measured 159-183). The write starts when the scan is `h × max(0, s − v_min)` rows' worth past `y0`. Starting late is safe for up to `P − h × (max(0, s − v_min) + max(0, v_max − s))` minus 1 ms of margin (P the TE period); past that, the next pass would cross the write, so the flush waits one more pass, at most once. A full frame starts on the TE falling edge exactly as in step 2. The ISR records the edge times, and a one-shot timer wakes the flush. The first strip is filled before the wait. Each area LVGL sends gets the rule on its own, so the angle label and the band may land one refresh (16.7 ms) apart. The label is only set when its number changes.
 2. Level view, style 1: invalidate only the band of rows that changed (the union of the old and new triangle and the lines, with the 4 px line half-width), and the whole view when the background colour changes. The angle label, countdown and dope card above it are already their own objects, so LVGL redraws them as before.
 3. Judge on the device: the owner's eye at all four rotations while moving the unit, at small and large tilt (no tear, no stale stripes left behind by the band), the frame rate and invalidated pixels per frame from `display_prof`, then `state_change` and one idle/wake cycle test of at most 20 minutes.
 

@@ -188,10 +188,10 @@ static void display_profile_report_timer_cb(lv_timer_t *timer) {
     ESP_LOGI(TAG,
         "te_prof: window=%" PRIu32 "ms te=%" PRIu32 " period_min/max=%" PRIu32 "/%" PRIu32 "us"
         " high_avg=%" PRIu32 "us frames=%" PRIu32 " write_avg/max=%" PRIu32 "/%" PRIu32 "us"
-        " te_wait_avg/max=%" PRIu32 "/%" PRIu32 "us te_timeouts=%" PRIu32,
+        " te_wait_avg/max=%" PRIu32 "/%" PRIu32 "us te_timeouts=%" PRIu32 " te_retries=%" PRIu32 " te_late=%" PRIu32,
         window_ms, timing.te_pulses, timing.te_period_min_us, timing.te_period_max_us,
         timing.te_high_avg_us, timing.frames, timing.write_avg_us, timing.write_max_us,
-        timing.te_wait_avg_us, timing.te_wait_max_us, timing.te_timeouts);
+        timing.te_wait_avg_us, timing.te_wait_max_us, timing.te_timeouts, timing.te_retries, timing.te_late);
 
     display_profile_reset_window();
 }
