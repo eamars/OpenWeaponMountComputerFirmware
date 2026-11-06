@@ -192,3 +192,10 @@ Observation, not a bug: since the build with the Wi-Fi status log, `largest_dma`
 - **`GPIO isr service already installed`, kept, upstream's.** `app.c` installs the service once, before the PMIC, BNO085 and button add handlers. The second install is `esp_lcd_touch`'s own when the LVGL port registers the touch interrupt; its source says it expects the application to have installed it and ignores the result, and v6.1's GPIO driver logs that as an error. Removing it means changing a managed component (no dependency change in this ADR) or muting the `gpio` tag, which would hide real GPIO errors such as the one that found B16.
 - After the change every error line at boot is accounted for: the GPIO line above and the OTA placeholder sources failing to connect (B13).
 - Seen in passing, for B8: every `reboot` logs `Failed to start WiFi: ESP_ERR_WIFI_STOP_STATE` (also in older logs, so not new). `esp_restart()` stops Wi-Fi and the disconnect handler takes that stop for a lost connection: the class B12 fixed for the expiry. B8's fix to that handler should tell an intentional stop from a lost connection by the event's disconnect reason (`WIFI_REASON_ASSOC_LEAVE` for the unit's own stop), not by one flag per state.
+
+### Where step 2 stands (2026-11-06, end of the owner-free run)
+
+- Done and proven: B22, B23, B16, B5, B7 (with the first-boot abort), B9, B11, B4, B14 (OTA paths rest on the code), B12, B18 (drop path rests on the code), B20, B19 (watchdog half; the GPIO line is upstream's). Checked, not bugs: B6, B24.
+- Regression after the run: `scenario state_change` PASS (`rc_state_change_20261106_234308.log`), no error lines in the whole run, `largest_dma` 106,496 B at its lowest.
+- Waiting for the owner: B3 (wake touch, with the note that the wake touch must not reach LVGL), B8 (reconnect, needs the hotspot off and on; see the B19 note on the disconnect reason), B15 (PMIC settings after reboot), B10 (its test wipes the Wi-Fi credentials; ask first).
+- Open causes still to investigate: B1, B17, B21.
