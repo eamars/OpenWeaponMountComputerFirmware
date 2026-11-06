@@ -34,7 +34,7 @@ typedef struct {
     uint32_t te_wait_max_us;
     uint32_t te_timeouts;        // flushes sent without an edge after DISPLAY_FLUSH_TE_TIMEOUT_MS
     uint32_t te_retries;         // flushes that woke past their safe window and waited one more pass
-    uint32_t te_late;            // flushes sent past their safe window after the retry
+    uint32_t te_late;            // flushes sent past their safe window (after a retry, or windows too short to retry)
 } display_flush_timing_t;
 
 // Copy the timing gathered since the previous call and start a new window

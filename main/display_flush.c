@@ -34,6 +34,8 @@
 #define DISPLAY_FLUSH_WRITE_NS_PER_PX_MAX 190
 // Kept free inside the safe start window for the model's timing error
 #define DISPLAY_FLUSH_START_MARGIN_US 1000
+// A late start waits one more pass only when its safe window is at least this long
+#define DISPLAY_FLUSH_RETRY_MIN_WINDOW_US 2000
 
 // Two rows of the widest possible window must fit, so a strip always holds an even number of rows (at least 2)
 _Static_assert(DISPLAY_FLUSH_STAGING_BYTES >= 2 * DISP_V_RES_PIXEL * sizeof(uint16_t),
@@ -338,8 +340,9 @@ static void display_flush_wait_until(int64_t target_us) {
 // one (narrow windows) starts far enough behind that it reaches the window's last row only after the scan has.
 // The next pass of the scan then finds the window finished, or the write ahead of it and pulling away. Starting
 // later than planned is safe for up to P - h * (max(0, s - v_min) + max(0, v_max - s)), where P is the TE period;
-// later than that, the next pass would cross the write, so the flush waits one more pass. A full-width window at
-// row 0 (every full frame) starts on the TE falling edge, as in step 2.
+// later than that, the next pass would cross the write, so the flush waits one more pass, but only when the window
+// is at least DISPLAY_FLUSH_RETRY_MIN_WINDOW_US long. A full-width window at row 0 (every full frame) starts on the
+// TE falling edge, as in step 2.
 static void display_flush_wait_scan(int32_t y0, int32_t h, int32_t pw) {
     if (display_flush_te_sem == NULL) {
         return;
@@ -391,11 +394,14 @@ static void display_flush_wait_scan(int32_t y0, int32_t h, int32_t pw) {
         if (!late) {
             break;
         }
-        if (attempt == 0) {
-            retried = true;
-            target_us = 0;
-            xSemaphoreTake(display_flush_te_sem, 0);
+        // A window shorter than the LVGL task's usual wake-up delay is missed again on the next pass (ADR-002
+        // step 3: 235 of 289 retries at 90 degrees), so the extra pass would cost time and protect nothing
+        if (attempt > 0 || budget_us < DISPLAY_FLUSH_RETRY_MIN_WINDOW_US) {
+            break;
         }
+        retried = true;
+        target_us = 0;
+        xSemaphoreTake(display_flush_te_sem, 0);
     }
 
     const uint32_t wait_us = (uint32_t) (esp_timer_get_time() - start_us);
