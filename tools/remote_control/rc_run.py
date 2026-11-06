@@ -79,6 +79,7 @@ TILE_DWELL_S = 3.0
 IDLE_CYCLES = 3
 IDLE_DURATION_S = 20.0
 AFTER_WAKE_S = 10.0
+WATCHDOG_AFTER_WAKE_S = 2.0  # watchdog scenario: LVGL resumed and feeding before `hang`
 AFTER_ROTATION_S = 5.0
 WIFI_OFF_S = 10.0
 ROTATION_DWELL_S = 120.0
@@ -458,6 +459,12 @@ def scenario_watchdog(session: Session):
     task watchdog names the `lvgl` user, the device boots again, reports the watchdog reset and
     has a core dump stored. The crash's own markers (panic, reset) are expected and not counted.
     """
+    # The LVGL watchdog is paused while idle by design, so `hang` in idle only locks the unit
+    # until the next wake (ADR-005 B23). Wake first, and leave time for LVGL to resume.
+    if not session.command("wake").startswith("@ok"):
+        return
+    session.dwell(WATCHDOG_AFTER_WAKE_S)
+
     if not session.command("hang").startswith("@ok"):
         return
 

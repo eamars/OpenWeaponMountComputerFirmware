@@ -99,3 +99,15 @@ Life cycle as built: `axp2101_init` at boot (load config, ISR on the IRQ pin, `P
 - **Tags:** mostly `CamelCase` (`LowPowerMode`, `WiFiConfig`), with `BUZZER`, `BSP`, `AXP2101`, `POIView` and `OTAMode` breaking the pattern.
 - **Commented-out code:** about 95 lines of commented-out calls across `main/` (the owner keeps some on purpose, e.g. in `low_power_mode.c`).
 - **Typos and stale text:** listed per module above.
+
+## Step 2: the bug fixes (approved 2026-11-06)
+
+Owner: the list and order are approved; B13 is a placeholder, not a bug; B2 moves to step 3; the BNO085 first-boot abort stays in, as part of B7.
+
+### B22: device-test logs out of the build folder (2026-11-06, `10fffa3`)
+
+`tools/remote_control/rc_run.py` writes session logs to `logs/rc/` (git-ignored) instead of `build/rc_logs/`, so `idf.py fullclean` and `set-target` no longer delete them. Proof: a `send state` session's log landed in `logs/rc/`; the 14 logs still in `build/rc_logs/` were moved there.
+
+### B23: `scenario watchdog` wakes the unit first (2026-11-06)
+
+The scenario now sends `wake` and waits 2 s before `hang`, because the LVGL watchdog is paused while idle. Proof to run: start it with the unit idle; it must still end in the watchdog panic, the reboot, the `TASK_WDT` reset reason and a stored core dump.
