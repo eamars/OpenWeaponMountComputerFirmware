@@ -12,6 +12,7 @@
 #include "driver/gpio.h"
 #include "hal/gpio_ll.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include <inttypes.h>
 #include <stdbool.h>
@@ -20,6 +21,9 @@
 #define TAG "DisplayFlush"
 
 #define DISPLAY_FLUSH_DRAW_BUF_BYTES (DISP_H_RES_PIXEL * DISP_V_RES_PIXEL * sizeof(uint16_t))
+
+// Longest wait for the TE falling edge before a frame is sent anyway: a little over two panel refreshes (~16.7 ms)
+#define DISPLAY_FLUSH_TE_TIMEOUT_MS 40
 
 // Two rows of the widest possible window must fit, so a strip always holds an even number of rows (at least 2)
 _Static_assert(DISPLAY_FLUSH_STAGING_BYTES >= 2 * DISP_V_RES_PIXEL * sizeof(uint16_t),
@@ -47,12 +51,20 @@ typedef struct {
     uint32_t frames;
     uint64_t write_us_total;
     uint32_t write_max_us;
+    uint32_t te_waits;
+    uint64_t te_wait_us_total;
+    uint32_t te_wait_max_us;
+    uint32_t te_timeouts;
 } display_flush_timing_acc_t;
 
 static display_flush_ctx_t display_flush_ctx;
 static portMUX_TYPE display_flush_strip_lock = portMUX_INITIALIZER_UNLOCKED;
 static display_flush_timing_acc_t display_flush_timing_acc;
 static portMUX_TYPE display_flush_timing_lock = portMUX_INITIALIZER_UNLOCKED;
+
+// Given on each TE falling edge (end of V-blank: the panel starts scanning from row 0)
+static StaticSemaphore_t display_flush_te_sem_buf;
+static SemaphoreHandle_t display_flush_te_sem = NULL;
 
 
 static inline uint16_t display_flush_swap(uint16_t px) {
@@ -211,6 +223,14 @@ static void IRAM_ATTR display_flush_te_isr(void *arg) {
         display_flush_timing_acc.te_high_count++;
     }
     portEXIT_CRITICAL_ISR(&display_flush_timing_lock);
+
+    if (!high) {
+        BaseType_t woken = pdFALSE;
+        xSemaphoreGiveFromISR(display_flush_te_sem, &woken);
+        if (woken == pdTRUE) {
+            portYIELD_FROM_ISR();
+        }
+    }
 }
 
 
@@ -232,6 +252,34 @@ void display_flush_take_timing(display_flush_timing_t *timing) {
     timing->frames = acc.frames;
     timing->write_avg_us = acc.frames ? (uint32_t) (acc.write_us_total / acc.frames) : 0;
     timing->write_max_us = acc.write_max_us;
+    timing->te_wait_avg_us = acc.te_waits ? (uint32_t) (acc.te_wait_us_total / acc.te_waits) : 0;
+    timing->te_wait_max_us = acc.te_wait_max_us;
+    timing->te_timeouts = acc.te_timeouts;
+}
+
+
+// Start a frame where the panel starts its scan, so a frame never shows two halves: the write (20-23 ms) stays behind
+// the first scan (16.7 ms) and finishes long before the second scan could catch it. Never blocks longer than the timeout.
+static void display_flush_wait_te() {
+    if (display_flush_te_sem == NULL) {
+        return;
+    }
+
+    const int64_t start_us = esp_timer_get_time();
+    xSemaphoreTake(display_flush_te_sem, 0);  // drop an edge that passed before this frame was ready
+    const bool got_edge = xSemaphoreTake(display_flush_te_sem, pdMS_TO_TICKS(DISPLAY_FLUSH_TE_TIMEOUT_MS)) == pdTRUE;
+    const uint32_t wait_us = (uint32_t) (esp_timer_get_time() - start_us);
+
+    portENTER_CRITICAL(&display_flush_timing_lock);
+    display_flush_timing_acc.te_waits++;
+    display_flush_timing_acc.te_wait_us_total += wait_us;
+    if (wait_us > display_flush_timing_acc.te_wait_max_us) {
+        display_flush_timing_acc.te_wait_max_us = wait_us;
+    }
+    if (!got_edge) {
+        display_flush_timing_acc.te_timeouts++;
+    }
+    portEXIT_CRITICAL(&display_flush_timing_lock);
 }
 
 
@@ -243,6 +291,8 @@ static esp_err_t display_flush_te_init() {
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_ANYEDGE,
     };
+
+    display_flush_te_sem = xSemaphoreCreateBinaryStatic(&display_flush_te_sem_buf);
 
     ESP_RETURN_ON_ERROR(gpio_config(&te_conf), TAG, "TE GPIO config failed");
     // The GPIO ISR service is installed in app_main before the display is created
@@ -315,6 +365,8 @@ static void display_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t 
         rows = 2;
     }
     const uint32_t strips = (uint32_t) ((ph + rows - 1) / rows);
+
+    display_flush_wait_te();
 
     portENTER_CRITICAL(&display_flush_strip_lock);
     display_flush_ctx.strips_total = strips;
@@ -429,10 +481,11 @@ lv_display_t *display_flush_create(esp_lcd_panel_io_handle_t io_handle,
         goto err;
     }
 
-    // Timing only for now: a missing TE input costs the measurement, not the display
+    // A missing TE input costs the sync, never the display
     ret = display_flush_te_init();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "TE input not set up: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "TE input not set up, frames are sent without TE sync: %s", esp_err_to_name(ret));
+        display_flush_te_sem = NULL;
     }
 
     ESP_LOGI(TAG, "Display created: draw_buf=2x%u B (PSRAM) staging=2x%d B (internal DMA)",
