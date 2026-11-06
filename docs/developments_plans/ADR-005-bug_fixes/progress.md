@@ -36,3 +36,22 @@ Life cycle as built: `wifi_init` at boot → expiry timer (default 600 s) starte
 - **R, code:** `wifi_config_set_enable` calls `esp_wifi_start/stop` directly, ignoring the expiry and the idle state (the switch is disabled after the expiry, but the remote control's `wifi on` is not).
 - **P, code:** every `GOT_IP` (so every wake) runs `mdns_free()` and `mdns_init()`, deleting and re-creating the mDNS task. Memory stayed steady over 54 idle/wake cycles on v6.1.
 - **S:** `wifi_expiry_watchdog_restart` logs "as disconnected from WiFi hotspot" also when called from provisioning events; the task-creation error names "wifi_state_poller_task" for `wifi_deinit`; `wireless_state` is a global written from several tasks.
+
+### Wi-Fi and network: OTA and OpenTrickler (`ota_mode.c`, `opentrickler_remote_controller_view.c`)
+
+- Known bug 4 confirmed in code (`ota_sources[]`, `ota_mode.c:58`).
+- **B, code (minor): a failed OTA leaves its handle open.** Every failure after `esp_https_ota_begin` jumps to `finally`, which shows the Reboot button and deletes the task without `esp_https_ota_abort()`, so the OTA handle and its HTTP connection stay open until the reboot.
+- **B, code (minor):** the progress percentage divides by `esp_https_ota_get_image_size()`, which is -1 when the server sends no length.
+- **R, code:** OTA is plain HTTP (`CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP`) with no image signing, so anything on the local network answering as `owmc_update.local` could serve firmware. The download task correctly uses an internal stack (flash writes).
+- **R, code:** OpenTrickler discovery runs once, at the first Wi-Fi connection after boot; a trickler switched on later is not found until a reboot. Possibly by design.
+- **S:** `OTA_EVENT_MANIFEST_READY` is set when Wi-Fi connects, before any manifest; the manifest is logged in full at INFO; `json_obj_get_*` results are checked two different ways in the same function.
+
+### BNO085: life cycle (`components/bno08x`, `digital_level_view_controller.c`, `low_power_mode.c`)
+
+Life cycle as built: `bno085_init_i2c` at boot (pins, ISR, soft reset, `sh2_open`, product IDs, sensor poller task in PSRAM) → reports are enabled per view: the level controller turns game rotation and linear acceleration on and off on tile changes (LVGL task), the stability task turns its report on at start, calibration / point-of-aim / acceleration views their own → interrupt → poller task runs `sh2_service()` → each report lands in a one-deep queue that the consumer polls → idle: `sh2_devSleep()` from the low-power task; wake: `sh2_devOn()` → an unexpected sensor reset re-enables every saved report from inside the `sh2` callback.
+
+- **B, code: the `sh2` library is used from several tasks with no lock.** The `sh2`/SHTP state is single-threaded, and `sh2_setSensorConfig` and friends service the transport themselves while they wait for the sensor's reply. Yet `sh2_service()` runs in the poller task while reports are switched from the LVGL task (tile changes), the stability task, the views' tasks and `sensor_config.c`, and sleep/wake from the low-power task (`bno085_i2c.c` has no mutex). Two tasks inside the transport at once can corrupt a packet or make an operation fail, and every one of those calls is wrapped in `ESP_ERROR_CHECK`, so a failed collision aborts the unit.
+- **B, code: report re-enable after an unexpected sensor reset runs inside the `sh2` callback.** `sh2_event_callback` calls `sh2_setSensorConfig` for every saved report while `sh2_service()` is still dispatching (`bno085.c:145`). `sh2` operations are not meant to start from its own callback; if they fail (return value ignored), the reports are not restored and the level stops updating until a reboot.
+- **B, code: every BNO085 call aborts on failure.** All report switches and the stability task's start use `ESP_ERROR_CHECK` (`digital_level_view_controller.c`, `low_power_mode.c:393`, `sensor_config.c`, the views), so any sensor hiccup at a tile change reboots the unit. Known bug 3 (the first-boot abort) is the same pattern at init.
+- **R, code:** the report table has 60 entries and valid sensor IDs end at 46, so normal reports stay in bounds; only a corrupted packet could index past it (`sh2_sensor_callback`).
+- **S:** "Reset Unexpectly", "sh2_decodeSensorEventd", "unified_ensor_poller_task" typos; a decode failure logs at INFO; `sensor_roll_thread_unsafe` and friends are shared globals by design (named so).
