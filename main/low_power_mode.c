@@ -167,8 +167,9 @@ static void enter_idle_mode() {
     // off (ADR-005 step 3)
     wifi_request_suspend(WIFI_SUSPEND_IDLE);
 
-    // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler)
-    ESP_ERROR_CHECK(esp_pm_configure(&idle_pm_config));
+    // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler). A failure
+    // is logged and the unit idles at the active clock (ADR-005 C1)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_configure(&idle_pm_config));
 }
 
 
@@ -179,7 +180,7 @@ static void exit_idle_mode() {
     }
 
     ESP_LOGI(TAG, "Exiting idle mode");
-    ESP_ERROR_CHECK(esp_pm_configure(&active_pm_config));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_configure(&active_pm_config));  // logged; the wake goes on
 
     lvgl_port_lock(0);
 
@@ -259,8 +260,8 @@ void enter_sleep_mode() {
         set_display_brightness(&io_handle, 0);
     }
 
-    // Enter light sleep mode
-    ESP_ERROR_CHECK(esp_light_sleep_start());
+    // Enter light sleep mode; if it is refused, the wake path below runs at once (logged)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_light_sleep_start());
     // vTaskDelay(pdMS_TO_TICKS(5000));  // Sleep for a while to allow the system to enter sleep mode. The actual sleep duration is determined by the hardware and the wakeup source, so we don't use esp_light_sleep_start() here to have better control over the flow after waking up.
     
     /* Sleep Starts */
@@ -315,7 +316,8 @@ void low_power_monitor_task(void *p) {
     // Configure the wakeup sources. This includes
     // 1) Touch interrupt: to wake up the system when there is a touch event
     // 2) BNO085 interrupt: to wake up the system when there is a sensor event, which indicates the user is interacting with the system
-    ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(
+    // Only light sleep uses them, so a failure is logged and idle/wake carry on (ADR-005 C1)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_sleep_enable_ext1_wakeup_io(
             (1 << TOUCHSCREEN_INT_PIN) |
             // (1 << GPIO_NUM_0) | 
             (1 << BNO085_INT_PIN) 
