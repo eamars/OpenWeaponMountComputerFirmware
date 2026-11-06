@@ -18,6 +18,14 @@ float q_to_roll_sf(float dqw, float dqx, float dqy, float dqz);
 float q_to_pitch_sf(float dqw, float dqx, float dqy, float dqz);
 float q_to_yaw_sf(float dqw, float dqx, float dqy, float dqz);
 
+static inline void sh2_lock(bno085_ctx_t *ctx) {
+    xSemaphoreTakeRecursive(ctx->sh2_lock, portMAX_DELAY);
+}
+
+static inline void sh2_unlock(bno085_ctx_t *ctx) {
+    xSemaphoreGiveRecursive(ctx->sh2_lock);
+}
+
 static inline esp_err_t create_sensor_event_group(bno085_ctx_t *ctx) {
     // If not created, then create the event group. This function may be called before the `bno085_init()`. 
     if (ctx->sensor_event_control == NULL) {
@@ -112,14 +120,18 @@ void sensor_poller_task(void *self) {
     while (1) {
         // Wait until the interrupt happens
         if (_bno085_wait_for_interrupt(ctx) == ESP_OK) {
+            sh2_lock(ctx);
             sh2_service();
+            sh2_unlock(ctx);
         }
     }
 }
 
 
-esp_err_t sh2_enable_report(sh2_SensorId_t sensor_id, sh2_SensorConfig_t *config) {
+static esp_err_t sh2_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, sh2_SensorConfig_t *config) {
+    sh2_lock(ctx);
     int status = sh2_setSensorConfig(sensor_id, config);
+    sh2_unlock(ctx);
 
     if (status != SH2_OK) {
         return ESP_FAIL;
@@ -142,7 +154,7 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
                 // Re-enable reports
                 if (ctx->enabled_sensor_report_list[i].config.reportInterval_us != 0) {
                     ESP_LOGI(TAG, "Re-enabling report for sensor ID %d with interval %d us", i, ctx->enabled_sensor_report_list[i].config.reportInterval_us);
-                    sh2_enable_report(i, &ctx->enabled_sensor_report_list[i].config);
+                    sh2_enable_report(ctx, i, &ctx->enabled_sensor_report_list[i].config);
                 }
             }
             break;
@@ -179,6 +191,12 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
 
     // Create sensor event group if not created before
     ESP_ERROR_CHECK(create_sensor_event_group(ctx));
+
+    ctx->sh2_lock = xSemaphoreCreateRecursiveMutex();
+    if (ctx->sh2_lock == NULL) {
+        ESP_LOGE(TAG, "Failed to create sh2_lock");
+        return ESP_ERR_NO_MEM;
+    }
 
     // Configure interrupt
     if (ctx->interrupt_pin != GPIO_NUM_NC) {
@@ -255,8 +273,10 @@ esp_err_t _bno085_sh2_init(bno085_ctx_t *ctx) {
     // Assume other HAL functions are already assigned
     // Open SH2 interface
     int status;
+    sh2_lock(ctx);
     status = sh2_open((sh2_Hal_t *) ctx, sh2_event_callback, (void *) ctx);
     if (status != SH2_OK) {
+        sh2_unlock(ctx);
         ESP_LOGE(TAG, "Failed to run sh2_open(): %d", status);
         return ESP_FAIL;
     }
@@ -265,13 +285,16 @@ esp_err_t _bno085_sh2_init(bno085_ctx_t *ctx) {
     memset(&prodIds, 0, sizeof(prodIds));
     status = sh2_getProdIds(&prodIds);
     if (status != SH2_OK) {
+        sh2_unlock(ctx);
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "ProdIds Read");
 
 
     // Register sensor callback
-    if (sh2_setSensorCallback(sh2_sensor_callback, (void *) ctx)) {
+    status = sh2_setSensorCallback(sh2_sensor_callback, (void *) ctx);
+    sh2_unlock(ctx);
+    if (status != SH2_OK) {
         return ESP_FAIL;
     }
 
@@ -312,13 +335,15 @@ esp_err_t bno085_configure_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, s
     memcpy(&target_report_config->config, config, sizeof(sh2_SensorConfig_t));
 
     // Enable report at the sensor
-    return sh2_enable_report(sensor_id, &target_report_config->config);
+    return sh2_enable_report(ctx, sensor_id, &target_report_config->config);
 }
 
 
 
 esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx) {
+    sh2_lock(ctx);
     int ret = sh2_devSleep();
+    sh2_unlock(ctx);
     if (ret != SH2_OK) {
         ESP_LOGE(TAG, "Failed to put sensor in sleep mode: %d", ret);
         return ESP_FAIL;
@@ -328,9 +353,35 @@ esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx) {
 
 
 esp_err_t bno085_wake_up(bno085_ctx_t *ctx) {
+    sh2_lock(ctx);
     int ret = sh2_devOn();
+    sh2_unlock(ctx);
     if (ret != SH2_OK) {
         ESP_LOGE(TAG, "Failed to wake up the sensor: %d", ret);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+
+esp_err_t bno085_tare_now(bno085_ctx_t *ctx, uint8_t axes, sh2_TareBasis_t basis) {
+    sh2_lock(ctx);
+    int ret = sh2_setTareNow(axes, basis);
+    sh2_unlock(ctx);
+    if (ret != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to tare: %d", ret);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+
+esp_err_t bno085_persist_tare(bno085_ctx_t *ctx) {
+    sh2_lock(ctx);
+    int ret = sh2_persistTare();
+    sh2_unlock(ctx);
+    if (ret != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to persist tare: %d", ret);
         return ESP_FAIL;
     }
     return ESP_OK;

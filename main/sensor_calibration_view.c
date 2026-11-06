@@ -73,22 +73,14 @@ void rotation_vector_poller_task(void *p) {
 void on_tare_button_clicked(lv_event_t * e) {
     ESP_LOGI(TAG, "Tare function called");
 
-    int sh2_ret;
-
-    sh2_ret = sh2_setTareNow(SH2_TARE_X | SH2_TARE_Y | SH2_TARE_Z, SH2_TARE_BASIS_ROTATION_VECTOR);
-    if (sh2_ret == SH2_OK) {
+    // Through the driver, which serialises access to the sh2 library (ADR-005 B5)
+    if (bno085_tare_now(bno085_dev, SH2_TARE_X | SH2_TARE_Y | SH2_TARE_Z, SH2_TARE_BASIS_ROTATION_VECTOR) == ESP_OK) {
         ESP_LOGI(TAG, "Tare command sent successfully");
 
         // persist th tare
-        sh2_ret = sh2_persistTare();
-        if (sh2_ret == SH2_OK) {
+        if (bno085_persist_tare(bno085_dev) == ESP_OK) {
             ESP_LOGI(TAG, "Tare persisted successfully");
-        } else {
-            ESP_LOGE(TAG, "Failed to persist tare: %d", sh2_ret);
         }
-    }
-    else {
-        ESP_LOGE(TAG, "Failed to send tare command: %d", sh2_ret);
     }
 
     // Move back to the previous tile
