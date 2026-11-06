@@ -1,6 +1,6 @@
 # ADR-005: review every module, fix the known bugs, then decouple the services from the UI
 
-Status: **Open.** Approved 2026-11-06 ("Approve, start"). Step 1 (review) done 2026-11-06. Step 2 (bug fixes) approved 2026-11-06, done 2026-11-07. Step 3 (decoupling) done 2026-11-07: Wi-Fi, PMIC and low power changed; BNO085 needed no change.
+Status: **Open.** Approved 2026-11-06 ("Approve, start"). Step 1 (review) done 2026-11-06. Step 2 (bug fixes) approved 2026-11-06, done 2026-11-07. Step 3 (decoupling) done 2026-11-07: Wi-Fi, PMIC and low power changed; BNO085 needed no change. Step 4 (the remaining code issues) proposed 2026-11-07.
 
 ## What we want
 
@@ -122,10 +122,30 @@ Approach (owner accepted the proposal, 2026-11-06). Not classic MVC, which adds 
 
 Wi-Fi is the pilot (with B2 and the lock ordering folded in), then PMIC, BNO085 and low power, one service per change, each proven on the device. No new features and no performance work; the behaviour seen by the user stays the same.
 
+## Step 4: the remaining code issues (proposed 2026-11-07)
+
+Owner, 2026-11-07: the known code issues are finished in this ADR; user-experience improvements are a separate ADR. Rechecked against the code after step 3.
+
+1. **C1: runtime errors no longer reboot the unit.** About 37 `ESP_ERROR_CHECK` calls run after start-up, where a recoverable failure reboots. Start-up keeps them (a failure there is fatal by design). After start-up a failed call is logged and the action fails where it happened:
+   - Settings pages' Save and Reload (system, Wi-Fi, PMIC, sensor, level, countdown): the page's existing message box says the save or reload failed, instead of "Configuration Saved".
+   - Buzzer tone and duty, display brightness: logged, the unit keeps running (a missed beep, the old brightness).
+   - Low power (`esp_pm_configure`, light sleep, the wake-pin setup): logged, the unit stays in its current state.
+   - Wi-Fi bring-up after a wake: logged, the status shows not connected.
+   - OTA poller and countdown view: each read first, handled the same way.
+   - Not touched: the disabled tiles (point of aim, acceleration analysis, OpenTrickler).
+   One module per change.
+2. **C2: BNO085 report index.** `sh2_sensor_callback` indexes its 60-entry report table with the sensor ID from the packet; a corrupted packet could index past it. Reject IDs outside the table.
+3. **C3: FT3168 I2C timeouts.** Init and every touch read use an infinite I2C timeout (`-1`), and touch reads run in the LVGL task. Use a finite one; free the handle on the GPIO-config error paths.
+4. **C4: style, last** (so it does not collide with the fixes): `extern` declarations moved into headers, one-space and tab-indented functions, `%d` for `uint32_t`, typos and stale comments. Kept as they are: log tags (the device tests match on them, and renaming them changes no behaviour), commented-out code (the owner keeps some on purpose), and the dead modules (whether the disabled tiles come back is a product question for the next ADR).
+
+Recorded, no change: OTA over plain HTTP without image signing (the image checksum already rejects a corrupted download; signing means key handling for everyone who builds the firmware); the LVGL lock calls that wait forever (by design: a stuck lock ends in the LVGL watchdog's reboot with a crash report naming `lvgl`, also in idle since B4); OpenTrickler discovered once per boot (its tile is disabled). Power-off with USB connected is checked by hand with the owner's Power Off test.
+
+Proof: each change built, flashed and run on its normal path (the matching remote-control commands, `scenario state_change`, one 10-minute idle/wake run after C1). The failure paths cannot be forced from the remote control without new test code, so they rest on reading, and each is named in the progress notes.
+
 ## For the owner to decide
 
 1. The BNO085 first-boot abort: in this round, as part of B7 (owner, 2026-11-06); the likely cause is in the progress notes.
 2. The core dump stack margin: left as it is (owner agreed, 2026-11-07). Every recorded dump logs "used 1440 bytes on stack, 436 bytes left free"; the use depends on how the dump is written (flash driver, CRC32 checksum), not on what the app was doing, and an overflow would only lose that one crash's report (ESP-IDF's watchpoint at the stack end stops the dump). Raising it costs internal RAM for good. Look again only if the dump's write path changes (SHA-256 checksum, a new ESP-IDF). Flash encryption stays off: this is an open source project, so there is nothing to encrypt (owner, 2026-11-07).
-3. Style findings: recommended as a separate pass after the bug fixes, module by module, so each bug fix stays a small change that is easy to check. Kept out of the bug-fix changes either way. In this ADR as step 3, or a later ADR?
+3. Style findings: in this ADR, as step 4's last change (owner, 2026-11-07: code issues stay in this ADR, user-experience improvements go to the next).
 4. Step 3, BNO085: no service change (owner accepted, 2026-11-07). The driver already meets the rules: one task (the sensor poller), its own state and lock (B5), no LVGL calls, started at boot without the UI. What remains are the views' reader tasks (level, point of aim, acceleration analysis, calibration), which are UI code reading the sensor and take the LVGL lock their own way. Moving them behind the UI bridge would give one place for locking, but it rebuilds the level's 50 Hz drawing path that ADR-002 tuned, which is performance work this ADR excludes; the cost is four views reworked and the frame rate measured again.
 5. Step 3, low power's display calls: kept in low power (owner accepted, 2026-11-07). Low power is the display's power switch (LVGL stop and resume, panel off, watchdog pause, the touch wake wrapper); those calls are display control, not widget updates, and moving them into `lvgl_display.c` would rename them without removing a cycle or a race, while the order inside idle entry and exit (idle flag, BNO085 sleep, Wi-Fi) is what the idle/wake tests prove. The plan's "low power publishes idle and wake" events are not built either: no service would subscribe (Wi-Fi takes a synchronous request, see the pilot notes; the BNO085 is told directly), and an event nobody reads is code for nothing.
