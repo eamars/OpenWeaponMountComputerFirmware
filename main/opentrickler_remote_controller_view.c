@@ -188,10 +188,6 @@ static esp_err_t http_client_event_handler(esp_http_client_event_t *evt)
 static void opentrickler_rest_poller_task(void *p) {
     esp_err_t ret;
 
-    // First disable the watchdog timer
-    // The task is expectd to be blocked indefinitely if wifi is not connected
-    esp_task_wdt_delete(NULL);
-
     // Wait for wifi to be connected
     while (true) {
         ret = wifi_wait_for_sta_connected(1000);

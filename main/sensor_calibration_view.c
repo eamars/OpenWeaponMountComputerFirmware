@@ -43,9 +43,6 @@ HEAPS_CAPS_ATTR static char rv_accuracy_str[32] = {0};
 void rotation_vector_poller_task(void *p) {
     float roll, pitch, yaw, accuracy;
 
-    // Disable the task watchdog as the task is expected to block indefinitely
-    esp_task_wdt_delete(NULL);
-
     while (1) {
         xEventGroupWaitBits(sensor_calibration_task_control, RV_POLLER_RUN, pdFALSE, pdFALSE, portMAX_DELAY);
 

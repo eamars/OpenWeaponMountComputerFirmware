@@ -392,9 +392,6 @@ void sensor_stability_detector_poller_task(void *p) {
     // Initialize sensor
     bno085_enable_stability_detector_report(bno085_dev, SENSOR_STABILITY_DETECTOR_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
 
-    // Disable the task watchdog as the task is expected to block indefinitely
-    esp_task_wdt_delete(NULL);
-
     while (1) {
         uint16_t stability;
         esp_err_t err = bno085_wait_for_stability_detector_report(bno085_dev, &stability, true);

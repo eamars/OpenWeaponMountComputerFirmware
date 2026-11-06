@@ -390,10 +390,6 @@ void ota_poller_task(void *p) {
     // Create OTA event group
     ESP_ERROR_CHECK(create_ota_event_group());
 
-    // Disable task watchdog to ensure the OTA is smooth
-    // Also in case the network is down and network stack is deleted. 
-    esp_task_wdt_delete(NULL);
-
     // Wait for manifest to be downloaded
     xEventGroupWaitBits(ota_event_group, OTA_EVENT_MANIFEST_READY | OTA_EVENT_USER_CONFIRMED, pdFALSE, pdTRUE, portMAX_DELAY);
 

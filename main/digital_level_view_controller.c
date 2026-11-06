@@ -114,9 +114,6 @@ float get_relative_roll_angle_rad_thread_unsafe() {
 
 
 void unified_sensor_poller_task(void *p) {
-    // Disable the task watchdog as the task is expected to block indefinitely
-    esp_task_wdt_delete(NULL);
-
     TickType_t last_poll_tick;
     float last_sensor_x_acceleration = 0;
 
