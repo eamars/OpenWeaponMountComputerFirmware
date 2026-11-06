@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <math.h>
 
 #include "esp_log.h"
@@ -12,6 +13,10 @@
 
 
 #define TAG "BNO085"
+
+// Reset pulse width, and how long to wait for the sensor's ready signal after it (H_INTN low)
+#define BNO085_RESET_PULSE_MS 10
+#define BNO085_RESET_READY_TIMEOUT_MS 500
 
 // Forward declaration
 float q_to_roll_sf(float dqw, float dqx, float dqy, float dqz);
@@ -134,6 +139,7 @@ static esp_err_t sh2_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, 
     sh2_unlock(ctx);
 
     if (status != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to configure report for sensor ID %d (interval %" PRIu32 " us): %d", sensor_id, config->reportInterval_us, status);
         return ESP_FAIL;
     }
 
@@ -215,24 +221,8 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
         ESP_LOGI(TAG, "Configured interrupt on pin %d", ctx->interrupt_pin);
     }
 
-    // Configure reset pin
-    if (ctx->reset_pin != GPIO_NUM_NC) {
-        gpio_config_t io_conf = {
-            .intr_type = GPIO_INTR_DISABLE,
-            .mode = GPIO_MODE_OUTPUT,
-            .pin_bit_mask = (1ULL << ctx->reset_pin),
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-        };
-        ESP_ERROR_CHECK(gpio_config(&io_conf));
-
-        // Set reset pin to high
-        gpio_set_level(ctx->reset_pin, 1);
-
-        ESP_LOGI(TAG, "Configured reset on pin %d", ctx->reset_pin);
-    }
-
-    // Configure boot pin
+    // Configure the boot pin before the reset: the BNO085 samples BOOTN when it leaves reset, and low
+    // starts its firmware-update bootloader instead of the sensor hub (ADR-005 B7)
     if (ctx->boot_pin != GPIO_NUM_NC) {
         gpio_config_t io_conf = {
             .intr_type = GPIO_INTR_DISABLE,
@@ -247,6 +237,43 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
         gpio_set_level(ctx->boot_pin, 1);
 
         ESP_LOGI(TAG, "Configured boot on pin %d", ctx->boot_pin);
+    }
+
+    // Hardware reset, so the sensor starts from a known state whatever reset the ESP32 had. After a chip
+    // reset (flash, esptool) the reset line was undriven until now; after a software reset it stayed high
+    // and the sensor kept running. Without the pulse and the wait, the first boot after a chip reset probed
+    // the sensor before it was ready and aborted (ADR-005 B7).
+    if (ctx->reset_pin != GPIO_NUM_NC) {
+        gpio_config_t io_conf = {
+            .intr_type = GPIO_INTR_DISABLE,
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = (1ULL << ctx->reset_pin),
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+
+        gpio_set_level(ctx->reset_pin, 0);
+        vTaskDelay(pdMS_TO_TICKS(BNO085_RESET_PULSE_MS));
+
+        // The sensor pulls H_INTN low once it is ready after reset; drop any edge seen while in reset
+        xEventGroupClearBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT);
+        gpio_set_level(ctx->reset_pin, 1);
+        const int64_t released_us = esp_timer_get_time();
+
+        if (ctx->interrupt_pin != GPIO_NUM_NC) {
+            EventBits_t bits = xEventGroupWaitBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT, pdTRUE, pdTRUE,
+                                                   pdMS_TO_TICKS(BNO085_RESET_READY_TIMEOUT_MS));
+            if (!(bits & SENSOR_INTERRUPT_EVENT_BIT)) {
+                ESP_LOGW(TAG, "No ready signal within %d ms of reset", BNO085_RESET_READY_TIMEOUT_MS);
+            }
+        }
+        else {
+            vTaskDelay(pdMS_TO_TICKS(BNO085_RESET_READY_TIMEOUT_MS));
+        }
+
+        ESP_LOGI(TAG, "Reset on pin %d done, ready after %d ms", ctx->reset_pin,
+                 (int) ((esp_timer_get_time() - released_us) / 1000));
     }
 
     // Configure ps0_wake pin

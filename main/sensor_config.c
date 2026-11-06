@@ -83,7 +83,7 @@ static void toggle_linear_acceleration_report(lv_event_t *e) {
     *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
 
     if (*state == false) {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
+        bno085_enable_linear_acceleration_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
 }
 
@@ -93,7 +93,7 @@ static void toggle_game_rotation_vector_report(lv_event_t *e) {
     *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
 
     if (*state == false) {
-        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
+        bno085_enable_game_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
 }
 
@@ -103,7 +103,7 @@ static void toggle_rotation_vector_report(lv_event_t *e) {
     *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
 
     if (*state == false) {
-        ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
+        bno085_enable_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
 }
 

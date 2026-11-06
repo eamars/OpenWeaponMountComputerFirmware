@@ -102,7 +102,7 @@ void enter_sensor_calibration_mode(bool enable) {
         prevent_idle_mode_enter(true);
         
         // Enable RV report from BNO085
-        ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_REPORT_PERIOD_MS));
+        bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
 
         // Enable the poller task to update the RV measurement on the screen
         xEventGroupSetBits(sensor_calibration_task_control, RV_POLLER_RUN);
@@ -114,7 +114,7 @@ void enter_sensor_calibration_mode(bool enable) {
         xEventGroupClearBits(sensor_calibration_task_control, RV_POLLER_RUN);
 
         // Set RV report back to idle mode period
-        ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS));
+        bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
 }
 

@@ -390,7 +390,7 @@ void low_power_monitor_task(void *p) {
 
 void sensor_stability_detector_poller_task(void *p) {
     // Initialize sensor
-    ESP_ERROR_CHECK(bno085_enable_stability_detector_report(bno085_dev, SENSOR_STABILITY_DETECTOR_REPORT_PERIOD_MS));
+    bno085_enable_stability_detector_report(bno085_dev, SENSOR_STABILITY_DETECTOR_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
 
     // Disable the task watchdog as the task is expected to block indefinitely
     esp_task_wdt_delete(NULL);
