@@ -115,5 +115,11 @@ The scenario now sends `wake` and waits 2 s before `hang`, because the LVGL watc
 
 ### B16: the touch controller is reset on its own pin (2026-11-06)
 
-`esp_lcd_touch_new_ft3168` now copies the config into the handle before the reset block, so the reset pulses GPIO16 (the FT3168's reset line) instead of GPIO0, the external button. Proof (`logs/rc/rc_reboot_20261106_222444.log`): no `conflict found for GPIO[0]` in the boot log (0 lines; it printed on every v6.1 boot before), and the FT3168 initialises after its reset ("Successfully wrote to FT3168" at 824 ms). Still to see: the owner's check that touch and the button work.
+`esp_lcd_touch_new_ft3168` now copies the config into the handle before the reset block, so the reset pulses GPIO16 (the FT3168's reset line) instead of GPIO0, the external button. Proof (`logs/rc/rc_reboot_20261106_222444.log`): no `conflict found for GPIO[0]` in the boot log (0 lines; it printed on every v6.1 boot before), and the FT3168 initialises after its reset ("Successfully wrote to FT3168" at 824 ms). Owner, 2026-11-06: touch and the button work.
+
+### B3: owner's report on waking by touch (2026-11-06)
+
+- Owner: touch and the button both wake the screen, and **the touch that wakes the screen is also passed on to LVGL**, which may trigger something the user cannot see. The owner does not want the wake touch to reach LVGL.
+- This fits B3 rather than contradicting it: if the wrapper saw the touch, it would wake the unit and return before the touch reached LVGL. The touch reaching LVGL shows the wrapper never notices it; the wake most likely comes from the BNO085 stability detector reacting to the tap's jolt. To settle it: log the order of "Stability detector report" and "Exiting idle mode" while the owner taps the idle unit.
+- The fix must also swallow the rest of that touch: the finger is usually still down after the wake, so the touch is ignored until it lifts; otherwise the release lands as a click.
 - Seen on the way: the first boot after the app flash (an RTS reset) reported the previous reset as `PANIC` with a core dump in task `main`, the BNO085 first-boot abort (B7) reproducing as expected.
