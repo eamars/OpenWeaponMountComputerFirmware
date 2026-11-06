@@ -502,6 +502,11 @@ static bool rc_cmd_wifi(int argc, char **argv, char *reply, size_t reply_size) {
         wifi_expire_now();
         return rc_reply(reply, reply_size, true, "@ok wifi=expire");
     }
+    else if (argc == 2 && strcmp(argv[1], "drop") == 0) {
+        // Debug: disconnect from the AP, handled as a lost connection (the AP gone), to test the reconnect
+        wifi_drop_now();
+        return rc_reply(reply, reply_size, true, "@ok wifi=drop");
+    }
     else {
         return rc_reply(reply, reply_size, false, "@err args");
     }

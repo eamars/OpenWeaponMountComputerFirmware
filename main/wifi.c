@@ -33,6 +33,7 @@ EventGroupHandle_t wireless_event_group = NULL;
 static TaskHandle_t wifi_deinit_task_handle;
 wireless_state_e wireless_state;
 TimerHandle_t wifi_expiry_timeout_timer;
+static volatile bool wifi_drop_simulated = false;  // set by wifi_drop_now(), read by the next disconnect
 
 
 HEAPS_CAPS_ATTR wifi_user_config_t wifi_user_config;
@@ -144,6 +145,16 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
 
             case WIFI_EVENT_STA_DISCONNECTED:
             {
+                wifi_event_sta_disconnected_t *disconnected = (wifi_event_sta_disconnected_t *) event_data;
+                uint8_t reason = disconnected->reason;
+                if (wifi_drop_simulated) {
+                    // Test hook (remote control `wifi drop`): handle this one as a lost connection
+                    wifi_drop_simulated = false;
+                    reason = WIFI_REASON_BEACON_TIMEOUT;
+                }
+                ESP_LOGI(TAG, "Disconnected, reason %d%s", disconnected->reason,
+                         reason != disconnected->reason ? " (handled as a lost connection: wifi drop)" : "");
+
                 ESP_LOGI(TAG, "Disconnected. Connecting to the AP again...");
                 wireless_state = WIRELESS_STATE_DISCONNECTED;
                 status_bar_update_wireless_state(wireless_state);
@@ -378,6 +389,12 @@ void wifi_expiry_watchdog_start() {
 void wifi_expiry_watchdog_stop() {
     xTimerStop(wifi_expiry_timeout_timer, 0);
     ESP_LOGI(TAG, "Wifi expiry timer stopped");
+}
+
+void wifi_drop_now() {
+    ESP_LOGW(TAG, "Wifi drop forced");
+    wifi_drop_simulated = true;
+    esp_wifi_disconnect();
 }
 
 void wifi_expire_now() {

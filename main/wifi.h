@@ -84,6 +84,12 @@ void wifi_expiry_watchdog_stop();
  */
 void wifi_expire_now();
 
+/**
+ * @brief Disconnect from the AP now, and have that one disconnect handled as a lost connection (as if the AP had
+ * gone), not as the unit's own stop. For tests of the reconnect (remote control `wifi drop`).
+ */
+void wifi_drop_now();
+
 
 esp_err_t save_wifi_user_config();
 esp_err_t load_wifi_user_config();
