@@ -143,6 +143,9 @@ void app_main(void)
     // Start event loop
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
+    // Low-power state first: the PMIC's power key and the remote control ask whether the unit is idle
+    ESP_ERROR_CHECK(low_power_mode_init());
+
     // Install interrupt service (so each module don't need to run again)
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
 
@@ -201,6 +204,9 @@ void app_main(void)
 
     // Initialize Display
     ESP_ERROR_CHECK(lvgl_display_init(i2c0_bus_handle));
+
+    // Idle and sleep timeouts, once the display they blank and the touch that wakes it exist
+    ESP_ERROR_CHECK(low_power_mode_start());
 
     // Remote control driver (virtual pointer for scripted taps and swipes)
     ESP_ERROR_CHECK(remote_control_init());

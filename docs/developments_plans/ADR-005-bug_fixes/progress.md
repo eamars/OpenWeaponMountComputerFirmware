@@ -315,3 +315,19 @@ Proof (`rc_pmic_20261107_015837.log`):
 - `scenario state_change` PASS, no error or warning lines (`rc_state_change_20261107_015947.log`); rotation back to the owner's 1.
 - Not tested: Power Off and the sleep timeout's power off (they turn the unit off, and nobody was there to turn it back on); the power key's long press (needs a finger); the look of the icon and the page.
 - Known, for the low-power change: a power key press before the UI exists would read the low-power event group, which the low-power view creates (`create_low_power_mode_view`), while it is still NULL.
+
+### Low power: state and tasks out of the view (2026-11-07)
+
+The low-power event group and both tasks (the idle/sleep monitor and the stability detector) were created inside `create_low_power_mode_view()`, a view's create function, so anything asking `is_idle_mode_activated()` before the UI existed read a NULL event group (the review's R finding; the PMIC's power key could do it in the first 1.8 s of boot). Now:
+- `low_power_mode_init()` creates the event group right after the default event loop, before the PMIC and every other caller.
+- `low_power_mode_start()` installs the touch wake wrapper (under the LVGL lock) and starts both tasks, called from `app_main` once the display and its touch input exist, before the remote control. Same effective order as before, now explicit.
+- The view only builds the black tile.
+- Not changed: low power still drives the display itself (LVGL stop and resume, panel off, watchdog pause) and tells Wi-Fi and the BNO085 directly. See "For the owner" below.
+
+Proof:
+- Reboot (`rc_pmic_20261107_020628.log`): only the two known boot lines; the level reports; idle entry and wake through the remote control work.
+- `scenario state_change` PASS, no error or warning lines (`rc_state_change_20261107_020720.log`).
+- 10 minutes of idle/wake (`rc_idle_cycles_20261107_020945.log`): 54 cycles, PASS, no trips, no error or warning lines; free internal RAM 181,271 to 181,347 B, `largest_dma` 102,400 B.
+- Not tested: the touch wake wrapper (needs a finger; the same two calls, now made at start-up instead of in the view), and the sleep timeout (1 hour at the owner's setting).
+
+For the owner (README, "For the owner to decide", items 4 and 5): BNO085 needs no service change, and low power keeps driving the display itself; both are recommendations, not built. If both are accepted, step 3 is complete with the three changes above.

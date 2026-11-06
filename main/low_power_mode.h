@@ -9,6 +9,18 @@ extern "C" {
 #endif  // __cplusplus
 
 
+// Low power (ADR-005 step 3): its state and tasks no longer start inside its view.
+
+/** @brief Create the low-power state. Call early at boot, before anything that asks whether the unit is idle. */
+esp_err_t low_power_mode_init();
+
+/**
+ * @brief Install the touch wake wrapper and start the low-power tasks (idle and sleep timeouts, the stability
+ * detector). Call once the display and its touch input exist, without the LVGL lock held.
+ */
+esp_err_t low_power_mode_start();
+
+/** @brief The black tile shown while idle. LVGL lock held. */
 void create_low_power_mode_view(lv_obj_t *parent);
 
 void update_low_power_mode_last_activity_event();

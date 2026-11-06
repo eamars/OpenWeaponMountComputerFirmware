@@ -424,12 +424,17 @@ void sensor_stability_detector_poller_task(void *p) {
     }
 }
 
-void create_low_power_mode_view(lv_obj_t * parent) {
+esp_err_t low_power_mode_init() {
     low_power_control_event = xEventGroupCreate();
     if (low_power_control_event == NULL) {
         ESP_LOGE(TAG, "Failed to create low_power_control_event");
-        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
     }
+    return ESP_OK;
+}
+
+
+void create_low_power_mode_view(lv_obj_t * parent) {
 
     // Set background to save power on AMOLED screen
     lv_obj_set_style_bg_color(parent, lv_color_black(), LV_PART_MAIN);
@@ -440,6 +445,15 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     lv_label_set_text(low_power_mode_label, "Low Power Mode");
     lv_obj_set_style_text_color(low_power_mode_label, lv_color_white(), LV_PART_MAIN);
     lv_obj_center(low_power_mode_label);
+}
+
+
+esp_err_t low_power_mode_start() {
+    // Inject the wrapper to the pointer input, before the tasks that can put the unit to idle exist
+    lvgl_port_lock(0);
+    original_read_cb = lv_indev_get_read_cb(lvgl_touch_handle);
+    lv_indev_set_read_cb(lvgl_touch_handle, touchpad_read_cb_wrapper);
+    lvgl_port_unlock();
 
 
     // Create event poller task
@@ -453,7 +467,7 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for low_power_monitor_task");
-        ESP_ERROR_CHECK(ESP_FAIL);
+        return ESP_ERR_NO_MEM;
     }
 
 #if USE_BNO085
@@ -469,13 +483,11 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for sensor_stability_detector_poller_task");
-        ESP_ERROR_CHECK(ESP_FAIL);
+        return ESP_ERR_NO_MEM;
     }
 #endif  // USE_BNO085
 
-    // Inject the wrapper to the pointer input
-    original_read_cb = lv_indev_get_read_cb(lvgl_touch_handle);
-    lv_indev_set_read_cb(lvgl_touch_handle, touchpad_read_cb_wrapper);
+    return ESP_OK;
 }
 
 bool is_idle_mode_activated() {
