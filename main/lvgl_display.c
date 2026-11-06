@@ -327,8 +327,11 @@ void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
     static uint32_t last_interrupt_tick = 0;
     uint32_t tick_now = lv_tick_get();
 
-    // if no interrupt has happen in last xx ms then pause the indev timer
-    if (lv_tick_diff(tick_now, last_interrupt_tick) > 450)  // longer than default long_press_time
+    bool pressed = gpio_get_level(EXT_BUTTON_PIN) == 0;
+
+    // If no interrupt has happened in the last 450 ms (longer than the default long_press_time), pause the indev
+    // timer, but only once released: the interrupt sees the press edge only, so pausing while held lost the release
+    if (!pressed && lv_tick_diff(tick_now, last_interrupt_tick) > 450)
     {
         lv_timer_pause(ext_button_indev_timer);
     }
@@ -342,16 +345,13 @@ void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
         }
     }
 
-    bool gpio_level = gpio_get_level(EXT_BUTTON_PIN);
-    data->state = gpio_level == 0 ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    // Activity and wake on a real press only: this callback also runs on every touch interrupt (the LVGL port
+    // reads all keypads then), and it used to wake the unit on any read while idle. A press that wakes the unit
+    // is not passed to LVGL (ADR-005 B3)
+    static bool wake_press = false;
+    bool swallow = low_power_mode_swallow_wake_press(pressed, &wake_press);
+    data->state = (pressed && !swallow) ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
     data->key = LV_KEY_ENTER;
-
-    // Update last activity tick to wake up the device from sleep mode when the button is pressed
-    update_low_power_mode_last_activity_event();
-
-    if (is_idle_mode_activated()) {
-        wake_from_idle_mode();
-    }
 }
 
 #endif  // USE_EXT_BUTTON

@@ -27,6 +27,17 @@ void prevent_sleep_mode_enter(bool prevent);
 void wake_from_idle_mode();
 
 /**
+ * @brief For input read callbacks: report what the hardware just read, get back whether LVGL must not see it.
+ * A press counts as activity. A press that starts while idle wakes the unit, and that whole press, until it is
+ * released, is the wake gesture: LVGL must see the input as released meanwhile, so the wake never triggers a
+ * widget the user cannot see (ADR-005 B3).
+ * @param pressed The state the hardware reported in this read.
+ * @param wake_press Per input device state, false at start; owned by the caller.
+ * @return true if the caller must report LV_INDEV_STATE_RELEASED to LVGL for this read.
+ */
+bool low_power_mode_swallow_wake_press(bool pressed, bool *wake_press);
+
+/**
  * @brief Enter idle mode the way the inactivity timeout does. Does nothing when already idle.
  * @note Returns at once; the low power monitor task runs the entry outside any LVGL pass. Callable from any task,
  *       with or without the LVGL lock.

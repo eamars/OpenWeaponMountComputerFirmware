@@ -67,20 +67,33 @@ void IRAM_ATTR update_low_power_mode_last_activity_event() {
 }
 
 
-void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *data) {
-    // Update last activity tick if there is any touch activity
-    if (data->state == LV_INDEV_STATE_PR || data->enc_diff != 0) {
-        update_low_power_mode_last_activity_event();
-
-        if (is_idle_mode_activated()) {
-            wake_from_idle_mode();
-            return;  // don't propagate the touch event for the wakeup
-        }
+bool low_power_mode_swallow_wake_press(bool pressed, bool *wake_press) {
+    if (!pressed) {
+        // The wake gesture ends with the release; LVGL already sees the input as released
+        *wake_press = false;
+        return false;
     }
 
-    // Call the original read callback
+    update_low_power_mode_last_activity_event();
+    if (!*wake_press && is_idle_mode_activated()) {
+        *wake_press = true;
+        wake_from_idle_mode();
+    }
+    return *wake_press;
+}
+
+
+void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *data) {
+    static bool wake_press = false;
+
+    // Read first: LVGL clears data before every read, so the press is only known after the real read
+    // (ADR-005 B3; the old test before the read never saw a touch)
     if (original_read_cb) {
         original_read_cb(indev_drv, data);
+    }
+
+    if (low_power_mode_swallow_wake_press(data->state == LV_INDEV_STATE_PRESSED, &wake_press)) {
+        data->state = LV_INDEV_STATE_RELEASED;
     }
 }
 
