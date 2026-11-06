@@ -1,6 +1,6 @@
 # ADR-005: review every module, then fix the known bugs
 
-Status: **Open.** Approved 2026-11-06 ("Approve, start"). Step 1, the review, in progress.
+Status: **Open.** Approved 2026-11-06 ("Approve, start"). Step 1 (review) done 2026-11-06; the module map below waits for the owner's approval of the bug list.
 
 ## What we want
 
@@ -47,44 +47,67 @@ The 1.47" display and its touch controller (`esp_lcd_jd9853`, `esp_lcd_touch_axs
 
 The map is a table per module: known bugs (fixed in step 2), performance issues (recorded only) and style and consistency findings. Each entry says how it is known: seen on the device, read in a log, or found in the code with its effect worked out. The map goes to the owner, who approves the bug list for step 2.
 
-### Already known, to be placed on the map
+### Step 1 result: the module map (2026-11-06)
 
-Firmware:
-1. **Display strip stall** (LVGL and the display). Now and then one display strip transfer never completes. The LVGL task then waits forever in `spi_device_acquire_bus` (from `display_flush_cb`) holding the LVGL lock, and the LVGL watchdog reboots the unit after 5 s (about 9 s until the UI is back). Seen about once in 600 or more idle/wake cycles on v5.5.2, and once 15 s after a boot; not seen on v6.1 so far (67 cycles). Cause unknown. The core dumps keep only task stacks, so the SPI driver's state is missing from them.
-2. **Lock-up for good while idle** (System). The LVGL watchdog is paused in idle by design. If the LVGL lock is stuck while idle, nothing reboots the unit, and a wake request then blocks the low-power task as well. Shown with the remote-control `hang` command in idle; the unit stayed locked until a console `reboot`. Trigger in real use unknown, but there is no recovery path.
-3. **BNO085 abort on the first boot after a reset** (BNO085). After a flash or any esptool reset, the first boot aborts on "Failed to detect BNO085" (`ESP_ERROR_CHECK(bno085_init_i2c(...))`, `main/app.c:194`) and reboots, which also overwrites the stored core dump. The owner said earlier that they would fix this one (see the question below).
-4. **The second OTA source can never be reached** (Wi-Fi and network). `main/ota_mode.c` passes `"http://owmc_update.vfnz.pro"` as the HTTP client's `host`, so the lookup is for a host of that name and always fails. Same on v5.5.2 and v6.1.
-5. **Console replies lost now and then** (Other peripherals). `stats` replies went missing 2 of 40 times in a 20-minute run and twice in one `state_change` run, all after the USB Serial/JTAG fix; none in the last 10-minute run (21 of 21). Cause unknown; `stats` takes no lock.
+The full notes, with file and line references and how each finding is known, are in [progress](progress.md). "Device" means seen on the unit; "code" means found by reading, with the effect worked out; "confirm" means a short device check comes before its fix.
 
-Boot-log errors that are not failures but hide real ones:
-6. `E gpio: ... GPIO isr service already installed` (Other peripherals): `app_main` installs the GPIO ISR service, then `esp_lcd_touch` tries again.
-7. `E task_wdt: delete_entry(...): task not found`, several times (System): tasks call `esp_task_wdt_delete(NULL)` without having been added (`acceleration_analysis_view.c`, `digital_level_view_controller.c`, `low_power_mode.c`, `opentrickler_remote_controller_view.c`, `ota_mode.c`, `point_of_aim_view.c`, `sensor_calibration_view.c`).
-8. `W gpio: conflict found for GPIO[0]` (Other peripherals), new on v6.1, when the external button is set up. No project code sets up GPIO0 elsewhere, and the button works (owner). Cause unknown.
+**Bugs (to fix in step 2, once approved)**
 
-Not yet understood:
-9. **About 32 KB of internal RAM borrowed during v6.1 start-up** (System). Before any project code runs, the lowest free internal heap is about 32 KB below the free heap (equal on v5.5.2). It is given back, and it is the same whatever the size of the stored core dump. It may be expected v6.1 behaviour; the review finds out. Until then `min_int` cannot show pressure at runtime.
+| ID | Module | Bug | Known by |
+|---|---|---|---|
+| B1 | Display flush | A strip transfer now and then never completes; the LVGL watchdog reboots (about 9 s outage). Cause unknown; the core dump lacks the SPI driver's state | device |
+| B2 | Status bar (`config_view.c`) | Wi-Fi and battery icons are rewritten behind LVGL's back (no redraw, no re-measure); the Wi-Fi path also skips the lock | code, confirm |
+| B3 | Low power / touch | Touch never counts as activity and never wakes the unit from idle (the wrapper tests the data before the read fills it) | code, confirm |
+| B4 | Low power / LVGL watchdog | A stuck LVGL lock during idle is not caught until the next wake, which then reboots | code |
+| B5 | BNO085 driver | The `sh2` library is called from five or more tasks with no lock | code |
+| B6 | BNO085 driver | After an unexpected sensor reset, reports are re-enabled from inside the `sh2` callback; if that fails, the level stops until a reboot | code |
+| B7 | BNO085 users | Every BNO085 call is wrapped in `ESP_ERROR_CHECK`, so any sensor hiccup reboots the unit; includes the first-boot abort after a reset (`app.c:194`) | device (abort), code |
+| B8 | Wi-Fi | No reconnect after a disconnect: the handler calls `esp_wifi_start()` on a started stack, which does nothing | code, confirm |
+| B9 | Wi-Fi | Provisioning name and hostname built from an uninitialised MAC (`esp_wifi_get_mac` before `esp_wifi_init`) | code, confirm |
+| B10 | Wi-Fi | "Reset provisioning" aborts the unit once the Wi-Fi expiry has de-initialised Wi-Fi | code |
+| B11 | Wi-Fi provisioning | The received Wi-Fi password is printed to the console | code |
+| B12 | Wi-Fi | Expiry sets "provision expired" also when provisioned (should be "connect expired"); an always-true condition (`or` for `and`) | code (minor) |
+| B13 | OTA | The second source `"http://owmc_update.vfnz.pro"` is passed as a host name and can never resolve | device |
+| B14 | OTA | A failed update leaves the OTA handle open; progress divides by -1 when the size is unknown; a version without `v` is compared as garbage | code (minor) |
+| B15 | PMIC settings | Charge current, charge voltage and USB current limit only take effect after a reboot, and the page does not say so | code |
+| B16 | Touch driver (FT3168) | The reset uses pin 0: it drives GPIO0 (the button) low for 10 ms and never resets the touch controller. Cause of the v6.1 GPIO0 warning | code |
+| B17 | Console | `stats` replies lost now and then (2 of 40 in one run, 0 of 21 in the last). Cause unknown | device |
+| B18 | Buzzer | A beep requested while another is pending is dropped silently | code (minor) |
+| B19 | Boot log | `GPIO isr service already installed` (installed twice) and `task_wdt: task not found` for 7 tasks that were never added | device |
+| B20 | Crash report | After a watchdog reset it names the interrupted task (`IDLE0`), not the hung one (`lvgl`) | device (minor) |
+| B21 | Start-up | About 32 KB of internal RAM borrowed during v6.1 start-up (cause unknown; may be expected) | device |
+| B22 | Test tooling | Device-test logs live in `build/`, which fullclean deletes (ADR-002's raw logs were lost) | device |
+| B23 | Test tooling | `scenario watchdog` does not wake the unit first | device |
+| B24 | `app.c` | The PMIC context allocation is not checked for NULL | code (minor) |
 
-Test tooling:
-10. **Device-test logs live in the build folder.** `tools/remote_control/rc_run.py` writes to `build/rc_logs/`, which `idf.py fullclean` and `set-target` delete; ADR-002's raw logs were lost this way on 2026-11-06.
-11. **`scenario watchdog` does not wake the unit first.** Run while idle, it locks the unit instead of testing the watchdog (see 2).
+**Performance issues (recorded only, not addressed here)**
 
-Checked and not a bug:
-- `axp2101_deinit` does not free its context (FIXME in `pmic_axp2101.cpp`), but nothing calls it.
-- The level-style switch's "TODO: Add lock" (`digital_level_view.c`) runs in the LVGL task with the lock held.
-- `PMU.disableTSPinMeasure()` (battery temperature protection off) is set on purpose.
+- The low-power task logs every second at INFO; the stability task, buzzer and manifest fetch also log per event. All of it shares the console with the remote control.
+- Every wake runs `mdns_free()` and `mdns_init()` (memory stayed steady over 54 cycles).
+- The PMIC task reads six values over I2C every 2 s, also while idle.
+- The display pipeline's own record is in ADR-002.
 
-Known risk, not a bug yet: the core dump routine had 436 B of its 1,792 B stack left when it saved the watchdog dump. A deeper crash could overflow it and lose the dump. Raising `CONFIG_ESP_COREDUMP_STACK_SIZE` costs internal RAM.
+**Risks (not shown to fail)**
+
+OTA over plain HTTP with no image signing; OpenTrickler discovered only once per boot; power-off with USB connected; 31 LVGL lock calls wait forever; the low-power event group and tasks created inside a view; mDNS left running and `esp_netif_deinit()` called after the Wi-Fi expiry; `wifi_config_set_enable` (and the remote control's `wifi on`) ignoring the expiry and idle state; the FT3168 init's infinite I2C timeout; a corrupted BNO085 packet could index past the report table; the core dump routine had 436 B of its 1,792 B stack left.
+
+**Style and consistency (for the later pass)**
+
+136 `ESP_ERROR_CHECK` in `main/`, many in runtime paths; 77 `extern` declarations in `.c` files; one-space-indented function definitions, a tab-indented one, `%d` for `uint32_t`; log tags in mixed case styles; about 95 lines of commented-out calls; typos and stale comments per module; dead modules in the build (the point-of-aim, acceleration-analysis and OpenTrickler tiles are commented out; `enter_sleep_mode`, `mem_monitor_task`, `axp2101_deinit`).
+
+**Checked and not a bug:** `axp2101_deinit`'s missing free (never called); the level-style switch's "TODO: Add lock" (runs in the LVGL task); `PMU.disableTSPinMeasure()` (on purpose); the touch and button wake path while LVGL's timers are stopped (the port task reads them directly); the countdown timer's locking; panel commands from LVGL events; NVS settings recovery.
 
 ## Step 2: fix the bugs on the map
 
 - Only the bugs the owner approves from the map; performance issues stay on the map.
 - One bug per change, each built, flashed and proven on the device before the next. The proof shows the failure before the fix where it can be reproduced, and shows it gone after.
-- Tooling first (10, 11), so the evidence for the rest is kept.
+- Tooling first (B22, B23), so the evidence for the rest is kept.
+- Proposed order after that: B16, B3, B5 then B7 then B6, B8, B10, B9, B11, B2, B15, B4, B13, B14, B12, B18, B20, B24, and B19 as one change. The open causes (B1, B17, B21) are investigated alongside; each fix is proposed once its cause is known.
 - The cause before the fix. Where the cause is unknown, the first step is to find it, and the fix is proposed once it is known.
 - The boot-log noise as one change.
 
 ## For the owner to decide
 
-1. Is the BNO085 first-boot abort (3) in this round, or yours to fix?
+1. Is the BNO085 first-boot abort (part of B7) in this round, or yours to fix? It is the same pattern as the rest of B7, so it is cheaper fixed with it.
 2. The core dump stack margin: leave it, or raise it at a small internal RAM cost?
 3. Style findings: recommended as a separate pass after the bug fixes, module by module, so each bug fix stays a small change that is easy to check. Kept out of the bug-fix changes either way. In this ADR as step 3, or a later ADR?
