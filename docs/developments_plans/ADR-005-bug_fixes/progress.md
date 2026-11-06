@@ -392,3 +392,7 @@ C1 to C4 done, each committed and checked on the unit's normal path. Still to ru
 - Battery icon: the USB and battery-supply icons switch correctly. The charge level itself could not be checked by eye; the `pmic` command showed the icon value matching the reading (`soc=100 icon=100` on battery, `icon=101` on USB).
 - Power Off, with and without USB: works (owner). This settles the review's open question on power-off with USB connected.
 - Wi-Fi status after a new provisioning: not tested.
+
+### ADR-005 closed (2026-11-07)
+
+Owner: no need for the closing 10-minute idle/wake run; continue to the next ADR. Steps 1 to 4 are built. Carried, not code work: B25's tare path (and its magnetic versus game rotation vector basis) is to be run on a later unit; the Wi-Fi status after a new provisioning is checked at the next provisioning.

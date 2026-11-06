@@ -1,6 +1,6 @@
 # ADR-005: review every module, fix the known bugs, then decouple the services from the UI
 
-Status: **Open.** Approved 2026-11-06 ("Approve, start"). Step 1 (review) done 2026-11-06. Step 2 (bug fixes) approved 2026-11-06, done 2026-11-07. Step 3 (decoupling) done 2026-11-07: Wi-Fi, PMIC and low power changed; BNO085 needed no change. Step 4 (the remaining code issues) approved and done 2026-11-07, its 10-minute idle/wake run still to do.
+Status: **Built** 2026-11-07. Left, by the owner's choice: the closing 10-minute idle/wake run (waived 2026-11-07), the tare path of B25 (run on a later unit, not this one), and the Wi-Fi status after a new provisioning (checked at the next provisioning). Approved 2026-11-06 ("Approve, start"). Step 1 (review) done 2026-11-06. Step 2 (bug fixes) approved 2026-11-06, done 2026-11-07. Step 3 (decoupling) done 2026-11-07: Wi-Fi, PMIC and low power changed; BNO085 needed no change. Step 4 (the remaining code issues) approved and done 2026-11-07. User-experience improvements go to the next ADR (owner).
 
 ## What we want
 
