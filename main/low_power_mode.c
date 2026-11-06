@@ -258,7 +258,7 @@ void enter_sleep_mode() {
 
     /* Sleep Ends */
     wakeup_cause = esp_sleep_get_wakeup_cause();
-    ESP_LOGI(TAG, "Woke up from sleep, wakeup cause: %d", wakeup_cause);
+    ESP_LOGI(TAG, "Woke up from sleep, wakeup cause: %" PRIu32, wakeup_cause);
 
     // Resume the previous operation
     update_low_power_mode_last_activity_event();  // Update the last activity tick to prevent immediately re-entering low power mode
@@ -338,7 +338,7 @@ void low_power_monitor_task(void *p) {
         //     (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE) != 0,
         //     (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE) != 0
         // );
-        ESP_LOGI(TAG, "Active duration: %d ms, Idle duration: %d ms", active_duration_ms, idle_duration_ms);
+        ESP_LOGI(TAG, "Active duration: %" PRIu32 " ms, Idle duration: %" PRIu32 " ms", active_duration_ms, idle_duration_ms);
 
         // In Idle mode
         if (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) {
@@ -383,7 +383,7 @@ void low_power_monitor_task(void *p) {
         {                                            
             uint32_t sleep_timeout_ms = sleep_timeout_to_secs(power_management_config.sleep_timeout) * 1000;
 
-            // Have sayed in idle long enough
+            // Have stayed in idle long enough
             if (idle_duration_ms > sleep_timeout_ms) {
                 // enter_sleep_mode();
                 // The PMIC service shuts the unit down from its own task (ADR-005 step 3). Without a PMIC

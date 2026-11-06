@@ -1,12 +1,3 @@
-/* FreeRTOS Real Time Stats Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
@@ -63,7 +54,7 @@ void mem_monitor_task(void *pvParameters) {
         ESP_LOGI(TAG, "Free internal heap: %u kbytes",
                 (unsigned)esp_get_free_internal_heap_size() / 1024);
 
-        ESP_LOGI(TAG, "Wakeup cause: %d", wakeup_cause);
+        ESP_LOGI(TAG, "Wakeup cause: %" PRIu32, wakeup_cause);
 
 
         ESP_LOGI(TAG, "---------------------------");
@@ -167,8 +158,6 @@ void app_main(void)
     i2c_master_bus_handle_t i2c0_bus_handle;
     i2c_master_bus_handle_t i2c1_bus_handle;
 
-    // Initialize USB
-
     // Initialize shared I2C bus
     i2c0_bus_handle = i2c0_master_init();
     i2c1_bus_handle = i2c1_master_init();
@@ -252,8 +241,7 @@ void *lv_realloc_core(void *p, size_t new_size) {
     return heap_caps_realloc(p, new_size, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
 }
 
-void lv_free_core(void *p)
-{
-	heap_caps_free(p);
+void lv_free_core(void *p) {
+    heap_caps_free(p);
 }
 

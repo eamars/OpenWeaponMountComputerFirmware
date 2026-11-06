@@ -85,7 +85,7 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     // Decode event into the value
     sh2_SensorValue_t sensor_value;
     if (sh2_decodeSensorEvent(&sensor_value, event) == SH2_ERR) {
-        ESP_LOGI(TAG, "sh2_decodeSensorEventd failed");
+        ESP_LOGW(TAG, "sh2_decodeSensorEvent failed");
         return;
     }
 
@@ -153,13 +153,13 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
     // If we see a reset, set a flag so that sensors will be reconfigured.
     switch (pEvent->eventId) {
         case SH2_RESET: {
-            ESP_LOGW(TAG, "BNO085 Reset Unexpectly");
+            ESP_LOGW(TAG, "BNO085 Reset Unexpectedly");
         
             // Go over saved configurations
-            for (uint8_t i = 0; i < SH2_MAX_SENSOR_EVENT_LEN; i += 1) {
+            for (uint8_t i = 0; i < BNO085_REPORT_TABLE_LEN; i += 1) {
                 // Re-enable reports
                 if (ctx->enabled_sensor_report_list[i].config.reportInterval_us != 0) {
-                    ESP_LOGI(TAG, "Re-enabling report for sensor ID %d with interval %d us", i, ctx->enabled_sensor_report_list[i].config.reportInterval_us);
+                    ESP_LOGI(TAG, "Re-enabling report for sensor ID %d with interval %" PRIu32 " us", i, ctx->enabled_sensor_report_list[i].config.reportInterval_us);
                     sh2_enable_report(ctx, i, &ctx->enabled_sensor_report_list[i].config);
                 }
             }

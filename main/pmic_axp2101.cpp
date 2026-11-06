@@ -342,7 +342,7 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     // Create event group
     ctx->pmic_event_control = xEventGroupCreate();
     if (ctx->pmic_event_control == NULL) {
-        ESP_LOGE(TAG, "Failed to create sensor_event_control");
+        ESP_LOGE(TAG, "Failed to create pmic_event_control");
         return ESP_FAIL;
     }
 

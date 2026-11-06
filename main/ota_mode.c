@@ -151,14 +151,14 @@ static esp_err_t http_client_init_cb(esp_http_client_handle_t http_client) {
 }
 
 
- void set_ota_prompt_view_visibility(bool is_visible) {
+void set_ota_prompt_view_visibility(bool is_visible) {
     if (is_visible) {
         // Shift to OTA view
         lv_obj_remove_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
     }
- }
+}
 
 esp_err_t fetch_manifest_from_source(const char * ota_source) {
     esp_err_t ret;
@@ -380,10 +380,10 @@ void ota_poller_task(void *p) {
     ESP_LOGI(TAG, "Manifest downloaded, waiting for OTA update");
 
     vTaskDeleteWithCaps(NULL);   // safely remove this task
- }
+}
 
 
- void ota_update_task(void *p) {
+void ota_update_task(void *p) {
     // Create OTA event group
     ESP_ERROR_CHECK(create_ota_event_group());
 
@@ -558,14 +558,14 @@ finally:
 
     vTaskDelete(NULL);   // safely remove this task
 
- }
+}
 
- static void on_ota_cancel_button_pressed(lv_event_t *e) {
+static void on_ota_cancel_button_pressed(lv_event_t *e) {
     ESP_LOGI(TAG, "Cancel OTA");
     set_ota_prompt_view_visibility(false);
- }
+}
 
- static void on_ota_accept_button_pressed(lv_event_t * e) {
+static void on_ota_accept_button_pressed(lv_event_t * e) {
     ESP_LOGI(TAG, "Start Upgrade pressed");
     set_ota_prompt_view_visibility(false);
 
@@ -575,16 +575,16 @@ finally:
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 
     xEventGroupSetBits(ota_event_group, OTA_EVENT_USER_CONFIRMED);
- }
+}
 
- void on_reboot_button_pressed(lv_event_t * e) {
+void on_reboot_button_pressed(lv_event_t * e) {
     ESP_LOGI(TAG, "Restarting");
     esp_restart();
- }
+}
 
- static void on_menu_ota_upgrade_button_pressed(lv_event_t *e) {
+static void on_menu_ota_upgrade_button_pressed(lv_event_t *e) {
     set_ota_prompt_view_visibility(true);
- }
+}
 
 
 void create_ota_mode_view(lv_obj_t * parent) {

@@ -86,7 +86,7 @@ void digital_level_view_zero_after_tare() {
 // Degrees the label shows; INT_MIN when the label is new and still shows "--"
 static int tilt_angle_label_deg = INT_MIN;
 
- void update_roll_deg_indicator(float roll_rad) {
+void update_roll_deg_indicator(float roll_rad) {
     // Setting the text redraws the label, so set it only when the shown number changes
     const int deg = (int) roundf(RAD_TO_DEG(roll_rad));
     if (deg != tilt_angle_label_deg) {
@@ -114,7 +114,7 @@ void update_digital_level_view(float roll_rad, float pitch_rad)
     if (current_digital_level_view != NULL) {
         current_digital_level_view->update_callback(roll_rad, pitch_rad);
     }
- }
+}
 
 
 void create_roll_deg_indicator(lv_obj_t * parent) {

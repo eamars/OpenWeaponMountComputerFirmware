@@ -704,7 +704,7 @@ esp_err_t wifi_init() {
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 
-    ESP_LOGI(TAG, "Expiry timer: %ds", wifi_user_config.wifi_expiry_timeout_s);
+    ESP_LOGI(TAG, "Expiry timer: %" PRIu32 "s", wifi_user_config.wifi_expiry_timeout_s);
 
     // Start the timer
     xTimerStart(wifi_expiry_timeout_timer, 0);

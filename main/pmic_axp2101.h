@@ -168,7 +168,7 @@ uint32_t idle_timeout_to_secs(idle_timeout_t timeout);
 uint32_t sleep_timeout_to_secs(sleep_timeout_t timeout);
 
 
-extern const power_management_config_t default_power_management_config_t;
+extern const power_management_config_t default_power_management_config;
 extern power_management_config_t power_management_config;
 
 

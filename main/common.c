@@ -10,13 +10,15 @@
 
 
 #define TAG "Common"
-#define CRC32_POLYNOMIAL 0xEDB88320
+// Passed as esp_crc32_le's initial value (the polynomial is built in). The name used to say "polynomial"; the value
+// stays, because every saved setting carries a CRC made with it
+#define CRC32_INIT 0xEDB88320
 
 uint32_t crc32_wrapper(void * data, size_t length, size_t offset) {
     uint8_t * data_start_addr = (uint8_t *) data + offset;
     size_t crc_length = length - offset;
 
-    return esp_crc32_le(CRC32_POLYNOMIAL, data_start_addr, crc_length);
+    return esp_crc32_le(CRC32_INIT, data_start_addr, crc_length);
 }
 
 

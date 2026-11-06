@@ -234,7 +234,7 @@ esp_err_t digital_level_view_controller_init() {
         HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
-        ESP_LOGE(TAG, "Failed to allocate memory for unified_ensor_poller_task");
+        ESP_LOGE(TAG, "Failed to allocate memory for unified_sensor_poller_task");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 

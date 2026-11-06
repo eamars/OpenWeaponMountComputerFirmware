@@ -32,7 +32,7 @@ void buzzer_set_tone(uint32_t frequency_hz) {
 void buzzer_set_duty(uint32_t duty_percent) {
     uint32_t max_duty = (1 << 13) - 1;  // 13-bit resolution
     uint32_t duty = (duty_percent * max_duty) / 100;
-    ESP_LOGI(TAG, "Setting buzzer duty: %d (for %d%%)", duty, duty_percent);
+    ESP_LOGI(TAG, "Setting buzzer duty: %" PRIu32 " (for %" PRIu32 "%%)", duty, duty_percent);
     ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL, duty));
     ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL));
 }
