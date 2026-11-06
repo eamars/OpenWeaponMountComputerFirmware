@@ -366,3 +366,20 @@ Rule: an `ESP_ERROR_CHECK` stays where it runs once at start-up (a failure there
 - Wi-Fi: kept. `wifi_bring_up` is Wi-Fi's first request at start-up, not a wake path; a wake goes through `wifi_apply_radio`, which already logs and goes on. The step 4 plan listed it as "after a wake"; reading the code corrected that.
 
 Proof: each change built with no new warnings and flashed; `scenario state_change` PASS after the pages (`rc_state_change_20261107_122410.log`) and after the rest (`rc_state_change_20261107_123006.log`), no error or warning lines, rotation back to 1. The failure paths are not forced (no remote-control way to fail an NVS write or an LEDC call without new test code); they rest on reading. Not seen by eye: the message box texts.
+
+### C4: style (2026-11-07)
+
+Two changes:
+- `b22aea6`: every shared global is declared once, in the header of the module that defines it; the 68 `extern` lines in `.c` files are gone and each user includes that header, so the compiler checks every use against one declaration. New `app.h` declares the two device handles `app_main` creates (`bno085_dev`, `axp2101_dev`). Found on the way: `sensor_calibration_view.h` had `#ifndef` with no `#define`, so its include guard never worked; fixed.
+- `552fe1e`: the one-space and tab-indented function definitions; `PRIu32` where `%d` printed a `uint32_t` (six places; ESP-IDF v6.1's log macros do not check formats, so the compiler never flagged them, and only values above 2^31 would have printed wrong); the BNO085 report table sized by the sensor-ID range (`SH2_MAX_SENSOR_ID + 1`, 47) instead of a byte length (60); `pmic_axp2101.h` declared a `default_power_management_config_t` that does not exist; typos and stale text (the example header and "Initialize USB" in `app.c`, "sayed", "unified_ensor", "Reset Unexpectly", "sh2_decodeSensorEventd", now logged as a warning, the PMIC event-group error naming the BNO085's); `common.c`'s CRC constant renamed for what it is, an initial value (the value stays: every saved setting carries a CRC made with it).
+
+Left as they are, as planned: log tags, commented-out code, dead modules. The review's other notes are already gone: the Wi-Fi expiry log and task name were rewritten in step 3.
+
+Proof:
+- Both built with no new warnings (the 13 old unused-variable warnings remain).
+- After the second, reboot (`rc_c3_20261107_124121.log`): settings load (so the CRC is unchanged), 21 `EventHandler Sensor Config` lines; `bnoreset` (`rc_bnoreset_20261107_124200.log`), which runs the changed table loop: all three reports re-enabled and confirmed by the sensor. PASS.
+- Seen once: on the first software reboot after the flash, boot stalled 0.8 s between two buzzer log lines, before any of the changed code runs; two more reboots (`rc_boot_timing_20261107_124259.log`) and every earlier boot log show no such gap. Cause not known; recorded, not chased.
+
+### Where step 4 stands (2026-11-07)
+
+C1 to C4 done, each committed and checked on the unit's normal path. Still to run: one 10-minute idle/wake run (it blanks the screen, so not while the owner is at the unit), and the owner's hands-on checks, which now also cover a real touch after C3 and a Save on a settings page after C1.
