@@ -354,3 +354,15 @@ The FT3168 shares I2C0 with the PMIC, and the ESP-IDF I2C driver waits for the b
 Not changed: XPowersLib (third-party) also passes `-1` on the same bus; a stuck bus would then hang the PMIC task, while touch now times out.
 
 Proof (`rc_c3_20261107_122011.log`): reboot, `FT3168: Successfully wrote to FT3168` at 1.7 s, then only the two known boot lines; 40 s awake with tile flips and one idle/wake, no FT3168 or other error lines (the reads run at every input poll, touched or not). Not tested: a real touch after this change (needs a finger) and a stuck bus.
+
+### C1: runtime errors no longer reboot the unit (2026-11-07)
+
+Rule: an `ESP_ERROR_CHECK` stays where it runs once at start-up (a failure there is fatal by design); after start-up a failure is logged and the action fails where it happened. Recounted on the code: every check left in `main/` is start-up code or sits in a disabled tile (point of aim, acceleration analysis, OpenTrickler) or in the unused `axp2101_deinit`.
+
+- Settings pages (`0c9e5bb`): Save and Reload on the system, Wi-Fi, PMIC, sensor and level pages show "Save failed: <error>" or "Reload failed: <error>" in the page's message box (new `update_info_msg_box_result()` in `config_view.c`); the cause is already logged in `common.c`. The PMIC page applies the charge settings only after a successful save. The system page tries both of its saves and shows the first failure. The countdown presets, saved when the tile is swiped away, log a failed save and stay in RAM.
+- Buzzer and backlight (`f9ae095`): LEDC failures are logged (`ESP_ERROR_CHECK_WITHOUT_ABORT`), the buzzer keeps its last duty. The backlight function returns its error; it is the dev kit's (JD9853), the unit's SH8601 path had no check.
+- Low power (`262fd94`): `esp_pm_configure` on idle entry and exit, light sleep and the wake-pin setup are logged and the unit carries on in its current state. Light sleep is not reached today (`enter_sleep_mode` has no caller).
+- OTA (`a91c6b6`): the update task registers its event handler after the user confirms; a failure now shows "OTA Failed - <error>" and the Reboot button, like the other OTA failures (B14).
+- Wi-Fi: kept. `wifi_bring_up` is Wi-Fi's first request at start-up, not a wake path; a wake goes through `wifi_apply_radio`, which already logs and goes on. The step 4 plan listed it as "after a wake"; reading the code corrected that.
+
+Proof: each change built with no new warnings and flashed; `scenario state_change` PASS after the pages (`rc_state_change_20261107_122410.log`) and after the rest (`rc_state_change_20261107_123006.log`), no error or warning lines, rotation back to 1. The failure paths are not forced (no remote-control way to fail an NVS write or an LEDC call without new test code); they rest on reading. Not seen by eye: the message box texts.

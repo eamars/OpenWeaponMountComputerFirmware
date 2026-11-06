@@ -130,7 +130,7 @@ Owner, 2026-11-07: the known code issues are finished in this ADR; user-experien
    - Settings pages' Save and Reload (system, Wi-Fi, PMIC, sensor, level, countdown): the page's existing message box says the save or reload failed, instead of "Configuration Saved".
    - Buzzer tone and duty, display brightness: logged, the unit keeps running (a missed beep, the old brightness).
    - Low power (`esp_pm_configure`, light sleep, the wake-pin setup): logged, the unit stays in its current state.
-   - Wi-Fi bring-up after a wake: logged, the status shows not connected.
+   - Wi-Fi bring-up: on reading, it runs once, as Wi-Fi's start-up, not after a wake (a wake goes through the radio rule, which already logs and goes on), so it keeps the start-up rule.
    - OTA poller and countdown view: each read first, handled the same way.
    - Not touched: the disabled tiles (point of aim, acceleration analysis, OpenTrickler).
    One module per change.
