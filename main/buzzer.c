@@ -146,8 +146,14 @@ esp_err_t buzzer_run(uint32_t on_duration_ms, uint32_t off_duration_ms, uint8_t 
         .beep_count = beep_count
     };
 
-    // Send to queue
-    xQueueSend(buzzer_ctx.buzzer_command_queue, &ctrl, block_wait ? portMAX_DELAY : 0);
+    // A new command overrides the running one (see buzzer_task), so a command still pending is replaced
+    // too: the newest request wins. Sending without a wait dropped the newest one instead (ADR-005 B18)
+    if (block_wait) {
+        xQueueSend(buzzer_ctx.buzzer_command_queue, &ctrl, portMAX_DELAY);
+    }
+    else {
+        xQueueOverwrite(buzzer_ctx.buzzer_command_queue, &ctrl);
+    }
 
     return ESP_OK;
 }

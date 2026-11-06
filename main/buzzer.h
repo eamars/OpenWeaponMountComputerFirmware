@@ -34,6 +34,10 @@ typedef struct {
 
 
 esp_err_t buzzer_init();
+/**
+ * @brief Beep beep_count times. The newest request wins: it replaces one still pending and overrides the
+ * one playing. With block_wait, waits until a pending request has been taken instead of replacing it.
+ */
 esp_err_t buzzer_run(uint32_t on_duration_ms, uint32_t off_duration_ms, uint8_t beep_count, bool block_wait);
 esp_err_t buzzer_off(bool block_wait);
 
