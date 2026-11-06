@@ -143,7 +143,11 @@ void wifi_config_disable_provision_interface(wireless_state_e reason) {
             qr_code = NULL;
         }
 
-        if (reason == WIRELESS_STATE_PROVISION_EXPIRE) {
+        if (reason == WIRELESS_STATE_NOT_CONNECTED_EXPIRE) {
+            // Wi-Fi is off for good: disable the button to reset provisioning state; the "Provision Complete" note stays
+            lv_obj_add_state(reset_provision_button, LV_STATE_DISABLED);
+        }
+        else if (reason == WIRELESS_STATE_PROVISION_EXPIRE) {
             // Disable the button to reset provisioning state
             lv_obj_add_state(reset_provision_button, LV_STATE_DISABLED);
 

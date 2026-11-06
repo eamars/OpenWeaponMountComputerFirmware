@@ -88,14 +88,15 @@ void wifi_deinit_task(void *p) {
         continue;
     }
 
-    wireless_state = WIRELESS_STATE_PROVISION_EXPIRE;
-    status_bar_update_wireless_state(wireless_state);
-
-    // Update the provision qr
-    wifi_config_disable_provision_interface(WIRELESS_STATE_PROVISION_EXPIRE);
-
-    // De-initialize wifi 
+    // De-initialize wifi
     ESP_LOGW(TAG, "Wifi is not active in time. Will disable WiFI completely");
+
+    // The expiry ends the Wi-Fi life cycle: drop the event handlers first, so the stop below is not
+    // handled as a lost connection (which re-armed the expiry and restarted Wi-Fi) (ADR-005 B12)
+    esp_event_handler_unregister(NETWORK_PROV_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler);
+    esp_event_handler_unregister(PROTOCOMM_SECURITY_SESSION_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler);
+    esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler);
+    esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler);
 
     // Stop provisioning manager
     network_prov_mgr_deinit();
@@ -103,13 +104,19 @@ void wifi_deinit_task(void *p) {
     // Stop wifi and free resource
     esp_wifi_stop();
     esp_wifi_deinit();
+    xEventGroupClearBits(wireless_event_group, WIRELESS_STATEFUL_IS_STA_CONNECTED);
 
     // Deinitialize network stack
     esp_netif_deinit();
 
     ESP_LOGI(TAG, "Wi-Fi stack deinitialized, stopping wifi_state_poller_task");
 
+    // A provisioned unit only failed to connect in time; otherwise the provisioning window ran out
+    wireless_state = wifi_is_provisioned() ? WIRELESS_STATE_NOT_CONNECTED_EXPIRE : WIRELESS_STATE_PROVISION_EXPIRE;
+    status_bar_update_wireless_state(wireless_state);
+
     // Update GUI
+    wifi_config_disable_provision_interface(wireless_state);
     wifi_config_disable_enable_interface();
 
     vTaskDeleteWithCaps(NULL);   // safely remove this task
@@ -319,7 +326,7 @@ esp_err_t wifi_init() {
     }
 
     // Disable wifi if configured so
-    if (wireless_state != WIRELESS_STATE_PROVISION_EXPIRE || wireless_state != WIRELESS_STATE_NOT_CONNECTED_EXPIRE) {
+    if (wireless_state != WIRELESS_STATE_PROVISION_EXPIRE && wireless_state != WIRELESS_STATE_NOT_CONNECTED_EXPIRE) {
         if (!wifi_user_config.wifi_enable) {
             wireless_state = WIRELESS_STATE_DISCONNECTED;
             status_bar_update_wireless_state(wireless_state);
