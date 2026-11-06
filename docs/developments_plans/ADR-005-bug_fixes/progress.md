@@ -173,3 +173,11 @@ Tools first (own commit): the remote control's `wifi expire` (debug, like `hang`
 ### B18: the newest beep request wins (2026-11-06)
 
 The buzzer task treats every received command as an override of the one playing, but `buzzer_run` sent to its one-slot queue without waiting, so while a command was still pending the newer one was dropped and the older one played. Non-blocking requests now use `xQueueOverwrite`, so the pending command is replaced and the newest request wins, as the task intends; `block_wait` still waits for the slot. Proof: built, flashed, rebooted (`rc_buzzer_boot_*`): the boot beep is received once and plays its two beeps (duty on/off at 3822, 3922, 3972, 4072 ms). The drop needs two requests within the buzzer task's reaction time, which cannot be forced without a new test hook; for a minor, harmless loss that hook would not earn its place, so the drop path rests on the code.
+
+### B20: the crash report names the watchdog user that hung (2026-11-06)
+
+Cause: the task watchdog panics from its interrupt, so the core dump records the task that interrupt cut into (`IDLE0`), and the user that missed its feed was only on the console before the reset. `crash_report.c` now defines ESP-IDF's `esp_task_wdt_isr_user_handler()` hook, which collects the missing users' names through `esp_task_wdt_print_triggered_tasks()` into RTC no-init memory (kept through the panic reset, checked by a magic number); the next boot's crash report prints them and clears the record, so a later reset of another kind does not repeat them. The commented-out stub of the same hook in `app.c` is removed.
+- Before (B4 test, `rc_idle_hang_20261106_230652.log`): `Reset reason: TASK_WDT (6)`, `Stored core dump: task=IDLE0`, nothing names `lvgl` after the reset.
+- After (`hang` in idle, `rc_idle_hang_*` 23:37): `Reset reason: TASK_WDT (6)`, `Task watchdog: not fed in time by lvgl (CPU 0/1)`, then the core dump line as before. A normal `reboot` after it: `Reset reason: SW (3)` only (`rc_crash_clear_*`).
+
+Observation, not a bug: since the build with the Wi-Fi status log, `largest_dma` reads 106,496 B after boot instead of 110,592 B, while free internal RAM at the same checkpoints is equal (186,363 vs 186,367 B). The total did not change, only where the largest free block ends up; nothing after boot needs a block near this size.

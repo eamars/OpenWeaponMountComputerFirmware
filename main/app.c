@@ -253,7 +253,3 @@ void lv_free_core(void *p)
 	heap_caps_free(p);
 }
 
-// void esp_task_wdt_isr_user_handler(void) {
-//     // Reboot
-//     esp_restart();
-// }
