@@ -89,8 +89,12 @@ void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data)
 }
 
 
-void wifi_provision_reset() {
-    ESP_ERROR_CHECK(network_prov_mgr_reset_wifi_provisioning());
+esp_err_t wifi_provision_reset() {
+    esp_err_t ret = network_prov_mgr_reset_wifi_provisioning();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to reset provisioning: %s", esp_err_to_name(ret));
+    }
+    return ret;
 }
 
 

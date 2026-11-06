@@ -89,8 +89,13 @@ static void toggle_enable_wifi(lv_event_t *e) {
 
 
 static void on_reset_provision_button_pressed(lv_event_t * e) {
-    wifi_provision_reset();
-    update_info_msg_box(msg_box, "WiFi Provisioning reset. Please re-provision the device.");
+    // A failure (e.g. Wi-Fi already shut down by the expiry) is reported, not fatal (ADR-005 B10)
+    if (wifi_provision_reset() == ESP_OK) {
+        update_info_msg_box(msg_box, "WiFi Provisioning reset. Please re-provision the device.");
+    }
+    else {
+        update_info_msg_box(msg_box, "WiFi Provisioning reset failed. Power cycle the device and try again.");
+    }
 }
 
 
