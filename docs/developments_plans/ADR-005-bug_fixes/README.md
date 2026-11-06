@@ -80,7 +80,7 @@ The full notes, with file and line references and how each finding is known, are
 | B21 | Start-up | About 32 KB of internal RAM borrowed during v6.1 start-up (cause unknown; may be expected) | device |
 | B22 | Test tooling | Device-test logs live in `build/`, which fullclean deletes (ADR-002's raw logs were lost) | device |
 | B23 | Test tooling | `scenario watchdog` does not wake the unit first | device |
-| B24 | `app.c` | The PMIC context allocation is not checked for NULL | code (minor) |
+| B24 | `app.c` | ~~The PMIC context allocation is not checked for NULL~~. **Checked, not a bug**: `axp2101_init` rejects a NULL context and `app.c` aborts on it, as for the BNO085 | code (minor) |
 
 **Performance issues (recorded only, not addressed here)**
 

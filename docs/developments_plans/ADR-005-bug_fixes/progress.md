@@ -181,3 +181,7 @@ Cause: the task watchdog panics from its interrupt, so the core dump records the
 - After (`hang` in idle, `rc_idle_hang_*` 23:37): `Reset reason: TASK_WDT (6)`, `Task watchdog: not fed in time by lvgl (CPU 0/1)`, then the core dump line as before. A normal `reboot` after it: `Reset reason: SW (3)` only (`rc_crash_clear_*`).
 
 Observation, not a bug: since the build with the Wi-Fi status log, `largest_dma` reads 106,496 B after boot instead of 110,592 B, while free internal RAM at the same checkpoints is equal (186,363 vs 186,367 B). The total did not change, only where the largest free block ends up; nothing after boot needs a block near this size.
+
+### B24: PMIC context allocation — checked, not a bug (2026-11-06)
+
+`axp2101_init` returns `ESP_ERR_INVALID_ARG` for a NULL context before it touches it (and zeroes the context itself), and `app.c` wraps the call in `ESP_ERROR_CHECK`. So a failed allocation already stops the boot, as the BNO085 path does after its own check; only the error name differs (`INVALID_ARG` for `NO_MEM`). A second check would be a stacked guard, so no change.
