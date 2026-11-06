@@ -497,6 +497,11 @@ static bool rc_cmd_wifi(int argc, char **argv, char *reply, size_t reply_size) {
     else if (argc == 2 && strcmp(argv[1], "off") == 0) {
         enable = false;
     }
+    else if (argc == 2 && strcmp(argv[1], "expire") == 0) {
+        // Debug: end the Wi-Fi window now, as the expiry timer would; Wi-Fi stays off until the next boot
+        wifi_expire_now();
+        return rc_reply(reply, reply_size, true, "@ok wifi=expire");
+    }
     else {
         return rc_reply(reply, reply_size, false, "@err args");
     }

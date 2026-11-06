@@ -42,6 +42,9 @@ extern esp_err_t load_wifi_user_config();
 
 
 void wifi_config_update_status(const char * state_str) {
+    // Logged too, so the remote control and tests see what the screen shows
+    ESP_LOGI(TAG, "Status: %s", state_str);
+
     if (wifi_status_label) {
         snprintf(wifi_status_str, sizeof(wifi_status_str), "Status: %s", state_str);
 

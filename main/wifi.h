@@ -78,6 +78,12 @@ void wifi_expiry_watchdog_start();
 void wifi_expiry_watchdog_restart();
 void wifi_expiry_watchdog_stop();
 
+/**
+ * @brief Expire the Wi-Fi window now, as if the expiry timer had fired. Wi-Fi stays off until the next boot.
+ * For tests of the expiry (remote control `wifi expire`).
+ */
+void wifi_expire_now();
+
 
 esp_err_t save_wifi_user_config();
 esp_err_t load_wifi_user_config();

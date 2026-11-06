@@ -373,6 +373,11 @@ void wifi_expiry_watchdog_stop() {
     ESP_LOGI(TAG, "Wifi expiry timer stopped");
 }
 
+void wifi_expire_now() {
+    ESP_LOGW(TAG, "Wifi expiry forced");
+    wifi_provision_timeout_cb(wifi_expiry_timeout_timer);
+}
+
 
 wireless_state_e get_wireless_state() {
     return wireless_state;
