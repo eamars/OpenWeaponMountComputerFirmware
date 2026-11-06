@@ -221,3 +221,11 @@ Observation, not a bug: since the build with the Wi-Fi status log, `largest_dma`
 ### B25: the level reads 180 degrees off (owner, 2026-11-07), recorded
 
 Owner, while checking the B7 regression fix by hand: "I'd expect when the level is sitting on its edge that the screen direction is 'looking right', then the reading should be 0." The reading is `sensor roll - rotation x 90 degrees + the saved zero offset` (`digital_level_view_controller.c`); the owner suspects the rotation term. To be worked out before a fix is proposed.
+
+### B8: the unit reconnects after a lost connection (2026-11-07)
+
+The owner could not switch the hotspot off without outages elsewhere, so the test uses a new debug command (own commit): `wifi drop` disconnects the radio from the AP for real and marks that one disconnect to be handled as a lost connection; it cannot show the radio noticing a vanished AP (a beacon timeout), which is ESP-IDF's part. The disconnect reason is now logged.
+- Before (`rc_wifi_drop_*` 00:2x, first run): after `wifi drop`, no reconnect in 25 s: the handler armed the expiry timer and called `esp_wifi_start()` on the started driver, which does nothing, and no `STA_START` (the only `esp_wifi_connect` call) followed. The unit's own stops all arrive with reason 8 (`WIFI_REASON_ASSOC_LEAVE`): switch off, idle entry and reboot; the reboot also logged `Failed to start WiFi: ESP_ERR_WIFI_STOP_STATE` (the B19 note).
+- Fix: the disconnect handler tells the two apart by the reason, not by one flag per state: reason 8 only updates the status; any other reason (a lost connection or a failed connect attempt) arms the expiry timer and calls `esp_wifi_connect()`. The expiry ends the retries if the AP stays away.
+- After (second run): `wifi drop` reconnected by itself (disconnect at 9.9 s, IP at 13.5 s); switch off/on and idle/wake as before (IP in about 4 s), now without arming the expiry timer; reboot without the `Failed to start WiFi` line. `scenario state_change` PASS (`rc_state_change_20261107_002806.log`), four disconnects, all reason 8, no Wi-Fi errors.
+- A failed first connect at boot (AP absent) now retries until the expiry, one attempt per scan, where it used to stay disconnected; not tested (needs the AP away).

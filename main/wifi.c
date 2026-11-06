@@ -155,21 +155,25 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
                 ESP_LOGI(TAG, "Disconnected, reason %d%s", disconnected->reason,
                          reason != disconnected->reason ? " (handled as a lost connection: wifi drop)" : "");
 
-                ESP_LOGI(TAG, "Disconnected. Connecting to the AP again...");
                 wireless_state = WIRELESS_STATE_DISCONNECTED;
                 status_bar_update_wireless_state(wireless_state);
 
                 // Update event too
                 xEventGroupClearBits(wireless_event_group, WIRELESS_STATEFUL_IS_STA_CONNECTED);
 
-                // Start the expiry timer after disconnected from Wifi (exclude the intentional state change)
-                if (wifi_user_config.wifi_enable && !is_idle_mode_activated()) {
-                    wifi_expiry_watchdog_start();
-                    
-                    esp_err_t ret = esp_wifi_start();
-                    if (ret != ESP_OK) {
-                        ESP_LOGE(TAG, "Failed to start WiFi: %s", esp_err_to_name(ret));
-                    }
+                // The reason tells the unit's own stops (idle, the switch, a reboot: all "station left") from a
+                // lost connection or a failed connect attempt (ADR-005 B8)
+                if (reason == WIFI_REASON_ASSOC_LEAVE) {
+                    break;
+                }
+
+                // Connect again; the driver is still started, so esp_wifi_start() did nothing here and no
+                // reconnect ever followed. The expiry timer ends the retries if the AP stays away (ADR-005 B8)
+                ESP_LOGI(TAG, "Connection lost. Connecting to the AP again...");
+                wifi_expiry_watchdog_start();
+                esp_err_t ret = esp_wifi_connect();
+                if (ret != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to connect to AP: %s", esp_err_to_name(ret));
                 }
 
                 break;
