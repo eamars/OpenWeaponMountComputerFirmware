@@ -1,6 +1,6 @@
 # ADR-002: display pipeline performance, one change at a time
 
-Status: **Open.** Step 1 Built (2026-11-06). Step 2 approved 2026-11-06, in progress. Step 3 last, a proposal until the owner approves it.
+Status: **Open.** Step 1 Built (2026-11-06). Step 2 Built (2026-11-06). Step 3 last, a proposal until the owner approves it.
 
 ADR-002 is functional change without any dependency update (ESP-IDF v5.5.2 and today's managed components stay as they are). ADR-003 is the dependency update without functional change. The two never cross over: one is finished before the other starts (owner, 2026-11-06).
 
@@ -47,7 +47,7 @@ Measured (flush callback average, frames per second):
 
 The owner checked the picture at all four rotations: correct, tearing unchanged. Memory: the largest internal DMA-capable block stayed at 114,688-118,784 B in every run. Evidence and run details: [progress.md](progress.md).
 
-## Step 2: start each frame on the panel's tearing-effect pulse (approved 2026-11-06)
+## Step 2: start each frame on the panel's tearing-effect pulse (Built 2026-11-06)
 
 Why: the write order relative to the panel's scan is random today, which is what makes tearing possible. Starting each frame's transfer on the TE pulse makes it deterministic. That is the precondition for step 3 (partial redraw without tearing).
 
@@ -58,6 +58,8 @@ Approach:
 1. Measure first, change nothing visible: count GPIO18 edges and time them; report the TE rate next to the frame rate. If there are no pulses, stop and look at the init sequence before anything else.
 2. Then sync: in the flush, wait for the next TE edge before sending the first strip of a frame. The wait has a timeout of a couple of TE periods and is counted when it expires, so a missing pulse (for example with the panel off) can never hang the display.
 3. Judge on the device: the owner's eye at all four rotations, the frame rate (waiting for TE may cost up to one panel refresh per frame), and the usual idle/wake and state-change runs for stability.
+
+What was built: TE pulses on GPIO18 at about 60 Hz (period 16.5-16.9 ms); one frame write takes 20-23 ms, more than one panel refresh and well under two. `main/display_flush.c` waits for the TE falling edge before the first strip of each frame (40 ms timeout, counted; the frame is sent anyway). The owner saw no tearing at any of the four rotations. Cost: about one frame a second (17 to 16 frames/s). Details in [progress](progress.md).
 
 ## Step 3: partial redraw of the digital level view (last)
 

@@ -88,4 +88,10 @@ Before the sync: 17 frames/s at every rotation (same build otherwise). Cost: abo
 
 - `scenario state_change` (`rc_state_change_20261106_131438.log`): PASS, `taskLVGL` ≥ 2,048 B and `largest_dma` ≥ 80,000 B floors met, 0 TE timeouts across idle/wake, rotation saves and Wi-Fi off/on.
 - 20 minutes of idle/wake cycles on the digital level tile (`rc_idle_cycles_20261106_131736.log`, 106 cycles; the owner caps cycle tests at 20 min): 0 stalls, 0 TE timeouts in 428 one-second windows, so the first frame after each wake finds its TE edge. `stats` 38 of 40 answered (console loss, seen before; `stats` takes no lock).
-- Left for step 2: the owner's visual check at all four rotations (no tear line, no diagonal tear), then the final build.
+
+### Owner's check and final build (2026-11-06)
+
+- Owner at the unit, digital level tile, all four rotations while moving it: "No tearing at all four".
+- Final build: `DISPLAY_PROFILING_ENABLED 0`, `sdkconfig` regenerated from the defaults (trace facility off, task watchdog panic on). `scenario state_change --min-largest-dma 80000` (`rc_state_change_20261106_190815.log`): PASS, `largest_dma` 114,688 B throughout, two idle/wake transitions, rotation save, Wi-Fi off/on.
+
+Step 2: **Built 2026-11-06.**
