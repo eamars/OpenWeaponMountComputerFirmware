@@ -29,9 +29,15 @@ float wrap_angle(float rad) {
 
 
 esp_err_t parse_git_describe_version(const char *describe, version_t * version) {
-    // captures format like v1.0.0-dirty or v1.0.0
-    sscanf(describe, "v%d.%d.%d", &version->major, &version->minor, &version->patch);
-    
+    // Captures formats like v1.0.0-dirty, v1.0.0 or 1.0.0; anything else is an error, so the
+    // caller never compares unset fields (ADR-005 B14)
+    if (describe[0] == 'v' || describe[0] == 'V') {
+        describe++;
+    }
+    if (sscanf(describe, "%d.%d.%d", &version->major, &version->minor, &version->patch) != 3) {
+        return ESP_ERR_INVALID_VERSION;
+    }
+
     return ESP_OK;
 }
 

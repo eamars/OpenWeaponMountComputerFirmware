@@ -155,3 +155,10 @@ While the screen is off, the LVGL watchdog is paused and the low-power task fed 
 - Before: `idle`, then `hang` (takes the LVGL lock for good): no watchdog and no reset in the 15 s watched.
 - After: the same steps, `hang` at 23:06:58.5, the task watchdog fired naming `lvgl` at 23:07:03.1 (4.6 s later, no wake), the unit rebooted and reported `Reset reason: TASK_WDT (6)`.
 - No false trips: 54 idle/wake cycles in 10 minutes, 7 s idle each (longer than the timeout), `rc_idle_cycles_20261106_230729.log`: PASS, no watchdog, `largest_dma` 110,592 B at its lowest.
+
+### B14: OTA failure paths, progress and version parse (2026-11-06)
+
+- **Handle.** Every failure after `esp_https_ota_begin` now goes through `esp_https_ota_abort` (closes the connection, frees the handle, drops the partial image). The review found one more case of the same leak: when the server sends no content length, `esp_https_ota_perform` returns `ESP_OK` at the end, the old loop left on any code other than "in progress" and never called `esp_https_ota_finish`, so the handle leaked and the image was never validated. The loop now follows ESP-IDF's pattern: perform until it stops reporting progress, then finish if all data arrived, else abort. `esp_https_ota_finish` frees the handle whether it succeeds or not (checked in v6.1's source).
+- **Progress.** With no size (-1) the screen shows only the bytes read; with a size it shows percent as before. The first label showed the size in bytes marked as K; now it is K.
+- **Version.** `parse_git_describe_version` accepts `v1.2.3`, `1.2.3` and `v1.2.3-4-gabc`, and returns `ESP_ERR_INVALID_VERSION` for anything else; a version that cannot be read is never offered.
+- Proof: built clean, flashed, rebooted (`rc_ota_boot_20261106_232148.log`): `Reset reason: SW (3)`, Wi-Fi up, the poller tries both sources and both fail to connect as before, no errors. The OTA paths themselves rest on the code: a test server on this PC needs a firewall permission that is the owner's, and the owner ruled OTA tests out (no unit in the field).

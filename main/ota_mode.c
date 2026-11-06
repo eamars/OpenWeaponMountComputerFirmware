@@ -297,12 +297,15 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
         const esp_app_desc_t * app_desc = esp_app_get_description();
         ESP_LOGI(TAG, "Running version: %s", app_desc->version);
 
+        // A version that cannot be read is never offered
         version_t self_version;
-        parse_git_describe_version(app_desc->version, &self_version);
+        ret = parse_git_describe_version(app_desc->version, &self_version);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Cannot read the running version %s", app_desc->version);
 
         // Read the target version
         version_t other_version;
-        parse_git_describe_version(ota_manifest.version, &other_version);
+        ret = parse_git_describe_version(ota_manifest.version, &other_version);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Cannot read the manifest version %s", ota_manifest.version);
 
         // Compare
         if (compare_version(&self_version, &other_version) >= 0) {
@@ -462,7 +465,7 @@ void ota_poller_task(void *p) {
             lv_label_set_text(ota_title_label, "OTA Failed - Unable to download application header");
             lvgl_port_unlock();
         }
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_get_img_desc failed");
+        ESP_GOTO_ON_ERROR(ret, abort, TAG, "esp_https_ota_get_img_desc failed");
     }
     else {
         if (lvgl_port_lock(0)) {
@@ -476,58 +479,74 @@ void ota_poller_task(void *p) {
 
     if (lvgl_port_lock(0)) {
         lv_label_set_text(ota_title_label, "Applying Update");
-        lv_label_set_text_fmt(progress_label, "0K/%dK", ota_size);
+        // The size is -1 when the server sends none (chunked transfer); then only the bytes read are shown
+        if (ota_size > 0) {
+            lv_label_set_text_fmt(progress_label, "0K/%dK", ota_size / 1024);
+        }
+        else {
+            lv_label_set_text(progress_label, "0K");
+        }
         lvgl_port_unlock();
     }
 
+    // esp_https_ota_perform returns after every read: ESP_ERR_HTTPS_OTA_IN_PROGRESS while data is
+    // still coming, ESP_OK once the whole image is read, any other code on a failure
     while (1) {
         ret = esp_https_ota_perform(https_ota_handle);
         if (ret != ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
-            break; 
+            break;
         }
 
-        // esp_https_ota_perform returns after every read operation which gives user the ability to
-        // monitor the status of OTA upgrade by calling esp_https_ota_get_image_len_read, which gives length of image
-        // data read so far.
         int ota_read_size = esp_https_ota_get_image_len_read(https_ota_handle);
-        // ESP_LOGI(TAG, "OTA Read size: %d", ota_read_size);
-
-        int percentage = ota_read_size * 100.0 / ota_size;
         if (lvgl_port_lock(0)) {
             // Update progress text and bar
-            lv_label_set_text_fmt(progress_label, "%dK/%dK", ota_read_size/1024, ota_size/1024);
-            lv_bar_set_value(progress_bar, percentage, LV_ANIM_OFF);
+            if (ota_size > 0) {
+                lv_label_set_text_fmt(progress_label, "%dK/%dK", ota_read_size / 1024, ota_size / 1024);
+                lv_bar_set_value(progress_bar, (int) (ota_read_size * 100.0 / ota_size), LV_ANIM_OFF);
+            }
+            else {
+                lv_label_set_text_fmt(progress_label, "%dK", ota_read_size / 1024);
+            }
             lvgl_port_unlock();
         }
 
-        // Check for the progres
-        if (esp_https_ota_is_complete_data_received(https_ota_handle)) {
-            // Data receive complete
-            ret = esp_https_ota_finish(https_ota_handle);
-            if (ret != ESP_OK) {
-                if (lvgl_port_lock(0)) {
-                    lv_label_set_text_fmt(ota_title_label, "OTA Failed - %d", ret);
-                    lvgl_port_unlock();
-                }
-                ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_finish failed");
-            }
-            else {
-                if (lvgl_port_lock(0)) {
-                    lv_label_set_text(ota_title_label, "OTA Success");
-                    lvgl_port_unlock();
-                }
-
-                // Set the next boot partition
-                ret = esp_ota_set_boot_partition(ota_partition);
-                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to set boot partition");
-                
-                break;
-            }
-        }
-        else {
-            vTaskDelay(pdMS_TO_TICKS(20));
-        }
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
+
+    if (ret != ESP_OK || !esp_https_ota_is_complete_data_received(https_ota_handle)) {
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text_fmt(ota_title_label, "OTA Failed - Download incomplete (%s)", esp_err_to_name(ret));
+            lvgl_port_unlock();
+        }
+        ret = (ret == ESP_OK) ? ESP_FAIL : ret;
+        ESP_GOTO_ON_ERROR(ret, abort, TAG, "esp_https_ota_perform failed");
+    }
+
+    // Validates the image and frees the handle, whether it succeeds or not
+    ret = esp_https_ota_finish(https_ota_handle);
+    https_ota_handle = NULL;
+    if (ret != ESP_OK) {
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text_fmt(ota_title_label, "OTA Failed - %s", esp_err_to_name(ret));
+            lvgl_port_unlock();
+        }
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_finish failed");
+    }
+
+    if (lvgl_port_lock(0)) {
+        lv_label_set_text(ota_title_label, "OTA Success");
+        lvgl_port_unlock();
+    }
+
+    // Set the next boot partition
+    ret = esp_ota_set_boot_partition(ota_partition);
+    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to set boot partition");
+    goto finally;
+
+abort:
+    // A failure after esp_https_ota_begin: close the connection, free the handle and drop the partial image
+    // (ADR-005 B14)
+    esp_https_ota_abort(https_ota_handle);
 
 finally:
     ESP_LOGI(TAG, "OTA Complete");
