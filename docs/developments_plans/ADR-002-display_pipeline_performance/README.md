@@ -1,6 +1,6 @@
 # ADR-002: display pipeline performance, one change at a time
 
-Status: **Open.** Step 1 Built (2026-11-06). Step 2 Built (2026-11-06). Step 3 approved 2026-11-06, in progress.
+Status: **Built 2026-11-06.** Step 1 Built (2026-11-06). Step 2 Built (2026-11-06). Step 3 Built (2026-11-06).
 
 ADR-002 is functional change without any dependency update (ESP-IDF v5.5.2 and today's managed components stay as they are). ADR-003 is the dependency update without functional change. The two never cross over: one is finished before the other starts (owner, 2026-11-06).
 
@@ -61,7 +61,7 @@ Approach:
 
 What was built: TE pulses on GPIO18 at about 60 Hz (period 16.5-16.9 ms); one frame write takes 20-23 ms, more than one panel refresh and well under two. `main/display_flush.c` waits for the TE falling edge before the first strip of each frame (40 ms timeout, counted; the frame is sent anyway). The owner saw no tearing at any of the four rotations. Cost: about one frame a second (17 to 16 frames/s). Details in [progress](progress.md).
 
-## Step 3: partial redraw of the digital level view (approved 2026-11-06)
+## Step 3: partial redraw of the digital level view (Built 2026-11-06)
 
 Why: the level view redraws the whole screen for every frame, although between two frames only a band of rows changes. Drawing and sending fewer pixels is the largest gain left, and the level reads smoother at a higher frame rate.
 
@@ -83,6 +83,8 @@ Expected, an estimate until measured: at a few degrees of tilt the band is tens 
 Watch: about three times as many flushes a second. If the known stall below happens per transfer, it may show more often; the cycle test would show it.
 
 No dependency changes; LVGL 9.6 and `esp_lvgl_port` 2.7.2 stay as they are.
+
+What was built: the scan-safe start per area and the changed-rows invalidation above. At 90° and 270°, a thin band's safe window is about as long as its ~1 ms write, and the LVGL task often wakes later. A late start therefore waits one more pass only when the window is at least 2 ms; otherwise it is sent at once, so part of a thin band may show one refresh late (owner approved). Measured near level at 0°: up to 56 flushes a second of about 6,800 px each, against 17 full frames of 127,680 px before; a still unit draws nothing. The owner saw no tearing at any rotation, including 90° and 270° after the retry change. Details in [progress](progress.md).
 
 ## Known issue in the flush path
 

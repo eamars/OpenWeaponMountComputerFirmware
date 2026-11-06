@@ -123,3 +123,11 @@ The 90°/270° retries: a thin band there is a full-height panel column written 
 
 - `scenario state_change --min-lvgl-stack 2048 --min-largest-dma 80000`: first run FAIL on two lost `stats` replies (the known console loss; no markers, display fine). Rerun (`rc_state_change_20261106_193645.log`): PASS, `taskLVGL` 9,120 B free at least, `largest_dma` 114,688 B throughout.
 - 100 idle/wake cycles on the digital level tile, 18.6 min (`rc_idle_cycles_20261106_193923.log`): PASS, no markers, 0 TE timeouts, retries or late starts in 405 windows, `stats` 38 of 38. `rc_serial` 948 B free at least, the same as in step 2's runs.
+
+### No retry for short windows, and final build (2026-11-06)
+
+- Owner approved: a late start waits one more pass only when its safe window is at least 2 ms (`DISPLAY_FLUSH_RETRY_MIN_WINDOW_US`, `89ea4a5`). Shorter windows (thin bands at 90°/270°) are sent at once and counted in `te_late`.
+- Owner at the unit, 90° and 270° near level on that build: "Both fine".
+- Final build: `DISPLAY_PROFILING_ENABLED 0`, `sdkconfig` regenerated from the defaults (trace facility off, task watchdog panic on); no new compiler warnings in the changed files. `scenario state_change --min-largest-dma 80000` (`rc_state_change_20261106_202058.log`): PASS, `largest_dma` 114,688 B throughout.
+
+Step 3: **Built 2026-11-06.** ADR-002: **Built 2026-11-06.**
