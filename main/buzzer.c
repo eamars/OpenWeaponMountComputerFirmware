@@ -18,21 +18,23 @@ typedef struct {
 buzzer_t buzzer_ctx;
 
 
+// A failed LEDC call is logged and the buzzer keeps its previous tone or duty: a missed beep, not a reboot
+// (ADR-005 C1)
 void buzzer_set_tone(uint32_t frequency_hz) {
     // Set the frequency of the buzzer
-    ESP_ERROR_CHECK(ledc_set_freq(LEDC_LOW_SPEED_MODE, BUZZER_TIMER, frequency_hz));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_freq(LEDC_LOW_SPEED_MODE, BUZZER_TIMER, frequency_hz));
     
     uint32_t current_duty = ledc_get_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL);
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL, current_duty));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL, current_duty));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL));
 }
 
 void buzzer_set_duty(uint32_t duty_percent) {
     uint32_t max_duty = (1 << 13) - 1;  // 13-bit resolution
     uint32_t duty = (duty_percent * max_duty) / 100;
     ESP_LOGI(TAG, "Setting buzzer duty: %d (for %d%%)", duty, duty_percent);
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL, duty));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(LEDC_LOW_SPEED_MODE, BUZZER_CHANNEL));
 }
 
 void buzzer_task(void *p) {
