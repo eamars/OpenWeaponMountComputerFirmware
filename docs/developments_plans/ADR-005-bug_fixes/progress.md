@@ -123,3 +123,9 @@ The scenario now sends `wake` and waits 2 s before `hang`, because the LVGL watc
 - This fits B3 rather than contradicting it: if the wrapper saw the touch, it would wake the unit and return before the touch reached LVGL. The touch reaching LVGL shows the wrapper never notices it; the wake most likely comes from the BNO085 stability detector reacting to the tap's jolt. To settle it: log the order of "Stability detector report" and "Exiting idle mode" while the owner taps the idle unit.
 - The fix must also swallow the rest of that touch: the finger is usually still down after the wake, so the touch is ignored until it lifts; otherwise the release lands as a click.
 - Seen on the way: the first boot after the app flash (an RTS reset) reported the previous reset as `PANIC` with a core dump in task `main`, the BNO085 first-boot abort (B7) reproducing as expected.
+
+### B5: one lock around the `sh2` library (2026-11-06, `22aca2b`)
+
+A recursive mutex in the driver context is held around every `sh2_*` call: `sh2_service()` in the poller, report changes, sleep/wake, init, and the calibration view's tare, which now goes through new driver wrappers (`bno085_tare_now`, `bno085_persist_tare`) instead of calling `sh2` directly. Recursive because the `sh2` callbacks run inside `sh2_service()` and the reset handler calls back into `sh2` (B6).
+- Before the fix the race did not show: 400 tile flips at 0.25 s (each one switches two reports from the LVGL task while the poller services 50 Hz reports) passed without an error. The fix rests on the code: `sh2` is single-threaded and was entered from several tasks.
+- After: the same 400 flips (`rc_tile_flip_*` in `logs/rc/`), `scenario state_change` and 54 idle/wake cycles in 10 minutes (`rc_idle_cycles_20261106_223945.log`, sleep/wake goes through the lock) all PASS, no BNO085 errors, `stats` 21 of 21, `largest_dma` 110,592 B at its lowest.
