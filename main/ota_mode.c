@@ -397,8 +397,15 @@ void ota_poller_task(void *p) {
     // -------------------------------------
     esp_err_t ret;
 
-    // Register event
-    ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, ota_event_handler, NULL));
+    // Register event. This runs once the user confirmed the update, so a failure is shown, not a reboot (ADR-005 C1)
+    ret = esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, ota_event_handler, NULL);
+    if (ret != ESP_OK) {
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text_fmt(ota_title_label, "OTA Failed - %s", esp_err_to_name(ret));
+            lvgl_port_unlock();
+        }
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_event_handler_register failed");
+    }
 
     esp_http_client_config_t http_config = {
         .host = ota_manifest.host,
