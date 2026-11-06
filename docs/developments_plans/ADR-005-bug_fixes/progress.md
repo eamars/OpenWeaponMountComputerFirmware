@@ -20,7 +20,7 @@ Working notes, per subsystem, as the review goes. B = bug (fixed in step 2 once 
 ### LVGL lock use across tasks (first pass)
 
 - 31 of the 32 `lvgl_port_lock` calls pass `0`, which `esp_lvgl_port` takes as "wait forever"; only the level controller uses a timeout. With the LVGL watchdog this is by design (a stuck lock ends in a reboot), but every one of those callers hangs with it.
-- **B, code: the status bar icons are changed behind LVGL's back.** `status_bar_update_wireless_state` and `status_bar_update_battery_level` (`config_view.c:487`, `:531`) `memcpy` a new symbol into the label's static text buffer (`lv_label_set_text_static`, created empty), with no `lv_label_set_text*` call and no invalidate. LVGL neither redraws nor re-measures the label, so the icons can stay stale, or zero-width, until something else redraws that area. They are called from the system event task (Wi-Fi) and the PMIC task without the LVGL lock, while the draw units may read the same bytes. To confirm on the device: watch the status bar while Wi-Fi changes state.
+- **B, code: the status bar icons are changed behind LVGL's back.** `status_bar_update_wireless_state` and `status_bar_update_battery_level` (`config_view.c:487`, `:531`) `memcpy` a new symbol into the label's static text buffer (`lv_label_set_text_static`, created empty), with no `lv_label_set_text*` call and no invalidate. LVGL neither redraws nor re-measures the label, so the icons can stay stale, or zero-width, until something else redraws that area. The Wi-Fi updates come from the system event task without the LVGL lock, while the draw units may read the same bytes; the PMIC task's battery updates do hold the lock. To confirm on the device: watch the status bar while Wi-Fi changes state.
 
 ### Wi-Fi and network: life cycle (`wifi.c`, `wifi_config.c`, `wifi_provision.c`; OTA and OpenTrickler still to read)
 
@@ -55,3 +55,13 @@ Life cycle as built: `bno085_init_i2c` at boot (pins, ISR, soft reset, `sh2_open
 - **B, code: every BNO085 call aborts on failure.** All report switches and the stability task's start use `ESP_ERROR_CHECK` (`digital_level_view_controller.c`, `low_power_mode.c:393`, `sensor_config.c`, the views), so any sensor hiccup at a tile change reboots the unit. Known bug 3 (the first-boot abort) is the same pattern at init.
 - **R, code:** the report table has 60 entries and valid sensor IDs end at 46, so normal reports stay in bounds; only a corrupted packet could index past it (`sh2_sensor_callback`).
 - **S:** "Reset Unexpectly", "sh2_decodeSensorEventd", "unified_ensor_poller_task" typos; a decode failure logs at INFO; `sensor_roll_thread_unsafe` and friends are shared globals by design (named so).
+
+### PMIC (`pmic_axp2101.cpp`, `pmic_config.c`)
+
+Life cycle as built: `axp2101_init` at boot (load config, ISR on the IRQ pin, `PMU.begin` on I2C bus 0, which the touch controller shares; charge and VBUS limits written once) → monitor task wakes on the IRQ or every 2 s, handles key presses (short: activity and wake; long: power menu) and VBUS changes, reads six values over I2C and updates the battery icon and the power page under the LVGL lock → power-off from the power menu or the sleep timeout: `disableBATFET()` then `shutdown()`.
+
+- **B, code: charge current, charge voltage and the USB current limit only change after a reboot.** The settings page stores them (`pmic_config.c:92-135`), but they are written to the AXP2101 only in `axp2101_init` (`pmic_axp2101.cpp:369-376`), and the page does not say a reboot is needed. Idle and sleep timeouts, by contrast, apply at once.
+- Checked: the ISR only sets an event bit; the battery icon update holds the LVGL lock; power-off has nothing in flight worth saving (settings are written only on Save).
+- **R, code:** power-off with USB connected: whether the AXP2101 then restarts at once is not known.
+- **P, code:** the monitor task reads six PMIC values over I2C every 2 s also while idle, and updates LVGL labels while LVGL is stopped.
+- **S:** the event-group error says "sensor_event_control" (copied from the BNO085 driver); `axp2101_deinit` is unused.
