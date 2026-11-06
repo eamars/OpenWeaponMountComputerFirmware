@@ -33,11 +33,8 @@ void wifi_provision_event_handler(void* arg, int32_t event_id, void* event_data)
         break;
     case NETWORK_PROV_WIFI_CRED_RECV: {
         wifi_sta_config_t *wifi_sta_cfg = (wifi_sta_config_t *) event_data;
-        ESP_LOGI(TAG, "Received WiFi credentials"
-                     "\n\tSSID     : %s"
-                     "\n\tPassword : %s",
-                     (const char *) wifi_sta_cfg->ssid,
-                     (const char *) wifi_sta_cfg->password);
+        // SSID only: the console is readable by anyone with a cable (ADR-005 B11)
+        ESP_LOGI(TAG, "Received WiFi credentials for SSID %s", (const char *) wifi_sta_cfg->ssid);
 
         // Restart the watchdog timer
         wifi_expiry_watchdog_restart();

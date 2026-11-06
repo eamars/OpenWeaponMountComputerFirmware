@@ -144,3 +144,7 @@ To test it, the remote control gained `bnoreset` (debug, like `hang`): it pulses
 ### B9: provisioning name and hostname from the real MAC (2026-11-06)
 
 `wifi_init` reads the STA MAC with `esp_read_mac(..., ESP_MAC_WIFI_STA)` (eFuse, no Wi-Fi needed) instead of `esp_wifi_get_mac()` before `esp_wifi_init()`, and logs the result. Proof: `Service name and hostname: OWMC_83A124 (STA MAC 44:1b:f6:83:a1:24)` on three boots in a row, and `esptool read-mac` reads `44:1b:f6:83:a1:24`. The old code never logged the name, so what it produced is not on record; the "before" rests on ESP-IDF's contract (`ESP_ERR_WIFI_NOT_INIT`, buffer not written). If the old value differed, the SoftAP name and the hostname change once with this fix; the saved Wi-Fi credentials are not affected.
+
+### B11: no Wi-Fi password in the console (2026-11-06)
+
+The `NETWORK_PROV_WIFI_CRED_RECV` log now names the SSID only. Proof without a fresh provisioning (which would replace the saved credentials): the built firmware no longer contains the `Password : %s` format string (1 occurrence before, 0 after), and the new line is present. Flashed; the unit answers.
