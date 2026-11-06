@@ -14,6 +14,7 @@
 #include "low_power_mode.h"
 #include "buzzer.h"
 #include "app_cfg.h"
+#include "lvgl_display.h"
 
 #define TAG "CountdownTimer"
 
@@ -22,8 +23,6 @@ lv_obj_t * countdown_timer_arc = NULL;
 lv_obj_t * countdown_timer_label = NULL;
 lv_obj_t * countdown_timer_button = NULL;
 
-extern lv_group_t * button_input_group;  // from lvgl_display.c
-extern system_config_t system_config;
 
 countdown_timer_state_t get_countdown_timer_state(countdown_timer_t * ctx) {
     countdown_timer_state_t current_state = COUNTDOWN_TIMER_READY;

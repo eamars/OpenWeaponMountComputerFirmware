@@ -33,7 +33,6 @@ lv_indev_t *lvgl_touch_handle = NULL;  // allow the low power module to inject c
 lv_group_t * button_input_group = NULL;
 
 // External services
-extern system_config_t system_config;
 
 
 #if DISPLAY_PROFILING_ENABLED

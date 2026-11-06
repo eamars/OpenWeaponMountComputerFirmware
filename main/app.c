@@ -23,6 +23,7 @@
 
 #include "nvs_flash.h"
 
+#include "app.h"
 #include "main_tileview.h"
 #include "app_cfg.h"
 #include "bno085.h"
@@ -47,10 +48,6 @@
 
 bno085_ctx_t * bno085_dev;
 axp2101_ctx_t * axp2101_dev;
-extern system_config_t system_config;
-extern remote_control_config_t remote_control_config;
-extern sensor_config_t sensor_config;
-extern uint32_t wakeup_cause;
 
 
 void mem_monitor_task(void *pvParameters) {

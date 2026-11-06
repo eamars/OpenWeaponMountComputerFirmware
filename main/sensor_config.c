@@ -8,6 +8,9 @@
 #include "app_cfg.h"
 #include "config_view.h"
 #include "common.h"
+#include "app.h"
+#include "main_tileview.h"
+#include "sensor_calibration_view.h"
 
 #define TAG "SensorConfig"
 #define NVS_NAMESPACE "SEC"
@@ -22,16 +25,11 @@ const sensor_config_t sensor_config_default = {
 };
 
 
-extern bno085_ctx_t * bno085_dev;
 
 lv_obj_t * tare_calibration_button = NULL;
 lv_obj_t * sensor_calibration_button = NULL;
 
 
-extern lv_obj_t * tile_sensor_calibration_view;  // from main_tileview.c
-extern lv_obj_t * main_tileview;                 // from main_tileview.c
-extern lv_obj_t * last_tile_before_enter_calibration;  // from sensor_calibration_view.c
-extern lv_obj_t * msg_box;  // from config_view.c
 
 esp_err_t save_sensor_config() {
     return save_config(NVS_NAMESPACE, &sensor_config, sizeof(sensor_config));

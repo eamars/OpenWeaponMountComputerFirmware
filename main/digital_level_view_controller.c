@@ -18,6 +18,7 @@
 #include "countdown_timer.h"
 #include "esp_task_wdt.h"
 #include "bno085.h"
+#include "app.h"
 
 #define TAG "DigitalLevelViewController"
 
@@ -30,11 +31,6 @@ static EventGroupHandle_t sensor_task_control;
 float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
 float sensor_x_acceleration_thread_unsafe, sensor_y_acceleration_thread_unsafe, sensor_z_acceleration_thread_unsafe;
 
-extern bno085_ctx_t * bno085_dev;
-extern system_config_t system_config;
-extern digital_level_view_config_t digital_level_view_config;
-extern sensor_config_t sensor_config;
-extern countdown_timer_t countdown_timer;
 
 
 #if DISPLAY_PROFILING_ENABLED

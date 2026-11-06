@@ -49,17 +49,11 @@ static lv_obj_t * tilt_angle_button = NULL;
 static lv_obj_t * parent_container = NULL;
 static lv_obj_t * overlay_container = NULL;
 
-extern system_config_t system_config;
 HEAPS_CAPS_ATTR countdown_timer_t countdown_timer;
 digital_level_view_t * current_digital_level_view;
 
-extern digital_level_view_t digital_level_view_type_1_context;
-extern digital_level_view_t digital_level_view_type_2_context;
-extern lv_obj_t * msg_box;
 
 // NOT threadsafe copy of roll and pitch to be shared within the module
-extern float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
-extern float sensor_x_acceleration_thread_unsafe;
 
 
 // Forward declaration

@@ -44,6 +44,8 @@ void update_info_msg_box(lv_obj_t * msg_box, const char * text);
  */
 void update_info_msg_box_result(lv_obj_t * msg_box, esp_err_t ret, const char * done_text, const char * failed_text);
 
+// Shared state, defined in config_view.c
+extern lv_obj_t * msg_box;  // the settings pages' shared message box
 
 #ifdef __cplusplus
 }

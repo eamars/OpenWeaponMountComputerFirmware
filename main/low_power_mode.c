@@ -22,6 +22,7 @@
 #include "wifi.h"
 #include "lvgl_display.h"
 #include "main_tileview.h"
+#include "app.h"
 
 #define TAG "LowPowerMode"
 
@@ -35,19 +36,8 @@ typedef enum {
 } low_power_mode_control_event_e;
 
 
-extern esp_lcd_panel_io_handle_t io_handle;
-extern esp_lcd_panel_handle_t panel_handle;
 
-extern system_config_t system_config;
-extern lv_indev_t * lvgl_touch_handle;
-extern sensor_config_t sensor_config;
-extern bno085_ctx_t * bno085_dev;
-extern axp2101_ctx_t * axp2101_dev;
-extern wifi_user_config_t wifi_user_config;
 
-extern lv_obj_t * main_tileview;
-extern lv_obj_t * default_tile;
-extern lv_obj_t * tile_low_power_mode_view;
 
 lv_obj_t * pre_low_power_mode_tile;
 

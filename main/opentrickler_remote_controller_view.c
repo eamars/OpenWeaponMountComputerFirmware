@@ -59,7 +59,6 @@ typedef struct {
 } opentrickler_server_t;
 HEAPS_CAPS_ATTR opentrickler_server_t opentrickler_server;
 
-extern system_config_t system_config;
 
 // LVGL objects
 lv_obj_t * load_weight_arc;

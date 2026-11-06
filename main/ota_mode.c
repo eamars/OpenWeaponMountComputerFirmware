@@ -36,9 +36,6 @@ static EventGroupHandle_t ota_event_group = NULL;
 static lv_obj_t * progress_label;
 static lv_obj_t * progress_bar;
 
-extern lv_obj_t * tile_ota_mode_view;
-extern lv_obj_t * main_tileview;
-extern lv_obj_t * default_tile;
 
 static TaskHandle_t ota_poller_task_handle;
 static TaskHandle_t ota_update_task_handle;

@@ -25,5 +25,7 @@ lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent
 esp_err_t load_sensor_config();
 esp_err_t save_sensor_config();
 
+// Shared state, defined in sensor_config.c
+extern sensor_config_t sensor_config;
 
 #endif // SENSOR_CONFIG_H

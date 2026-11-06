@@ -56,6 +56,9 @@ bool low_power_mode_swallow_wake_press(bool pressed, bool *wake_press);
  */
 void low_power_mode_request_idle();
 
+// Shared state, defined in low_power_mode.c
+extern uint32_t wakeup_cause;
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

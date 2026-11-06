@@ -11,6 +11,7 @@
 #include "bno085.h"
 #include "circular_buffer.h"
 #include "sensor_config.h"
+#include "app.h"
 
 #define TAG "AccelerationAnalysisView"
 
@@ -20,8 +21,6 @@
 
 static circular_buffer_t *accel_buffer = NULL;
 
-extern sensor_config_t sensor_config;
-extern bno085_ctx_t * bno085_dev;
 static TaskHandle_t acceleration_event_poller_task_handle;
 static EventGroupHandle_t sensor_task_control;
 

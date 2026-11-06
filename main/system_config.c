@@ -11,6 +11,7 @@
 #include "bsp.h"
 #include "remote_control.h"
 #include "rc_serial.h"
+#include "lvgl_display.h"
 
 #define TAG "SystemConfig"
 #define NVS_NAMESPACE "SC"
@@ -23,10 +24,6 @@ const system_config_t system_config_default = {
     .global_log_level = ESP_LOG_INFO,
 };
 
-extern esp_lcd_panel_io_handle_t io_handle;
-extern lv_obj_t * msg_box;
-extern remote_control_config_t remote_control_config;
-extern const remote_control_config_t remote_control_config_default;
 
 static lv_obj_t * rotation_dropdown = NULL;
 static lv_obj_t * remote_control_switch = NULL;

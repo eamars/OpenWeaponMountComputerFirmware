@@ -7,6 +7,7 @@
 #include "nvs.h"
 #include "common.h"
 #include "esp_check.h"
+#include "digital_level_view.h"
 
 #define TAG "CountdownTimerConfigView"
 #define NVS_NAMESPACE "CT"
@@ -49,8 +50,6 @@ static lv_obj_t * second_roller = NULL;
 static lv_obj_t * parent_container = NULL;
 static lv_obj_t * top_container;
 static lv_obj_t * bottom_container;
-extern countdown_timer_t countdown_timer;
-extern system_config_t system_config;
 
 
 static void update_label_with_timer_config(lv_obj_t * label, timer_config_t * config) {

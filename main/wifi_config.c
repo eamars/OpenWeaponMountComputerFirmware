@@ -23,15 +23,12 @@
 // The Wi-Fi settings page. It shows the Wi-Fi service through the UI bridge's subjects and asks the service for
 // changes; it never calls esp_wifi_* (which it used to do with the LVGL lock held) (ADR-005 step 3)
 
-extern wifi_user_config_t wifi_user_config;
-extern const wifi_user_config_t default_wifi_user_config;
 HEAPS_CAPS_ATTR static char wifi_status_str[64];
 static lv_obj_t * qr_container;
 static lv_obj_t * qr_code;
 static lv_obj_t * provision_note = NULL;
 static lv_obj_t * reset_provision_button;
 static bool wifi_enable_switch_initial;
-extern lv_obj_t * msg_box;
 
 
 static void toggle_enable_wifi(lv_event_t *e) {

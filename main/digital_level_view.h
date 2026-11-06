@@ -5,6 +5,7 @@
 #include <lvgl.h>
 #include "esp_err.h"
 #include "digital_level_view_controller.h"
+#include "countdown_timer.h"
 
 typedef struct {
     uint32_t crc32;
@@ -50,5 +51,9 @@ void digital_level_view_zero_after_tare();
 void update_digital_level_view(float roll_rad, float pitch_rad);
 
 void digital_level_view_rotation_event_callback(lv_event_t * e);
+
+// Shared state, defined in digital_level_view.c
+extern digital_level_view_config_t digital_level_view_config;
+extern countdown_timer_t countdown_timer;
 
 #endif // DIGITAL_LEVEL_VIEW_H

@@ -23,7 +23,6 @@ lv_subject_t ui_pmic_status;
 // The bridge's copy of the PMIC readings, which ui_pmic_status points to; changed only with the LVGL lock held
 static axp2101_status_t ui_pmic_status_copy;
 
-extern lv_obj_t * msg_box;
 
 
 // LVGL lock held. Reads the service's current status rather than the event's, so the newest is always shown

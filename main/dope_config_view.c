@@ -15,7 +15,6 @@ const char * major_roller_options = "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n1
 // Minor roller from 0 to 9
 const char * minor_roller_options = ".0\n.1\n.2\n.3\n.4\n.5\n.6\n.7\n.8\n.9";
 
-extern system_config_t system_config;
 
 
 typedef struct {

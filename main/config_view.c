@@ -30,7 +30,6 @@ static lv_obj_t * status_bar_battery_state;
 static void status_bar_wifi_observer_cb(lv_observer_t * observer, lv_subject_t * subject);
 static void status_bar_battery_observer_cb(lv_observer_t * observer, lv_subject_t * subject);
 
-extern system_config_t system_config;
 
 
 lv_obj_t * create_menu_container_with_text(lv_obj_t * parent, const char * icon, const char * text) {

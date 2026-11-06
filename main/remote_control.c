@@ -29,6 +29,8 @@
 #include "system_config.h"
 #include "wifi.h"
 #include "wifi_config.h"
+#include "app.h"
+#include "main_tileview.h"
 
 #define TAG "RemoteControl"
 #define NVS_NAMESPACE "RC"
@@ -66,9 +68,6 @@ const remote_control_config_t remote_control_config_default = {
     .serial_enable = true,  // on while the firmware is in development; flip before a release build
 };
 
-extern lv_obj_t * main_tileview;
-extern wifi_user_config_t wifi_user_config;
-extern bno085_ctx_t * bno085_dev;
 
 static SemaphoreHandle_t rc_execute_mutex = NULL;
 static esp_timer_handle_t rc_reboot_timer = NULL;

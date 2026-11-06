@@ -17,6 +17,8 @@
 #include "bno085.h"
 #include "sensor_config.h"
 #include "digital_level_view.h"
+#include "app.h"
+#include "main_tileview.h"
 
 
 #define TAG "SensorCalibrationView"
@@ -26,8 +28,6 @@ typedef enum {
 } sensor_calibration_task_control_bit_e;
 
 
-extern bno085_ctx_t * bno085_dev;
-extern sensor_config_t sensor_config;
 
 static EventGroupHandle_t sensor_calibration_task_control;
 
@@ -35,8 +35,6 @@ lv_obj_t * rv_measurements_label = NULL;
 lv_obj_t * rv_accuracy_label = NULL;
 lv_obj_t * last_tile_before_enter_calibration = NULL;
 
-extern lv_obj_t * main_tileview;                 // from main_tileview.c
-extern lv_obj_t * default_tile;                         // from main_tileview.c`
 
 HEAPS_CAPS_ATTR static char rv_measurements[64] = {0};
 HEAPS_CAPS_ATTR static char rv_accuracy_str[32] = {0};

@@ -133,5 +133,8 @@ bool wifi_is_expired();
 esp_err_t save_wifi_user_config();
 esp_err_t load_wifi_user_config();
 
+// Shared state, defined in wifi.c
+extern wifi_user_config_t wifi_user_config;
+extern const wifi_user_config_t default_wifi_user_config;
 
 #endif  // WIFI_H_

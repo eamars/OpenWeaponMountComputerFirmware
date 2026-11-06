@@ -14,8 +14,6 @@
 #define TAG "DigitalLevelViewType1"
 
 
-extern digital_level_view_config_t digital_level_view_config;
-extern system_config_t system_config;
 
 static lv_obj_t * horizontal_indicator_line_left = NULL;
 static lv_obj_t * horizontal_indicator_line_right = NULL;

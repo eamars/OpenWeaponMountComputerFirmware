@@ -33,6 +33,10 @@ esp_err_t remote_control_init(void);
  */
 bool remote_control_execute(const char *line, char *reply, size_t reply_size);
 
+// Shared state, defined in remote_control.c
+extern remote_control_config_t remote_control_config;
+extern const remote_control_config_t remote_control_config_default;
+
 #ifdef __cplusplus
 }
 #endif

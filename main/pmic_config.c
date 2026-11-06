@@ -11,6 +11,7 @@
 #include "ota_mode.h"
 
 #include "lvgl.h"
+#include "app.h"
 
 #define TAG "AXP2101"
 #define NVS_NAMESPACE "PMG"
@@ -18,7 +19,6 @@
 static lv_obj_t * power_menu = NULL;
 static lv_obj_t * power_management_status_label_1 = NULL;
 static lv_obj_t * power_management_status_label_2 = NULL;
-extern power_management_config_t power_management_config;
 
 const char vbus_current_limit_options[] = "100mA\n500mA\n900mA\n1000mA\n1500mA\n2000mA";
 const char battery_charge_current_options[] = "100mA\n200mA\n300mA\n400mA\n500mA\n600mA\n700mA\n800mA\n900mA\n1000mA";
@@ -37,8 +37,6 @@ const power_management_config_t default_power_management_config = {
 };
 
 // from app.c
-extern axp2101_ctx_t * axp2101_dev;
-extern lv_obj_t * msg_box;
 
 HEAPS_CAPS_ATTR static char status_str_l1[64] = {0};
 HEAPS_CAPS_ATTR static char status_str_l2[64] = {0};
