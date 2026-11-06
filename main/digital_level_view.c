@@ -74,6 +74,21 @@ void tilt_angle_button_short_press_cb(lv_event_t * e) {
     ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
 }
 
+void digital_level_view_zero_after_tare() {
+    // After a tare the sensor reads roll 0 in the tare pose, but the level subtracts rotation x 90 deg, which
+    // assumes the untared sensor; so at rotation 2 the tare pose read 180. The offset cancels that term, so the
+    // tare pose reads 0 at the current rotation. Saved with the level's settings, as the tare is saved in the
+    // sensor, so the two stay together across reboots (ADR-005 B25)
+    digital_level_view_config.user_roll_rad_offset = system_config.rotation * M_PI_2;
+    ESP_LOGI(TAG, "user_roll_rad_offset := %f (after tare)", digital_level_view_config.user_roll_rad_offset);
+
+    esp_err_t ret = save_digital_level_view_config();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save the level zero after tare: %s", esp_err_to_name(ret));
+    }
+}
+
+
 // Degrees the label shows; INT_MIN when the label is new and still shows "--"
 static int tilt_angle_label_deg = INT_MIN;
 

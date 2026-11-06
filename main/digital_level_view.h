@@ -41,6 +41,12 @@ lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent
 esp_err_t load_digital_level_view_config();
 esp_err_t save_digital_level_view_config();
 
+/**
+ * @brief Call after a successful sensor tare: sets and saves the level's zero so the tare pose reads 0 at the
+ * current screen rotation (ADR-005 B25).
+ */
+void digital_level_view_zero_after_tare();
+
 void update_digital_level_view(float roll_rad, float pitch_rad);
 
 void digital_level_view_rotation_event_callback(lv_event_t * e);

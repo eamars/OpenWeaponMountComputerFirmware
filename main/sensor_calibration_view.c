@@ -16,6 +16,7 @@
 #include "low_power_mode.h"
 #include "bno085.h"
 #include "sensor_config.h"
+#include "digital_level_view.h"
 
 
 #define TAG "SensorCalibrationView"
@@ -78,6 +79,9 @@ void on_tare_button_clicked(lv_event_t * e) {
         if (bno085_persist_tare(bno085_dev) == ESP_OK) {
             ESP_LOGI(TAG, "Tare persisted successfully");
         }
+
+        // The tare pose must read 0 on the level at the current screen rotation (ADR-005 B25)
+        digital_level_view_zero_after_tare();
     }
 
     // Move back to the previous tile
