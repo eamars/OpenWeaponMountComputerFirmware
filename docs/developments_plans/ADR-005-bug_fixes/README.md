@@ -1,6 +1,6 @@
 # ADR-005: review every module, then fix the known bugs
 
-Status: **Draft.** Written 2026-11-06 for the owner's approval.
+Status: **Open.** Approved 2026-11-06 ("Approve, start"). Step 1, the review, in progress.
 
 ## What we want
 
