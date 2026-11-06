@@ -1,6 +1,6 @@
-# ADR-005: review every module, then fix the known bugs
+# ADR-005: review every module, fix the known bugs, then decouple the services from the UI
 
-Status: **Open.** Approved 2026-11-06 ("Approve, start"). Step 1 (review) done 2026-11-06; the module map below waits for the owner's approval of the bug list.
+Status: **Open.** Approved 2026-11-06 ("Approve, start"). Step 1 (review) done 2026-11-06. Step 2 (bug fixes) approved 2026-11-06, in progress. Step 3 (decoupling) follows step 2.
 
 ## What we want
 
@@ -15,6 +15,8 @@ Every module mapped to its known bugs and performance issues, from a review of e
 5. Bug fixes are functional changes on today's dependencies (ESP-IDF v6.1 and the managed components as locked by ADR-003). No dependency update inside this ADR.
 6. Review not just the code but the life cycle of each submodule: the BNO085 from init to sleep, Wi-Fi from provisioning to auto shut-off, the LVGL locks and multi-thread rendering.
 7. Most of the code is hand-written: check styling and consistency too.
+8. Decouple the code from the UI: each module initialised without depending on other modules, along MVC lines if that is the right approach. Folded into this ADR as step 3, after the bug fixes (owner, 2026-11-06). The owner accepted the service, event and UI-bridge design proposed for it.
+9. The second OTA source is a placeholder, not a bug: OTA is designed to fetch from a central server that is not enabled yet, with a local server overriding it when one is available.
 
 ## Step 1: the review and the module map
 
@@ -56,7 +58,7 @@ The full notes, with file and line references and how each finding is known, are
 | ID | Module | Bug | Known by |
 |---|---|---|---|
 | B1 | Display flush | A strip transfer now and then never completes; the LVGL watchdog reboots (about 9 s outage). Cause unknown; the core dump lacks the SPI driver's state | device |
-| B2 | Status bar (`config_view.c`) | Wi-Fi and battery icons are rewritten behind LVGL's back (no redraw, no re-measure); the Wi-Fi path also skips the lock | code, confirm |
+| B2 | Status bar (`config_view.c`) | Wi-Fi and battery icons are rewritten behind LVGL's back (no redraw, no re-measure); the Wi-Fi path also skips the lock. **Moved to step 3**: the UI bridge replaces this code | code, confirm |
 | B3 | Low power / touch | Touch never counts as activity and never wakes the unit from idle (the wrapper tests the data before the read fills it) | code, confirm |
 | B4 | Low power / LVGL watchdog | A stuck LVGL lock during idle is not caught until the next wake, which then reboots | code |
 | B5 | BNO085 driver | The `sh2` library is called from five or more tasks with no lock | code |
@@ -67,7 +69,7 @@ The full notes, with file and line references and how each finding is known, are
 | B10 | Wi-Fi | "Reset provisioning" aborts the unit once the Wi-Fi expiry has de-initialised Wi-Fi | code |
 | B11 | Wi-Fi provisioning | The received Wi-Fi password is printed to the console | code |
 | B12 | Wi-Fi | Expiry sets "provision expired" also when provisioned (should be "connect expired"); an always-true condition (`or` for `and`) | code (minor) |
-| B13 | OTA | The second source `"http://owmc_update.vfnz.pro"` is passed as a host name and can never resolve | device |
+| B13 | OTA | ~~The second source can never resolve~~. **Not a bug** (owner): a placeholder for the central server, not enabled yet | device |
 | B14 | OTA | A failed update leaves the OTA handle open; progress divides by -1 when the size is unknown; a version without `v` is compared as garbage | code (minor) |
 | B15 | PMIC settings | Charge current, charge voltage and USB current limit only take effect after a reboot, and the page does not say so | code |
 | B16 | Touch driver (FT3168) | The reset uses pin 0: it drives GPIO0 (the button) low for 10 ms and never resets the touch controller. Cause of the v6.1 GPIO0 warning | code |
@@ -102,12 +104,25 @@ OTA over plain HTTP with no image signing; OpenTrickler discovered only once per
 - Only the bugs the owner approves from the map; performance issues stay on the map.
 - One bug per change, each built, flashed and proven on the device before the next. The proof shows the failure before the fix where it can be reproduced, and shows it gone after.
 - Tooling first (B22, B23), so the evidence for the rest is kept.
-- Proposed order after that: B16, B3, B5 then B7 then B6, B8, B10, B9, B11, B2, B15, B4, B13, B14, B12, B18, B20, B24, and B19 as one change. The open causes (B1, B17, B21) are investigated alongside; each fix is proposed once its cause is known.
+- Order after that (owner approved 2026-11-06): B16, B3, B5 then B7 then B6, B8, B10, B9, B11, B15, B4, B14, B12, B18, B20, B24, and B19 as one change. The open causes (B1, B17, B21) are investigated alongside; each fix is proposed once its cause is known. B2 moved to step 3; B13 is not a bug. The BNO085 first-boot abort is left out of B7 for now (owner).
 - The cause before the fix. Where the cause is unknown, the first step is to find it, and the fix is proposed once it is known.
 - The boot-log noise as one change.
 
+## Step 3: decouple the services from the UI
+
+Why: the review found the subsystems coupled through the UI and through each other, and their races handled by ordering rules and guards instead of by structure (the race list and the coupling are in [progress](progress.md), Wi-Fi section). Wi-Fi calls the status bar and settings page directly and must start after them; Wi-Fi and low power depend on each other; services start inside views' create functions; event groups are created lazily so any start-up order survives; the LVGL lock is taken in about thirty places, each its own way.
+
+Approach (owner accepted the proposal, 2026-11-06). Not classic MVC, which adds a controller layer without solving the actual problem (state and threads crossing module boundaries with no owner), but:
+
+1. **A service owns its state and one task.** Wi-Fi, PMIC, BNO085 and low power each sit behind a small API and never call LVGL. Requests (for example "enable Wi-Fi") go to the service's own task, so `esp_wifi_*` is never called with the LVGL lock held.
+2. **Services publish state changes as events** on the ESP-IDF event loop. Low power publishes idle and wake; Wi-Fi subscribes and stops and starts itself, which breaks the Wi-Fi / low-power cycle.
+3. **One UI bridge** turns service events into widget updates under the LVGL lock: one place for locking. LVGL 9's observer module (`lv_subject`) is the candidate for binding widgets to those values; it is in LVGL 9.6 but not yet tried on this unit, so it is tried on the pilot before it is used further.
+4. **Any start-up order.** Each service starts without the UI; the UI reads each service's current state when it is created. That removes the lazy creation, the "create the configuration view last" FIXME and the readiness checks.
+
+Wi-Fi is the pilot (with B2 and the lock ordering folded in), then PMIC, BNO085 and low power, one service per change, each proven on the device. No new features and no performance work; the behaviour seen by the user stays the same.
+
 ## For the owner to decide
 
-1. Is the BNO085 first-boot abort (part of B7) in this round, or yours to fix? It is the same pattern as the rest of B7, so it is cheaper fixed with it.
+1. The BNO085 first-boot abort: left out for now (owner, 2026-11-06); the likely cause is in the progress notes.
 2. The core dump stack margin: leave it, or raise it at a small internal RAM cost?
 3. Style findings: recommended as a separate pass after the bug fixes, module by module, so each bug fix stays a small change that is easy to check. Kept out of the bug-fix changes either way. In this ADR as step 3, or a later ADR?
