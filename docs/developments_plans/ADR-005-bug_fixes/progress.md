@@ -140,3 +140,7 @@ A recursive mutex in the driver context is held around every `sh2_*` call: `sh2_
 ### B6: report re-enable after an unexpected sensor reset — checked, not a bug (2026-11-06)
 
 To test it, the remote control gained `bnoreset` (debug, like `hang`): it pulses the BNO085's reset line through the new `bno085_hardware_reset()` (under the `sh2` lock), so the sensor restarts mid-run as after an unexpected reset. On the level tile, three forced resets (`logs/rc/rc_bnoreset_*`): each time the driver logged the reset, re-enabled all three saved reports (IDs 4, 8, 28) from inside the `sh2` callback, and the sensor confirmed every configuration within about 130 ms. No "Failed to configure report" (which B7 now logs). Re-entering `sh2` from its own callback works with this library, so B6 is closed without a change; `bnoreset` stays as a tool for later checks.
+
+### B9: provisioning name and hostname from the real MAC (2026-11-06)
+
+`wifi_init` reads the STA MAC with `esp_read_mac(..., ESP_MAC_WIFI_STA)` (eFuse, no Wi-Fi needed) instead of `esp_wifi_get_mac()` before `esp_wifi_init()`, and logs the result. Proof: `Service name and hostname: OWMC_83A124 (STA MAC 44:1b:f6:83:a1:24)` on three boots in a row, and `esptool read-mac` reads `44:1b:f6:83:a1:24`. The old code never logged the name, so what it produced is not on record; the "before" rests on ESP-IDF's contract (`ESP_ERR_WIFI_NOT_INIT`, buffer not written). If the old value differed, the SoftAP name and the hostname change once with this fix; the saved Wi-Fi credentials are not affected.

@@ -13,6 +13,7 @@
 #include "network_provisioning/manager.h"
 #include "network_provisioning/scheme_softap.h"
 #include "esp_wifi.h"
+#include "esp_mac.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_event.h"
@@ -223,10 +224,12 @@ esp_err_t wifi_init() {
     wireless_state = WIRELESS_STATE_NOT_PROVISIONED;
     status_bar_update_wireless_state(wireless_state);
 
-    // Generate service name based on MAC address
+    // Generate service name based on MAC address. Read it from eFuse: esp_wifi_get_mac() needs
+    // esp_wifi_init(), which runs further down, and left the buffer unset (ADR-005 B9)
     uint8_t eth_mac[6];
-    esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
+    ESP_ERROR_CHECK(esp_read_mac(eth_mac, ESP_MAC_WIFI_STA));
     snprintf(wifi_provision_state.service_name, sizeof(wifi_provision_state.service_name), "OWMC_%02X%02X%02X", eth_mac[3], eth_mac[4], eth_mac[5]);
+    ESP_LOGI(TAG, "Service name and hostname: %s (STA MAC " MACSTR ")", wifi_provision_state.service_name, MAC2STR(eth_mac));
 
     // Initialize WiFi stack
     ESP_ERROR_CHECK(esp_netif_init());
