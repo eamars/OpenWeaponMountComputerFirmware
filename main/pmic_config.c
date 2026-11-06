@@ -134,6 +134,9 @@ static void update_battery_charge_voltage_event_cb(lv_event_t *e) {
 static void on_save_button_pressed(lv_event_t * e) {
     ESP_ERROR_CHECK(save_pmic_config());
 
+    // The charge settings take effect now, not at the next boot (ADR-005 B15)
+    axp2101_request_apply_charge_settings(axp2101_dev);
+
     update_info_msg_box(msg_box, "Configuration Saved");
 }
 

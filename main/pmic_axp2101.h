@@ -41,7 +41,8 @@ extern "C" {
 
 typedef enum {
     PMIC_INTERRUPT_EVENT_BIT = (1 << 0),
-    PMIC_INIT_SUCCESS_EVENT_BIT = (1 << 1), 
+    PMIC_INIT_SUCCESS_EVENT_BIT = (1 << 1),
+    PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT = (1 << 2),  // the monitor task writes the saved charge settings
 } pmic_event_control_bit_e;
 
 
@@ -131,6 +132,12 @@ typedef struct {
 
 esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, gpio_num_t interrupt_pin);
 esp_err_t axp2101_deinit(axp2101_ctx_t *ctx);
+
+/**
+ * @brief Have the PMIC monitor task write the VBUS current limit, charge current and charge voltage from
+ * power_management_config to the chip. Returns at once; callable from any task (ADR-005 B15).
+ */
+esp_err_t axp2101_request_apply_charge_settings(axp2101_ctx_t *ctx);
 
 esp_err_t save_pmic_config();
 esp_err_t load_pmic_config();

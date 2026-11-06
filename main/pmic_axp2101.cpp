@@ -98,14 +98,43 @@ static xpowers_axp2101_chg_vol_t pmic_battery_charge_voltage_to_xpowers(pmic_bat
     }
 }
 
+// The settings page's charge settings. Written at init, then only by the monitor task, which owns the chip
+// after init: the page asks for it on save instead of writing over I2C from the LVGL task (ADR-005 B15)
+static void axp2101_apply_charge_settings() {
+    PMU.setVbusCurrentLimit(pmic_vbus_current_limit_to_xpowers(power_management_config.vbus_current_limit));
+    ESP_LOGI(TAG, "Set VBUS current limit to %d", PMU.getVbusCurrentLimit());
+
+    PMU.setChargerConstantCurr(pmic_battery_charge_current_to_xpowers(power_management_config.battery_charge_current));
+    ESP_LOGI(TAG, "Set battery charge current to %d", PMU.getChargerConstantCurr());
+
+    PMU.setChargeTargetVoltage(pmic_battery_charge_voltage_to_xpowers(power_management_config.battery_charge_voltage));
+    ESP_LOGI(TAG, "Set battery charge voltage to %d", PMU.getChargeTargetVoltage());
+}
+
+
+esp_err_t axp2101_request_apply_charge_settings(axp2101_ctx_t *ctx) {
+    if (ctx == NULL || ctx->pmic_event_control == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xEventGroupSetBits(ctx->pmic_event_control, PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT);
+    return ESP_OK;
+}
+
+
 void axp2101_monitor_task(void * args) {
     axp2101_ctx_t *ctx = (axp2101_ctx_t *) args;
 
     ESP_LOGI(TAG, "AXP2101 monitor task started");
 
     while (1) {
-        // Wait until the interrupt happens
-        if (xEventGroupWaitBits(ctx->pmic_event_control, PMIC_INTERRUPT_EVENT_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(2000)) == pdTRUE) {
+        // Wait until the interrupt happens, or the settings page asks for the charge settings to be applied
+        EventBits_t bits = xEventGroupWaitBits(ctx->pmic_event_control,
+                                               PMIC_INTERRUPT_EVENT_BIT | PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT,
+                                               pdTRUE, pdFALSE, pdMS_TO_TICKS(2000));
+        if (bits & PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT) {
+            axp2101_apply_charge_settings();
+        }
+        if (bits & PMIC_INTERRUPT_EVENT_BIT) {
             // Handle PMIC interrupt
             PMU.getIrqStatus();
 
@@ -344,9 +373,6 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setVbusVoltageLimit(XPOWERS_AXP2101_VBUS_VOL_LIM_3V88);  // allow extremely low voltage input
     ESP_LOGI(TAG, "Set VBUS voltage limit to %d", PMU.getVbusVoltageLimit());
 
-    // Set maximum current per VBUS input
-    PMU.setVbusCurrentLimit(pmic_vbus_current_limit_to_xpowers(power_management_config.vbus_current_limit));
-    ESP_LOGI(TAG, "Set VBUS current limit to %d", PMU.getVbusCurrentLimit());
 
     // Configure LED behavior (by the charger)
     PMU.setChargingLedMode(XPOWERS_CHG_LED_CTRL_CHG);
@@ -366,15 +392,11 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setPrechargeCurr(XPOWERS_AXP2101_PRECHARGE_100MA);
     ESP_LOGI(TAG, "Set battery pre-charge current to %d", PMU.getPrechargeCurr());
 
-    PMU.setChargerConstantCurr(pmic_battery_charge_current_to_xpowers(power_management_config.battery_charge_current));
-    ESP_LOGI(TAG, "Set battery charge current to %d", PMU.getChargerConstantCurr());
-
     PMU.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_200MA);
     ESP_LOGI(TAG, "Set battery charge termination current to %d", PMU.getChargerTerminationCurr());
 
-    // Set charge voltage
-    PMU.setChargeTargetVoltage(pmic_battery_charge_voltage_to_xpowers(power_management_config.battery_charge_voltage));
-    ESP_LOGI(TAG, "Set battery charge voltage to %d", PMU.getChargeTargetVoltage());
+    // VBUS current limit, charge current and charge voltage from the settings page
+    axp2101_apply_charge_settings();
 
     // set low battery warning levels
     PMU.setLowBatWarnThreshold(10);
