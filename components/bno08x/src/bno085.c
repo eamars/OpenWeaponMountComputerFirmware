@@ -391,6 +391,23 @@ esp_err_t bno085_wake_up(bno085_ctx_t *ctx) {
 }
 
 
+esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx) {
+    if (ctx->reset_pin == GPIO_NUM_NC) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    // Under the sh2 lock, so the pulse never cuts a transfer in half
+    sh2_lock(ctx);
+    gpio_set_level(ctx->reset_pin, 0);
+    vTaskDelay(pdMS_TO_TICKS(BNO085_RESET_PULSE_MS));
+    gpio_set_level(ctx->reset_pin, 1);
+    sh2_unlock(ctx);
+
+    ESP_LOGW(TAG, "Hardware reset pulsed on pin %d", ctx->reset_pin);
+    return ESP_OK;
+}
+
+
 esp_err_t bno085_tare_now(bno085_ctx_t *ctx, uint8_t axes, sh2_TareBasis_t basis) {
     sh2_lock(ctx);
     int ret = sh2_setTareNow(axes, basis);

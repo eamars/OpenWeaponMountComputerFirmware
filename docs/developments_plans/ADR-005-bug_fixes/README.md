@@ -62,7 +62,7 @@ The full notes, with file and line references and how each finding is known, are
 | B3 | Low power / touch | Touch never counts as activity and never wakes the unit from idle (the wrapper tests the data before the read fills it) | code, confirm |
 | B4 | Low power / LVGL watchdog | A stuck LVGL lock during idle is not caught until the next wake, which then reboots | code |
 | B5 | BNO085 driver | The `sh2` library is called from five or more tasks with no lock | code |
-| B6 | BNO085 driver | After an unexpected sensor reset, reports are re-enabled from inside the `sh2` callback; if that fails, the level stops until a reboot | code |
+| B6 | BNO085 driver | ~~Reports re-enabled from inside the `sh2` callback after an unexpected reset may fail~~. **Checked, not a bug**: three forced resets on the device, every report restored and confirmed | device |
 | B7 | BNO085 users | Every BNO085 call is wrapped in `ESP_ERROR_CHECK`, so any sensor hiccup reboots the unit; includes the first-boot abort after a reset (`app.c:194`) | device (abort), code |
 | B8 | Wi-Fi | No reconnect after a disconnect: the handler calls `esp_wifi_start()` on a started stack, which does nothing | code, confirm |
 | B9 | Wi-Fi | Provisioning name and hostname built from an uninitialised MAC (`esp_wifi_get_mac` before `esp_wifi_init`) | code, confirm |

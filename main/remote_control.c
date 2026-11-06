@@ -22,6 +22,7 @@
 #include "remote_control.h"
 #include "app_cfg.h"
 #include "common.h"
+#include "bno085.h"
 #include "low_power_mode.h"
 #include "system_config.h"
 #include "wifi.h"
@@ -47,7 +48,7 @@
 #define RC_MAX_ARGS 4
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats bt tap swipe tile rot wifi save idle wake reboot hang"
+#define RC_HELP_COMMANDS "help state stats bt tap swipe tile rot wifi save idle wake reboot hang bnoreset"
 
 
 typedef struct {
@@ -65,6 +66,7 @@ const remote_control_config_t remote_control_config_default = {
 
 extern lv_obj_t * main_tileview;
 extern wifi_user_config_t wifi_user_config;
+extern bno085_ctx_t * bno085_dev;
 
 static SemaphoreHandle_t rc_execute_mutex = NULL;
 static esp_timer_handle_t rc_reboot_timer = NULL;
@@ -616,6 +618,17 @@ static bool rc_cmd_hang(char *reply, size_t reply_size) {
 }
 
 
+// Debug: pulse the BNO085's reset line, so the sensor restarts as after an unexpected reset and the
+// driver's recovery (re-enabling the saved reports) runs (ADR-005 B6).
+static bool rc_cmd_bnoreset(char *reply, size_t reply_size) {
+    esp_err_t ret = bno085_hardware_reset(bno085_dev);
+    if (ret != ESP_OK) {
+        return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(ret));
+    }
+    return rc_reply(reply, reply_size, true, "@ok bnoreset");
+}
+
+
 static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     char *argv[RC_MAX_ARGS] = {0};
     int argc = 0;
@@ -640,7 +653,8 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     bool is_known = is_observer ||
                     strcmp(cmd, "tap") == 0 || strcmp(cmd, "swipe") == 0 || strcmp(cmd, "tile") == 0 ||
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
-                    strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0;
+                    strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
+                    strcmp(cmd, "bnoreset") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -702,6 +716,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
             return rc_reply(reply, reply_size, false, "@err args");
         }
         return rc_cmd_hang(reply, reply_size);
+    }
+    if (strcmp(cmd, "bnoreset") == 0) {
+        if (argc != 1) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        return rc_cmd_bnoreset(reply, reply_size);
     }
     if (strcmp(cmd, "tap") == 0) {
         return rc_cmd_tap(argc, argv, reply, reply_size);

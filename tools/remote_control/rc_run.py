@@ -59,6 +59,7 @@ REPLY_PREFIXES = {
     "wake": "@ok wake",
     "reboot": "@ok reboot",
     "hang": "@ok hang",
+    "bnoreset": "@ok bnoreset",
 }
 FAILURE_MARKERS = (
     RESET_MARKER,

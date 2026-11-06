@@ -114,6 +114,12 @@ esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx);
 esp_err_t bno085_wake_up(bno085_ctx_t *ctx);
 
 /**
+ * @brief Pulse the reset line while running, so the sensor restarts as after an unexpected reset.
+ * For tests of the reset recovery; returns ESP_ERR_NOT_SUPPORTED without a reset pin.
+ */
+esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx);
+
+/**
  * @brief Tare the given axes now (sh2_setTareNow)
  */
 esp_err_t bno085_tare_now(bno085_ctx_t *ctx, uint8_t axes, sh2_TareBasis_t basis);
