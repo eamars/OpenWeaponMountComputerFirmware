@@ -383,3 +383,12 @@ Proof:
 ### Where step 4 stands (2026-11-07)
 
 C1 to C4 done, each committed and checked on the unit's normal path. Still to run: one 10-minute idle/wake run (it blanks the screen, so not while the owner is at the unit), and the owner's hands-on checks, which now also cover a real touch after C3 and a Save on a settings page after C1.
+
+### Owner's hands-on checks (2026-11-07, step 4 build)
+
+- Touch and tap-to-wake: works as intended (the wake tap does not press a widget; touch works after C3).
+- Save on a settings page: works as intended ("Configuration Saved").
+- Power-key long press opens the power menu: works as intended.
+- Battery icon: the USB and battery-supply icons switch correctly. The charge level itself could not be checked by eye; the `pmic` command showed the icon value matching the reading (`soc=100 icon=100` on battery, `icon=101` on USB).
+- Power Off, with and without USB: works (owner). This settles the review's open question on power-off with USB connected.
+- Wi-Fi status after a new provisioning: not tested.
