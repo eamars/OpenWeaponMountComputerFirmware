@@ -61,11 +61,28 @@ Approach:
 
 What was built: TE pulses on GPIO18 at about 60 Hz (period 16.5-16.9 ms); one frame write takes 20-23 ms, more than one panel refresh and well under two. `main/display_flush.c` waits for the TE falling edge before the first strip of each frame (40 ms timeout, counted; the frame is sent anyway). The owner saw no tearing at any of the four rotations. Cost: about one frame a second (17 to 16 frames/s). Details in [progress](progress.md).
 
-## Step 3: partial redraw of the digital level view (last)
+## Step 3: partial redraw of the digital level view (proposal, for the owner's approval)
 
-Why: drawing is about 24 ms of each frame (render about 42 ms at 180°, of which about 18 ms is the flush), and nearly all of it redraws pixels that did not change. Invalidating only the changed regions is the largest expected gain.
+Why: the level view redraws the whole screen for every frame, although between two frames only a band of rows changes. Drawing and sending fewer pixels is the largest gain left, and the level reads smoother at a higher frame rate.
 
-Only after step 2 is Built and tearing is handled by the TE sync rather than by full redraws. Judged by the owner's eye for the diagonal tear, plus the frame rate and invalidated pixels per frame.
+What we know (step 2 profiling build, digital level tile, 0°, `rc_te_on_watch_20261106_130015.log`):
+
+- Every frame is a full flush: 127,680 px (280 × 456), 17 a second. A frame takes about 45 ms to render, of which about 21 ms is the flush.
+- The level is updated every 20 ms (`DIGITAL_LEVEL_VIEW_DISPLAY_UPDATE_PERIOD_MS`, 50 Hz), so today about two of every three sensor updates never reach the screen.
+- The default style (`digital_level_view_type_1.c`) calls `lv_obj_invalidate` on the whole view on every update. The picture is a background colour, a triangle of rows `[base - dy, base + dy]` across the full width, a foreground rectangle from there to the bottom, and two 8 px level lines at `base`. Between two updates only the rows between the old and new triangle edges and the old and new line positions change. The whole screen changes only when the background colour changes (tilt left, level, tilt right). Style 2 already changes only its three objects, and LVGL redraws only those.
+- The catch: step 2's rule of starting on the TE falling edge is tear-free only for areas that begin at the top of the panel. The panel scans at most about 36.6 µs per row (TE period / 456), top-down as the owner's check in step 2 bears out, and the flush writes about 47.8 µs per row, so the scan is faster. For a full frame, the scan starts with the write at row 0 and stays ahead of it. For a band starting lower, at physical row `y0`, the write starts ahead of the scan, and the scan catches it inside the band whenever the band is taller than about 3 × `y0` rows, for example a band at row 50 taller than about 160 rows. That refresh shows the band half old and half new, which is a tear.
+
+Approach, built in this order, as one step:
+
+1. Flush: start each area once the scan has passed its first physical row, at the TE falling edge plus `y0` × row time (the ISR records the edge time; a one-shot timer wakes the flush). The scan is then ahead of the write and stays ahead, the same as for a full frame. A full frame and every area at 90° and 270° (bands there are panel columns, `y0` = 0) start on the edge exactly as now. The average wait stays about the same, half a refresh. The row time is taken as the measured TE period / 456, which can only overstate it, so the start can only fall late, never early. Late is safe only within limits: started more than about 10 ms after the scan passed `y0`, the next scan pass catches the write. So the flush checks the time just before it queues the first strip and waits for the next pass when it is past that window. Each area LVGL sends gets this rule on its own, so the angle label and the band may land one refresh (16.7 ms) apart, but no area is ever shown half old and half new.
+2. Level view, style 1: invalidate only the band of rows that changed (the union of the old and new triangle and the lines, with the 4 px line half-width), and the whole view when the background colour changes. The angle label, countdown and dope card above it are already their own objects, so LVGL redraws them as before.
+3. Judge on the device: the owner's eye at all four rotations while moving the unit, at small and large tilt (no tear, no stale stripes left behind by the band), the frame rate and invalidated pixels per frame from `display_prof`, then `state_change` and one idle/wake cycle test of at most 20 minutes.
+
+Expected, an estimate until measured: at a few degrees of tilt the band is tens of rows, under 15% of the screen, so a frame should take a few milliseconds and the frame rate should rise towards the 50 Hz sensor update rate. A colour change still costs one full frame, as today.
+
+Watch: about three times as many flushes a second. If the known stall below happens per transfer, it may show more often; the cycle test would show it.
+
+No dependency changes; LVGL 9.6 and `esp_lvgl_port` 2.7.2 stay as they are.
 
 ## Known issue in the flush path
 
