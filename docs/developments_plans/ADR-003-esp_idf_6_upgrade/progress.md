@@ -78,3 +78,8 @@ Owner, 2026-11-06: no unit has ever been deployed in the field, so an OTA from a
 - `scenario state_change --min-largest-dma 80000` (v6.1 app on the old bootloader, same app as the full flash): PASS, `largest_dma` 106,496 B throughout.
 - Idle/wake cycles on the digital level tile: 13 cycles in 2.5 min, no stalls or resets, then stopped so the owner could use the unit. The 20-minute run is still to do.
 - Owner at the unit, 2026-11-06, on the button (GPIO0, awake and wake from idle), SoftAP provisioning from the phone, and every tile at all four rotations: "Yup all seems working".
+- 10-minute idle/wake cycle test on the digital level tile (the owner shrank the cap from 20 to 10 minutes): 54 cycles, PASS, no stalls, resets or markers, `stats` 21 of 21 answered. `largest_dma` lowest 98,304 B (v5.5.2 runs: 114,688 B), above the 80,000 B floor.
+
+Step 3: **Built 2026-11-06.** ADR-003: **Built 2026-11-06.**
+
+Found during ADR-003, not caused by it, fixed after it (owner, 2026-11-06): the OTA source host name in `main/ota_mode.c`; `scenario watchdog` not waking the unit first; `rc_run.py` logs under `build/`, deleted by fullclean; the ~32 KB start-up borrow on v6.1 (cause unknown). The owner expects more and wants a detailed scan of every module and workflow next.
