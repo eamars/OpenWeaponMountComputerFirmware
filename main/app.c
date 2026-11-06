@@ -195,14 +195,15 @@ void app_main(void)
     bno085_dev = (bno085_ctx_t *) bno085_i2c_dev;
 #endif  // USE_BNO085
 
+    // Initialize WiFi before the display: the Wi-Fi service needs no UI; the UI reads its state through the
+    // UI bridge whenever it is created (ADR-005 step 3)
+    ESP_ERROR_CHECK(wifi_init());
+
     // Initialize Display
     ESP_ERROR_CHECK(lvgl_display_init(i2c0_bus_handle));
 
     // Remote control driver (virtual pointer for scripted taps and swipes)
     ESP_ERROR_CHECK(remote_control_init());
-
-    // Initialize WiFi and related calls
-    ESP_ERROR_CHECK(wifi_init());
 
     // Serial remote control on the console, when enabled in System settings
     if (remote_control_config.serial_enable) {

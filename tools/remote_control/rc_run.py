@@ -15,6 +15,7 @@ boot, `rst:` lines are expected, and one abort right after "Failed to detect BNO
 import argparse
 import datetime
 import pathlib
+import re
 import sys
 import time
 
@@ -388,7 +389,11 @@ def scenario_state_change(session: Session):
         session.command("wake")
         session.dwell(AFTER_WAKE_S)
 
-    for rotation in (1, 2):
+    # Turn to another rotation and back to the unit's own, so the saved setting ends as it was found (it used to end
+    # on a fixed 2 and overwrote the owner's)
+    match = re.search(r"rot=(\d)", session.command("state"))
+    own_rotation = int(match.group(1)) if match else 2
+    for rotation in ((own_rotation + 1) % 4, own_rotation):
         session.command(f"rot {rotation}")
         session.command("save system")
         session.dwell(AFTER_ROTATION_S)

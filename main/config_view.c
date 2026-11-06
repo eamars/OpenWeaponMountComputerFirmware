@@ -10,6 +10,7 @@
 #include "sensor_config.h"
 #include "about_config.h"
 #include "wifi_config.h"
+#include "ui_bridge.h"
 #include "ota_mode.h"
 #include "pmic_axp2101.h"
 
@@ -23,8 +24,9 @@ static lv_obj_t * status_bar;
 static lv_obj_t * status_bar_wireless_state;
 static lv_obj_t * status_bar_battery_state;
 
-HEAPS_CAPS_ATTR static char status_bar_wireless_state_str[4] = {0};
 HEAPS_CAPS_ATTR static char status_bar_battery_state_str[4] = {0};
+
+static void status_bar_wifi_observer_cb(lv_observer_t * observer, lv_subject_t * subject);
 
 extern system_config_t system_config;
 
@@ -424,9 +426,7 @@ void create_config_view(lv_obj_t *parent) {
 
     // WiFi icon
     status_bar_wireless_state = lv_label_create(status_bar);
-    memset(status_bar_wireless_state_str, 0, sizeof(status_bar_wireless_state_str));
-    lv_label_set_text_static(status_bar_wireless_state, status_bar_wireless_state_str);
-    status_bar_update_wireless_state(WIRELESS_STATE_NOT_PROVISIONED);
+    lv_subject_add_observer_obj(&ui_wifi_state, status_bar_wifi_observer_cb, status_bar_wireless_state, NULL);
 
     // Battery icon
     status_bar_battery_state = lv_label_create(status_bar);
@@ -484,48 +484,26 @@ void create_config_view(lv_obj_t *parent) {
 }
 
 
-void status_bar_update_wireless_state(wireless_state_e state) {
-    switch (state)
-    {
+// The Wi-Fi icon follows the Wi-Fi service through the UI bridge, in LVGL context. It used to be written into a
+// static buffer from the system event task with no lock and no redraw (ADR-005 B2)
+static const char * status_bar_wifi_symbol(wireless_state_e state) {
+    switch (state) {
+        case WIRELESS_STATE_PROVISIONING:           return LV_SYMBOL_SHUFFLE;
+        case WIRELESS_STATE_PROVISION_FAILED:       return LV_SYMBOL_WARNING;
+        case WIRELESS_STATE_PROVISION_EXPIRE:       return LV_SYMBOL_CLOSE;
+        case WIRELESS_STATE_CONNECTED:              return LV_SYMBOL_WIFI;
+        case WIRELESS_STATE_NOT_CONNECTED_EXPIRE:   return LV_SYMBOL_CLOSE;
         case WIRELESS_STATE_NOT_PROVISIONED:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
-            wifi_config_update_status("not provisioned");
-            break;
-        case WIRELESS_STATE_PROVISIONING:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_SHUFFLE, sizeof(LV_SYMBOL_SHUFFLE));
-            wifi_config_update_status("provisioning");
-            break;
-        case WIRELESS_STATE_PROVISION_FAILED:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_WARNING, sizeof(LV_SYMBOL_WARNING));
-            wifi_config_update_status("provision failed");
-            break;
-        case WIRELESS_STATE_PROVISION_EXPIRE:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_CLOSE, sizeof(LV_SYMBOL_CLOSE));
-            wifi_config_update_status("provision expired");
-            break;
         case WIRELESS_STATE_NOT_CONNECTED:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
-            wifi_config_update_status("not connected");
-            break;
         case WIRELESS_STATE_CONNECTING:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
-            wifi_config_update_status("connecting");
-            break;
-        case WIRELESS_STATE_CONNECTED:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_WIFI, sizeof(LV_SYMBOL_WIFI));
-            wifi_config_update_status("connected");
-            break;
         case WIRELESS_STATE_DISCONNECTED:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
-            wifi_config_update_status("disconnected");
-            break;
-        case WIRELESS_STATE_NOT_CONNECTED_EXPIRE:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_CLOSE, sizeof(LV_SYMBOL_CLOSE));
-            wifi_config_update_status("connect expired");
-            break;
-        default:
-            break;
+        default:                                    return LV_SYMBOL_LOOP;
     }
+}
+
+static void status_bar_wifi_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
+    lv_label_set_text(lv_observer_get_target_obj(observer),
+                      status_bar_wifi_symbol((wireless_state_e) lv_subject_get_int(subject)));
 }
 
 void status_bar_update_battery_level(int level_percentage) {

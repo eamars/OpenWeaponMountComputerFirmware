@@ -163,8 +163,9 @@ static void enter_idle_mode() {
 
     lvgl_port_unlock();
 
-    // Outside the LVGL lock: Wi-Fi event handlers take it
-    wifi_request_stop();
+    // Outside the LVGL lock: the Wi-Fi service posts to the UI bridge, which takes it. Returns once the radio is
+    // off (ADR-005 step 3)
+    wifi_request_suspend(WIFI_SUSPEND_IDLE);
 
     // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler)
     ESP_ERROR_CHECK(esp_pm_configure(&idle_pm_config));
@@ -212,8 +213,8 @@ static void exit_idle_mode() {
 
     lvgl_port_unlock();
 
-    // Outside the LVGL lock: Wi-Fi event handlers take it
-    wifi_request_start();
+    // Outside the LVGL lock: the Wi-Fi service posts to the UI bridge, which takes it
+    wifi_request_suspend(WIFI_SUSPEND_NONE);
 }
 
 
@@ -236,8 +237,8 @@ void enter_sleep_mode() {
     // Set flag
     xEventGroupSetBits(low_power_control_event, IN_SLEEP_MODE);
 
-    // Stop Wifi
-    wifi_request_stop();
+    // Stop Wifi; returns once the radio is off, so light sleep may follow
+    wifi_request_suspend(WIFI_SUSPEND_SLEEP);
 
 #if USE_BNO085
     // // Stop the reporting
@@ -297,7 +298,7 @@ void enter_sleep_mode() {
     }
 
     // Restore wifi
-    wifi_request_start();
+    wifi_request_suspend(WIFI_SUSPEND_NONE);
 }
 
 

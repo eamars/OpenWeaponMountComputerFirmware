@@ -34,9 +34,6 @@ lv_obj_t * create_config_label_static(lv_obj_t * parent, char * text);
 lv_obj_t * create_single_button(lv_obj_t * container, const char * icon, lv_event_cb_t event_cb);
 lv_obj_t * create_info_msg_box(lv_obj_t *parent, lvgl_additional_init_func callback_f);
 
-// Status bar update
-void status_bar_update_wireless_state(wireless_state_e state);
-
 /** 
  * @brief Update the battery level icon in the status bar
  * @param level_percentage Battery level percentage (0-100). < 100 is powered by USB, -1 is unknown>

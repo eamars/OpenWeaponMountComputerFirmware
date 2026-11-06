@@ -18,6 +18,7 @@
 #include "system_config.h"
 #include "main_tileview.h"
 #include "low_power_mode.h"
+#include "ui_bridge.h"
 
 #define TAG "LVGLDisplay"
 
@@ -464,6 +465,9 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
 #if DISPLAY_PROFILING_ENABLED
         display_profile_start(lvgl_disp);
 #endif
+        // The services' state, for the widgets to bind to (ADR-005 step 3)
+        ui_bridge_init();
+
         create_main_tileview(lv_screen_active());
         lv_display_set_rotation(lvgl_disp, system_config.rotation);
 

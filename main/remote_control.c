@@ -511,20 +511,10 @@ static bool rc_cmd_wifi(int argc, char **argv, char *reply, size_t reply_size) {
         return rc_reply(reply, reply_size, false, "@err args");
     }
 
-    // After the Wi-Fi window expires the screen disables the switch; refuse the same way
-    if (wifi_is_expired()) {
-        return rc_reply(reply, reply_size, false, "@err expired");
-    }
-
-    if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
-        return rc_reply(reply, reply_size, false, "@err busy");
-    }
-    esp_err_t ret = wifi_config_set_enable(enable);
-    lvgl_port_unlock();
-
-    if (ret != ESP_OK) {
-        return rc_reply(reply, reply_size, false, "@err wifi %s", esp_err_to_name(ret));
-    }
+    // A request to the Wi-Fi service, as the switch makes it: no LVGL lock, the switch follows by itself
+    // (ADR-005 step 3). The radio starts or stops in the service task, so a start/stop error is only logged there.
+    // After the expiry, on starts a new Wi-Fi window, as the switch does
+    wifi_request_enable(enable);
     return rc_reply(reply, reply_size, true, "@ok wifi=%s", enable ? "on" : "off");
 }
 
