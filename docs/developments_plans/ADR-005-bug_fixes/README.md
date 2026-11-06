@@ -1,6 +1,6 @@
 # ADR-005: review every module, fix the known bugs, then decouple the services from the UI
 
-Status: **Open.** Approved 2026-11-06 ("Approve, start"). Step 1 (review) done 2026-11-06. Step 2 (bug fixes) approved 2026-11-06, in progress. Step 3 (decoupling) follows step 2.
+Status: **Open.** Approved 2026-11-06 ("Approve, start"). Step 1 (review) done 2026-11-06. Step 2 (bug fixes) approved 2026-11-06, done 2026-11-07. Step 3 (decoupling) follows step 2.
 
 ## What we want
 
