@@ -1,4 +1,7 @@
 #include "dope_config_view.h"
+
+#include <string.h>
+
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "esp_check.h"
@@ -157,13 +160,23 @@ static void close_edit_window(lv_event_t * e) {
 
 
 
+// What NVS holds, so leaving the tile saves only a change (ADR-006)
+HEAPS_CAPS_ATTR static dope_storage_t dope_storage_saved;
+
+
 esp_err_t load_dope_config() {
-    return load_config(NVS_NAMESPACE, &dope_storage, &default_dope_storage, sizeof(dope_storage));
+    esp_err_t ret = load_config(NVS_NAMESPACE, &dope_storage, &default_dope_storage, sizeof(dope_storage));
+    memcpy(&dope_storage_saved, &dope_storage, sizeof(dope_storage));
+    return ret;
 }
 
 
 esp_err_t save_dope_config() {
-    return save_config(NVS_NAMESPACE, &dope_storage, sizeof(dope_storage));
+    esp_err_t ret = save_config(NVS_NAMESPACE, &dope_storage, sizeof(dope_storage));
+    if (ret == ESP_OK) {
+        memcpy(&dope_storage_saved, &dope_storage, sizeof(dope_storage));
+    }
+    return ret;
 }
 
 
@@ -495,7 +508,9 @@ void enable_dope_config_view(bool enable) {
     if (enable) {
         // No action needed when enabling
     } else {
-        // Write to NVS flash automatically when swiped away
-        save_dope_config();
+        // Write to NVS flash when swiped away, only after a change (ADR-006)
+        if (memcmp(&dope_storage, &dope_storage_saved, sizeof(dope_storage)) != 0) {
+            ESP_ERROR_CHECK_WITHOUT_ABORT(save_dope_config());
+        }
     }
 }
