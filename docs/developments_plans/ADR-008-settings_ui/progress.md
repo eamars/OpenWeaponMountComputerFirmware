@@ -123,4 +123,15 @@ Checked with mock data (remote control `ota mock [critical] | offer show|hide | 
 
 A rejected manifest goes on to the second source, the central server's placeholder, which does not answer, as before. The log line for a version not newer said "newer than"; it now says "the same as or newer than".
 
+**Download speed, measured one change at a time** (owner: "Can the download speed be optimized?"; 2.4 MB, the same network, Install to "Update installed"):
+
+| Build | Time | Lowest free internal RAM |
+|---|---|---|
+| 4 KB reads (above) | 42.1 s | 133,296 B (from boot) |
+| + TCP window 5760 B (local sdkconfig only) | 39.5 s | the same |
+| Partition erased in one go at the start (`bulk_flash_erase`) | 22.2 s | the same |
+| Both | 20.6 s | the same |
+
+The flash was the limit: erasing each 4 KB sector as the download reached it took half the time. Kept: the erase in one go (it runs at the first read, about 6 s, so the tile shows "Preparing" until data arrives, then "Downloading"). Not taken: the larger TCP window, 1.6 s (7%) for undoing part of the owner's reduced network memory profile (`097bd26`). Final build over the air: 21.9 s, booted from `ota_1`.
+
 Left on the unit: running from `ota_1` (the next USB flash goes back to `ota_0`); the hub shows "Update available" until the next restart (the host offered the same build whatever its version); rotation 1, the level.
