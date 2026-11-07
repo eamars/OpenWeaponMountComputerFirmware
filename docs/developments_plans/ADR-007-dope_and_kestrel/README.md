@@ -1,6 +1,6 @@
 # ADR-007: the dope card with windage, its place on the level view, and the Kestrel link
 
-Status: **Open** 2026-11-07. Approved by the owner ("Approve, start"). Steps 1 to 5 built and checked on the unit, steps 3 to 5 with the owner's Kestrel ([progress](progress.md)). Left: the owner's hands-on check of phone mode; the 34 KB of internal RAM the Bluetooth stack holds while off, and the smaller largest free block after a pull, to look into.
+Status: **Built** 2026-11-07. Approved by the owner ("Approve, start"). Steps 1 to 5 built and checked on the unit, steps 3 to 5 with the owner's Kestrel, and by the owner by hand, phone mode included ([progress](progress.md)). Internal RAM looked into: the BLE controller runs from flash (PSRAM) and ADR-007's buffers are in PSRAM, 169 KB free at boot (was 146 KB); the smaller largest block after the first pull is 320 bytes of one-time allocations kept by design, no leak.
 
 ## What we want
 

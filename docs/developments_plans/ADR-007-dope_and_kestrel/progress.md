@@ -140,3 +140,48 @@ The owner: PRS stages now run to 12 targets in most cases; make the size a setti
 - **The level** steps only through the card's size; a target past a smaller size gives way to the first set target.
 
 On the unit (`rc_nav_20261107_190948.log`): the boot log shows `NS: DOPE, Configuration read from an older 100-byte version` and `NS: DOPECFG, ... older 3-byte version`, no write at boot; the tile listed targets 1 to 12, then Clear all. The owner was using the unit at the same time (a `DOPE` save 26 s after boot: the owner's own edit on the tile, confirmed), so the checks stopped there. The owner then checked the rest by hand (2026-11-07): all good.
+### The gust's side when the wind is 0.0 (owner's question, 2026-11-07)
+
+The owner: Wnd1 and Wnd2 can be on different sides (target 1 on their card is). They are stored and pulled as two signed holds, and the gust shows its own side when it differs from the wind's ("L0.3 / R0.2"). One gap: a wind of exactly 0.0 counted as the gust's side, so a gust of R0.4 showed as "0.0 / 0.4", with no side. `dope_format_gust` now drops the gust's side only when it is on the same side as a non-zero wind. Flashed; the owner to check on target 1.
+
+### Internal RAM: Bluetooth while off, and the largest block (2026-11-07)
+
+Owner's go-ahead ("Yes, all three"): put the BLE controller in flash, move ADR-007's buffers to PSRAM, trace the block split.
+
+**Where the 34 KB went.** The build's memory map: the BLE controller's code (`libbtdm_app`) kept 21.3 KB in internal RAM, 20 KB of it code; the rest of Bluetooth (host data, coexistence) about 5 KB; ADR-007's own buffers about 4.5 KB; the remainder came with steps 1 and 2 (the 181 KB baseline predates them).
+
+**The controller in flash** (`CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY`, in `sdkconfig.defaults.esp32s3`): internal RAM used by the build 181.6 to 162.1 KB, flash +137 KB (app 2.43 of 4 MB). This build runs its code from PSRAM (`SPIRAM_FETCH_INSTRUCTIONS` and `SPIRAM_RODATA`, IDF's XiP from PSRAM), so the cache stays on during flash writes ([IDF external RAM guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/external-ram.html)): a settings save during a pull does not stop the controller. A 10-target HUD pull: 11.0 s (0.76 to 0.86 s a target; was about 12 s, 0.8 to 0.96).
+
+**ADR-007's buffers to PSRAM** (`HEAPS_CAPS_ATTR` / `EXT_RAM_BSS_ATTR`): the Kestrel status, search candidates, frame buffers, the link's working buffers and the dope tile's widget table, 3.8 KB.
+
+| On the unit | Before | Controller in flash | + buffers in PSRAM |
+|---|---|---|---|
+| Free internal RAM at boot | about 146 KB | 162.5 KB | **169.0 KB** |
+| Largest block at boot | 68 KB | 86 KB | **90 KB** |
+| Lowest since boot | about 110 KB | 128.9 KB | **132.7 KB** |
+| Lowest during a pull | 75 KB | 98.7 KB | **99.9 KB** |
+| Largest block after the first pull | 34 to 40 KB | 57 KB | **65.5 KB** |
+
+**The largest block after the first pull.** The old logs: the first pull after boot keeps 150 to 370 bytes and the largest block drops; later pulls return free RAM to within about 100 bytes and the block stays. A one-off diagnostic build (IDF's standalone heap tracing, not committed) recorded the internal-RAM allocations made during the first pull and still held after it: 8, 320 bytes (`rc_mem_read_*`, trace build):
+
+- 200 bytes: newlib's number-formatting buffers for the Kestrel task, made by the first `%f` in its log (the per-target line) and kept by newlib for the task's life;
+- 100 bytes: Wi-Fi's per-task semaphore for the Kestrel task, made when the BLE start updates the coexistence clock, kept for the task's life;
+- 20 bytes: the BLE controller's interrupt descriptor, which IDF keeps once made.
+
+All are kept by design, made once, and reused by later pulls: no leak. Small allocations go to internal RAM (`SPIRAM_MALLOC_ALWAYSINTERNAL` 1 KB), and where they land splits the big block or not (the traced pull happened to keep it whole, the plain build lands them inside). Verdict: no change. A Kestrel task made and deleted with each pull would free the first two, but not the descriptor, so the split could stay; the 65.5 KB left is far above any allocation the firmware makes at run time.
+
+**Not moved, and why** (the rest of the 158 KB the build keeps in internal RAM): the FreeRTOS kernel (19 KB, scheduler and interrupt timing), the flash driver (18 KB, IDF allows it only with flash auto-suspend), hardware support and sleep code (16 KB); the Wi-Fi driver's speed-ups (15 KB) and the heap, ring buffer and SPI master code (about 12 KB) could move at some speed cost, held until internal RAM is short.
+
+### A pull ends when the Kestrel settings change (owner's report, 2026-11-07)
+
+The owner: a pull started, then the mode switched on the Kestrel page (HUD or phone), carried on in the old mode and failed on a timeout. The pull read the page's live settings while it ran, so it waited for a link that would not come. Now a pull or search runs on a copy of the settings taken when it starts (`start_job`), and `kestrel_settings_changed()` ends it when the page's settings differ from that copy: the mode (pull and search), or the picked Kestrel (pull only, so picking a Kestrel while a search lists them is fine). The page calls it on a mode change, Reload and Reset; picking a Kestrel calls it too. Every wait in the pull wakes on the cancel; the link is closed and Bluetooth stopped as after any pull, and the status reads "Pull cancelled: the Kestrel settings changed" ("Search cancelled: ..." for a search). A pull that has already finished keeps its result. A remote-control command `kestrel mode 0|1|2` (memory only, as the dropdown before Save) drives the check.
+
+On the unit (`rc_cancel_*`, saved mode HUD; the Kestrel did not connect, so both cuts came while connecting): a HUD pull waiting for the Kestrel, mode switched to phone after 40 s: Bluetooth stopped 5 ms after the switch, "Pull cancelled: the Kestrel settings changed"; a phone-mode pull, mode switched back to HUD after 3 s: stopped 9 ms after. No `DOPE` save, the card unchanged; free internal RAM back to the same byte. The mode left as saved (HUD).
+
+**A crash the cancel exposed, and its cause.** The next check (the Kestrel back on) crashed the unit once: a cut 3 s into a HUD pull, the moment the Kestrel connected, failed NimBLE's assert in `npl_freertos_eventq_remove` while `nimble_port_stop` ran (core dump saved, the unit rebooted). The port removes an event from its queue by taking every event out and putting the rest back, inside a critical section built on a lock it creates for that call: it keeps out only tasks on its own core. The Kestrel task could run on either core, and the NimBLE host, the controller and the timer feeding them run on core 0; when the host took the arriving connection's event during the stop, the count went stale and the assert fired. A pull that ends normally stops on a quiet link, so this had not shown before. Fix: the Kestrel task is pinned to the Bluetooth core (`CONFIG_BT_NIMBLE_PINNED_TO_CORE`), so the stop and the host can no longer run at the same time.
+
+After the fix (`rc_cancel_race_*`, the Kestrel on in Device mode): ten pulls of 10 cut by a mode change at 2.6 to 9 s, landing in every phase (connect, subscribe, open, authentication, Target Card settings, and the targets after 1 and 4 read): ten "Pull cancelled", no crash, free internal RAM back to 168.6 KB. Then a full pull: 10 targets in 13.0 s.
+
+### The owner's check, and the ADR built (2026-11-07)
+
+The owner: "Phone mode works." With the earlier hand checks (the level band, the dope tile, the card size, the wind sides), every step is checked by the owner. ADR-007 is built.

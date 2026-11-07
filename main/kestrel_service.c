@@ -54,7 +54,7 @@ static const kestrel_settings_t kestrel_settings_default = {
 
 static TaskHandle_t service_task = NULL;
 static SemaphoreHandle_t status_mutex = NULL;
-static kestrel_status_t status;
+HEAPS_CAPS_ATTR static kestrel_status_t status;
 static uint8_t pull_count = KL_TARGET_COUNT;   // the targets the running pull reads
 
 // Link events from the NimBLE host task to the service task
@@ -64,6 +64,7 @@ static uint8_t pull_count = KL_TARGET_COUNT;   // the targets the running pull r
 #define EV_SUBSCRIBED   (1 << 3)
 #define EV_CONNECT_FAILED (1 << 4)
 #define EV_SEARCH_DONE  (1 << 5)
+#define EV_CANCEL       (1 << 8)  // the settings the job started with changed; outside stack_start's clear
 static EventGroupHandle_t link_events = NULL;
 static StreamBufferHandle_t rx_stream = NULL;
 static SemaphoreHandle_t indicate_done = NULL;
@@ -72,6 +73,10 @@ static volatile uint16_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
 // Phone mode: this unit is the central and talks to the Kestrel's own LiNK service as a GATT client
 static bool central = false;
+// The settings the running pull or search started with: it uses these, not the page's, and ends when the page's
+// change (kestrel_settings_changed)
+static kestrel_settings_t run_settings;
+static bool run_is_search = false;
 static uint16_t peer_svc_end;
 static uint16_t peer_out_handle;    // 85920100, indications from the Kestrel
 static uint16_t peer_in_handle;     // 85920200, writes to the Kestrel
@@ -172,7 +177,7 @@ typedef enum {
 
 static uint16_t link_out_handle;
 static uint16_t hud_out_handle;
-static uint8_t table_value[204];        // the Kestrel's own table is padded with ff; a HUD's content is unknown
+HEAPS_CAPS_ATTR static uint8_t table_value[204];        // the Kestrel's own table is padded with ff; a HUD's content is unknown
 
 static const char dis_manufacturer[] = "Kestrel by NK";
 static const char dis_model[] = "0750L";
@@ -324,7 +329,7 @@ typedef struct {
     bool nk;            // NK's company id seen
     char name[KESTREL_NAME_SIZE];
 } search_candidate_t;
-static search_candidate_t candidates[KESTREL_CANDIDATES_MAX];
+HEAPS_CAPS_ATTR static search_candidate_t candidates[KESTREL_CANDIDATES_MAX];
 static int candidate_count = 0;
 
 
@@ -503,7 +508,7 @@ static uint8_t rx_chunk[64];
 static size_t rx_len = 0;
 static size_t rx_pos = 0;
 static bool encrypted = false;
-static uint8_t tx_frame[KL_FRAME_MAX];
+HEAPS_CAPS_ATTR static uint8_t tx_frame[KL_FRAME_MAX];
 
 
 static uint32_t now_ms(void) {
@@ -684,7 +689,7 @@ static esp_err_t recv_packet(uint32_t timeout_ms, kl_packet_t * packet) {
                 ESP_LOGW(TAG, "undecodable frame, %u bytes", (unsigned) deframer.len);
             }
         }
-        if (xEventGroupGetBits(link_events) & EV_DISCONNECTED) {
+        if (xEventGroupGetBits(link_events) & (EV_DISCONNECTED | EV_CANCEL)) {
             return ESP_ERR_INVALID_STATE;
         }
         int32_t left = (int32_t) (deadline - now_ms());
@@ -826,10 +831,14 @@ static bool wait_link(EventBits_t bits, uint32_t timeout_ms) {
         if (left <= 0) {
             return false;
         }
-        EventBits_t got = xEventGroupWaitBits(link_events, bits | EV_DISCONNECTED, pdFALSE, pdFALSE,
+        EventBits_t got = xEventGroupWaitBits(link_events, bits | EV_DISCONNECTED | EV_CANCEL, pdFALSE, pdFALSE,
                                               pdMS_TO_TICKS(left < 1000 ? left : 1000));
         if (got & bits) {
             return true;
+        }
+        // Cancelled: stop waiting, except for the disconnect that ends the link cleanly
+        if ((got & EV_CANCEL) && !(bits & EV_DISCONNECTED)) {
+            return false;
         }
         if ((got & EV_DISCONNECTED) && !(bits & EV_DISCONNECTED) && (bits != EV_CONNECTED)) {
             return false;
@@ -874,6 +883,8 @@ static esp_err_t stack_start(void) {
 
 
 static void stack_stop(void) {
+    ble_gap_conn_cancel();      // a connect attempt or a search a cancel cut short; nothing if none
+    ble_gap_disc_cancel();
     if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
         wait_link(EV_DISCONNECTED, KESTREL_DISCONNECT_TIMEOUT_MS);
@@ -906,7 +917,7 @@ static void run_pull(int count) {
     kl_deframer_reset(&deframer);
     rx_len = rx_pos = 0;
 
-    central = kestrel_settings.mode == KESTREL_MODE_PHONE;
+    central = run_settings.mode == KESTREL_MODE_PHONE;
     set_status(KESTREL_PULL_RUNNING, "Starting Bluetooth");
     mem_diag_log_checkpoint("kestrel: before BLE start");
     kl_self_test();
@@ -949,11 +960,12 @@ static void run_pull(int count) {
     }
     else {
         // Phone mode: connect to the Kestrel picked on the Kestrel page, as the phone app does
-        set_status(KESTREL_PULL_RUNNING, "Connecting to %s", kestrel_settings.peer_name);
-        ble_addr_t peer = {.type = kestrel_settings.peer_addr_type};
-        memcpy(peer.val, kestrel_settings.peer_addr, sizeof(peer.val));
+        set_status(KESTREL_PULL_RUNNING, "Connecting to %s", run_settings.peer_name);
+        ble_addr_t peer = {.type = run_settings.peer_addr_type};
+        memcpy(peer.val, run_settings.peer_addr, sizeof(peer.val));
         int rc = ble_gap_connect(BLE_OWN_ADDR_PUBLIC, &peer, KESTREL_PHONE_CONNECT_TIMEOUT_MS, NULL, gap_event, NULL);
-        EventBits_t got = rc == 0 ? xEventGroupWaitBits(link_events, EV_CONNECTED | EV_CONNECT_FAILED, pdFALSE, pdFALSE,
+        EventBits_t got = rc == 0 ? xEventGroupWaitBits(link_events, EV_CONNECTED | EV_CONNECT_FAILED | EV_CANCEL,
+                                                        pdFALSE, pdFALSE,
                                                         pdMS_TO_TICKS(KESTREL_PHONE_CONNECT_TIMEOUT_MS + 2000)) : 0;
         if (!(got & EV_CONNECTED)) {
             ESP_LOGW(TAG, "connect: rc %d", rc);
@@ -1031,6 +1043,10 @@ static void run_pull(int count) {
     phase_done(KESTREL_PHASE_TARGETS);
 
 stop:
+    // A pull cut short by a settings change says so, not what the cut made fail (a pull that finished keeps its result)
+    if (failure != NULL && (xEventGroupGetBits(link_events) & EV_CANCEL)) {
+        failure = "Pull cancelled: the Kestrel settings changed";
+    }
     if (failure != NULL && current_phase < KESTREL_PHASE_STOP) {
         phase_done(current_phase);      // the time spent in the phase that failed
     }
@@ -1098,7 +1114,10 @@ static void run_search(void) {
     int found = status.found_count;
     xSemaphoreGive(status_mutex);
     ESP_LOGI(TAG, "search: %d devices heard, %d Kestrel(s)", candidate_count, found);
-    if (found == 0) {
+    if (xEventGroupGetBits(link_events) & EV_CANCEL) {
+        set_status(KESTREL_PULL_IDLE, "Search cancelled: the Kestrel mode changed");
+    }
+    else if (found == 0) {
         set_status(KESTREL_PULL_FAILED, "No Kestrel found: on, normal Bluetooth mode, phone app closed?");
     }
     else {
@@ -1135,6 +1154,31 @@ static esp_err_t radio_allowed(void) {
 }
 
 
+// The job takes the settings as they are now; a change from here on cancels it
+static void start_job(bool search) {
+    run_settings = kestrel_settings;
+    run_is_search = search;
+    xEventGroupClearBits(link_events, EV_CANCEL);
+    set_status(KESTREL_PULL_RUNNING, "Starting");
+}
+
+
+void kestrel_settings_changed(void) {
+    if (kestrel_get_status().state != KESTREL_PULL_RUNNING) {
+        return;
+    }
+    // A search lists Kestrels for phone mode, so picking one while it runs is fine; a pull is for one Kestrel
+    bool same = kestrel_settings.mode == run_settings.mode &&
+                (run_is_search || (kestrel_settings.peer_addr_type == run_settings.peer_addr_type &&
+                                   memcmp(kestrel_settings.peer_addr, run_settings.peer_addr,
+                                          sizeof(run_settings.peer_addr)) == 0));
+    if (!same) {
+        ESP_LOGI(TAG, "settings changed: cancelling the %s", run_is_search ? "search" : "pull");
+        xEventGroupSetBits(link_events, EV_CANCEL);
+    }
+}
+
+
 esp_err_t kestrel_request_search(void) {
     if (kestrel_get_status().state == KESTREL_PULL_RUNNING) {
         return ESP_ERR_INVALID_STATE;
@@ -1143,7 +1187,7 @@ esp_err_t kestrel_request_search(void) {
     if (ret != ESP_OK) {
         return ret;
     }
-    set_status(KESTREL_PULL_RUNNING, "Starting");
+    start_job(true);
     xTaskNotify(service_task, REQ_SEARCH, eSetBits);
     return ESP_OK;
 }
@@ -1158,6 +1202,7 @@ esp_err_t kestrel_choose(int index) {
     memcpy(kestrel_settings.peer_addr, s.found[index].addr, sizeof(kestrel_settings.peer_addr));
     snprintf(kestrel_settings.peer_name, sizeof(kestrel_settings.peer_name), "%s", s.found[index].name);
     ESP_LOGI(TAG, "phone mode: %s picked", kestrel_settings.peer_name);
+    kestrel_settings_changed();
     return save_kestrel_settings();
 }
 
@@ -1182,7 +1227,7 @@ esp_err_t kestrel_request_pull(int count) {
         return ret;
     }
     pull_count = (uint8_t) count;
-    set_status(KESTREL_PULL_RUNNING, "Starting");
+    start_job(false);
     xTaskNotify(service_task, REQ_PULL, eSetBits);
     return ESP_OK;
 }
@@ -1207,7 +1252,12 @@ esp_err_t kestrel_service_init(void) {
     snprintf(hud_name, sizeof(hud_name), "HUD-%s", hud_serial);
     snprintf(status.message, sizeof(status.message), "No pull yet");
 
-    BaseType_t ok = xTaskCreateWithCaps(service_task_fn, "kestrel", KESTREL_SERVICE_TASK_STACK, NULL,
-                                        KESTREL_SERVICE_TASK_PRIORITY, &service_task, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+    // On the Bluetooth core: NimBLE's port takes events out of its queue under a critical section built on a lock
+    // it makes for that call, which keeps out only tasks on the same core. Stopping the stack from the other core
+    // while the host takes an event (a connection arriving as a cancelled pull stops) failed its assert
+    // (npl_freertos_eventq_remove, 2026-11-07). The host, the controller and the timer that feeds them run on this core
+    BaseType_t ok = xTaskCreatePinnedToCoreWithCaps(service_task_fn, "kestrel", KESTREL_SERVICE_TASK_STACK, NULL,
+                                                    KESTREL_SERVICE_TASK_PRIORITY, &service_task,
+                                                    CONFIG_BT_NIMBLE_PINNED_TO_CORE, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
     return ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }

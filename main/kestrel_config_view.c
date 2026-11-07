@@ -138,6 +138,7 @@ static void mode_changed_cb(lv_event_t * e) {
     uint32_t selected = lv_dropdown_get_selected(lv_event_get_target_obj(e));
     if (selected <= KESTREL_MODE_PHONE && selected != kestrel_settings.mode) {
         kestrel_settings.mode = (uint8_t) selected;
+        kestrel_settings_changed();     // a running pull in the old mode ends (owner, 2026-11-07)
         config_page_rebuild(kestrel_config_page);
     }
 }
@@ -156,6 +157,7 @@ static void on_save_button_pressed(lv_event_t * e) {
 
 static void on_reload_button_pressed(lv_event_t * e) {
     esp_err_t ret = load_kestrel_settings();
+    kestrel_settings_changed();
     config_page_rebuild(kestrel_config_page);
     update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
 }
@@ -165,6 +167,7 @@ static void on_reload_button_pressed(lv_event_t * e) {
 // other pages, Save keeps it and Reload undoes it
 static void on_reset_button_pressed(lv_event_t * e) {
     kestrel_settings_reset();
+    kestrel_settings_changed();
     config_page_rebuild(kestrel_config_page);
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
 }

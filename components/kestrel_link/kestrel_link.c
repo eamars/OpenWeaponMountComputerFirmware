@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "psa/crypto.h"
@@ -143,8 +144,9 @@ static esp_err_t kl_cbc(bool encrypt, const uint8_t * in, size_t len, uint8_t * 
 
 size_t kl_build_frame(uint16_t type, const uint8_t * payload, uint16_t len, bool encrypted,
                       uint8_t * out, size_t out_size) {
-    static uint8_t plain[KL_PACKET_MAX + 2 * KL_BLOCK];
-    static uint8_t body[KL_PACKET_MAX + 2 * KL_BLOCK + 2];
+    // Working buffers in PSRAM when the build allows it: internal RAM is the scarce one (ADR-007)
+    EXT_RAM_BSS_ATTR static uint8_t plain[KL_PACKET_MAX + 2 * KL_BLOCK];
+    EXT_RAM_BSS_ATTR static uint8_t body[KL_PACKET_MAX + 2 * KL_BLOCK + 2];
 
     if ((size_t) len + 4 > KL_PACKET_MAX) {
         return 0;
@@ -220,7 +222,7 @@ static esp_err_t kl_parse_packet(const uint8_t * p, size_t len, kl_packet_t * pa
 
 
 esp_err_t kl_parse_body(uint8_t * body, size_t len, bool encrypted, kl_packet_t * packet) {
-    static uint8_t plain[KL_FRAME_MAX];
+    EXT_RAM_BSS_ATTR static uint8_t plain[KL_FRAME_MAX];
 
     // After the authentication every frame is encrypted (ICD §5.2); a cleartext body is told by its length field
     // (ICD §3 L2-5)

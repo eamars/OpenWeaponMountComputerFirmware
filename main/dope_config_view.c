@@ -67,7 +67,7 @@ typedef struct {
 
 } dope_target_widgets_t;
 
-static dope_target_widgets_t target_widgets[DOPE_TARGET_MAX];
+HEAPS_CAPS_ATTR static dope_target_widgets_t target_widgets[DOPE_TARGET_MAX];
 static lv_obj_t * target_list = NULL;
 static lv_obj_t * clear_all_button = NULL;
 static value_editor_t * editor = NULL;
@@ -115,20 +115,38 @@ void dope_format_elevation(char * buf, size_t size, int32_t elevation_x10) {
 }
 
 
-void dope_format_wind(char * buf, size_t size, int32_t wind_x10) {
-    const char * side = wind_x10 > 0 ? "R" : wind_x10 < 0 ? "L" : "";
-    snprintf(buf, size, "%s%ld.%ld", side, labs(wind_x10) / 10, labs(wind_x10) % 10);
+// A hold, "R0.4", with its side letter when side is non-zero (-1 left, +1 right) and shown
+static void format_hold(char * buf, size_t size, int32_t x10, int side, bool show_side) {
+    const char * letter = !show_side ? "" : side > 0 ? "R" : side < 0 ? "L" : "";
+    snprintf(buf, size, "%s%ld.%ld", letter, labs(x10) / 10, labs(x10) % 10);
 }
 
 
-void dope_format_gust(char * buf, size_t size, int32_t wind_x10, int32_t gust_x10) {
-    bool same_side = (gust_x10 >= 0) == (wind_x10 >= 0) || wind_x10 == 0;
-    if (same_side) {
-        snprintf(buf, size, "%ld.%ld", labs(gust_x10) / 10, labs(gust_x10) % 10);
+// The side of a hold: its sign, or for a hold that rounded to 0.0, the side the Kestrel gave it
+static int hold_side(int32_t x10, uint8_t flags, uint8_t left_flag, uint8_t right_flag) {
+    if (x10 != 0) {
+        return x10 > 0 ? 1 : -1;
     }
-    else {
-        dope_format_wind(buf, size, gust_x10);
-    }
+    return (flags & left_flag) ? -1 : (flags & right_flag) ? 1 : 0;
+}
+
+
+void dope_format_wind(char * buf, size_t size, int32_t wind_x10) {
+    format_hold(buf, size, wind_x10, wind_x10 > 0 ? 1 : wind_x10 < 0 ? -1 : 0, true);
+}
+
+
+void dope_format_target_wind(char * buf, size_t size, const dope_target_t * target) {
+    format_hold(buf, size, target->wind_x10,
+                hold_side(target->wind_x10, target->flags, DOPE_TARGET_WIND_LEFT, DOPE_TARGET_WIND_RIGHT), true);
+}
+
+
+void dope_format_target_gust(char * buf, size_t size, const dope_target_t * target) {
+    int wind_side = hold_side(target->wind_x10, target->flags, DOPE_TARGET_WIND_LEFT, DOPE_TARGET_WIND_RIGHT);
+    int gust_side = hold_side(target->gust_x10, target->flags, DOPE_TARGET_GUST_LEFT, DOPE_TARGET_GUST_RIGHT);
+    // The gust's letter only when it differs from the wind's (a wind with no side shows the gust's own)
+    format_hold(buf, size, target->gust_x10, gust_side, gust_side != wind_side);
 }
 
 
@@ -197,7 +215,7 @@ static void refresh_target(int index) {
         if (set) {
             dope_format_elevation(text, sizeof(text), target->elevation_x10);
             lv_label_set_text(w->cell_value[DOPE_FIELD_ELEVATION], text);
-            dope_format_wind(text, sizeof(text), target->wind_x10);
+            dope_format_target_wind(text, sizeof(text), target);
             lv_label_set_text(w->cell_value[DOPE_FIELD_WIND], text);
             lv_obj_set_style_bg_color(w->cell[DOPE_FIELD_WIND], lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
         }
@@ -210,7 +228,7 @@ static void refresh_target(int index) {
         }
 
         if (set && target->gust_x10 != DOPE_HOLD_NONE) {
-            dope_format_gust(text, sizeof(text), target->wind_x10, target->gust_x10);
+            dope_format_target_gust(text, sizeof(text), target);
             lv_label_set_text_fmt(w->cell_caption[DOPE_FIELD_WIND], "Wind / %s", text);
         }
         else {
@@ -302,7 +320,8 @@ static void wind_editor_closed(int32_t value, void * ctx) {
     // The gust was the Kestrel's bracket; a hand edit replaces the hold, so the bracket no longer applies
     target->wind_x10 = (int16_t) value;
     target->gust_x10 = DOPE_HOLD_NONE;
-    target->flags &= ~DOPE_TARGET_FROM_KESTREL;
+    target->flags &= ~(DOPE_TARGET_FROM_KESTREL | DOPE_TARGET_WIND_LEFT | DOPE_TARGET_WIND_RIGHT |
+                       DOPE_TARGET_GUST_LEFT | DOPE_TARGET_GUST_RIGHT);
 
     save_card();
     refresh_card();
@@ -470,6 +489,16 @@ static int16_t hold_x10(float mil) {
 }
 
 
+// A wind hold the 0.1 mil card rounds to 0.0 keeps the Kestrel's side (0.02 L shows "L0.0"), so the shooter still
+// sees which way the wind blows (owner, 2026-11-07). mil is in the card's signs, negative left
+static uint8_t zero_side_flag(int16_t x10, float mil, uint8_t left_flag, uint8_t right_flag) {
+    if (x10 != 0 || !isfinite(mil) || mil == 0.0f) {
+        return 0;
+    }
+    return mil < 0 ? left_flag : right_flag;
+}
+
+
 // A complete pull replaces the card's first 10 targets, the Kestrel's Target Card: the pulled ones from the Kestrel
 // (the Kestrel's signs are negative up and negative right, the card's positive), the rest of the 10 empty. Targets
 // past 10 are entered by hand and stay (owner, 2026-11-07). The names follow the Kestrel's, which can differ
@@ -485,7 +514,11 @@ static void apply_pull(const kestrel_status_t * s) {
             target->gust_x10 = hold_x10(-k->wind2_mil);
             uint32_t range_m = (k->range_cm + 50) / 100;
             target->range_m = (uint16_t) (range_m > UINT16_MAX ? UINT16_MAX : range_m);
-            target->flags = DOPE_TARGET_SET | DOPE_TARGET_FROM_KESTREL;
+            target->flags = DOPE_TARGET_SET | DOPE_TARGET_FROM_KESTREL |
+                            zero_side_flag(target->wind_x10, -k->wind1_mil, DOPE_TARGET_WIND_LEFT,
+                                           DOPE_TARGET_WIND_RIGHT) |
+                            zero_side_flag(target->gust_x10, -k->wind2_mil, DOPE_TARGET_GUST_LEFT,
+                                           DOPE_TARGET_GUST_RIGHT);
         }
         else {
             target->gust_x10 = DOPE_HOLD_NONE;

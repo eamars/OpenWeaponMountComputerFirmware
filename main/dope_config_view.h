@@ -18,6 +18,11 @@
 
 #define DOPE_TARGET_SET (1 << 0)            // the target has an elevation; an empty target is not shown on the level
 #define DOPE_TARGET_FROM_KESTREL (1 << 1)
+// The side of a Kestrel wind or gust hold that rounded to 0.0 (0.02 L shows "L0.0"); a non-zero hold's sign wins
+#define DOPE_TARGET_WIND_LEFT (1 << 2)
+#define DOPE_TARGET_WIND_RIGHT (1 << 3)
+#define DOPE_TARGET_GUST_LEFT (1 << 4)
+#define DOPE_TARGET_GUST_RIGHT (1 << 5)
 
 typedef struct {
     int16_t elevation_x10;
@@ -76,10 +81,12 @@ static inline bool dope_target_is_set(const dope_target_t * target) {
 
 /** @brief "8.5" (up), "-0.3" (down) */
 void dope_format_elevation(char * buf, size_t size, int32_t elevation_x10);
-/** @brief "R0.4", "L0.4", "0.0" */
+/** @brief A wind value: "R0.4", "L0.4", "0.0" */
 void dope_format_wind(char * buf, size_t size, int32_t wind_x10);
-/** @brief The gust after its wind: "0.7" on the wind's side, "R0.7" when the sides differ */
-void dope_format_gust(char * buf, size_t size, int32_t wind_x10, int32_t gust_x10);
+/** @brief A target's wind, with the Kestrel's side when it rounded to 0.0: "R0.4", "L0.0", "0.0" */
+void dope_format_target_wind(char * buf, size_t size, const dope_target_t * target);
+/** @brief A target's gust after its wind: "0.7" on the wind's side, "R0.7" when the sides differ or the wind has none */
+void dope_format_target_gust(char * buf, size_t size, const dope_target_t * target);
 
 void create_dope_config_view(lv_obj_t * parent);
 void enable_dope_config_view(bool enable);

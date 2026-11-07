@@ -120,11 +120,11 @@ static void show_target() {
     lv_label_set_text(unit_label, elevation > 0 ? "U" : elevation < 0 ? "D" : "");
 
     // Wind, and the gust after it when known (its side only when it differs from the wind's)
-    dope_format_wind(text, sizeof(text), target->wind_x10);
+    dope_format_target_wind(text, sizeof(text), target);
     lv_label_set_text(wind_label, text);
     if (target->gust_x10 != DOPE_HOLD_NONE) {
         char gust[12];
-        dope_format_gust(gust, sizeof(gust), target->wind_x10, target->gust_x10);
+        dope_format_target_gust(gust, sizeof(gust), target);
         lv_label_set_text_fmt(gust_label, "/ %s", gust);
     }
     else {

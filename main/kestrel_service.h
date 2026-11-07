@@ -103,6 +103,12 @@ esp_err_t kestrel_request_search(void);
 /** @brief Phone mode: pull from the `index`th Kestrel the last search found from now on; saves the choice */
 esp_err_t kestrel_choose(int index);
 
+/**
+ * @brief Call after changing kestrel_settings: a running pull or search started with other settings (the mode, or for
+ * a pull the picked Kestrel) ends at once, its status saying it was cancelled
+ */
+void kestrel_settings_changed(void);
+
 /** @brief A copy of the status; callable from any task */
 kestrel_status_t kestrel_get_status(void);
 

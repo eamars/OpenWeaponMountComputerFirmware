@@ -516,6 +516,16 @@ static bool rc_cmd_kestrel(int argc, char **argv, char *reply, size_t reply_size
         esp_err_t ret = kestrel_request_search();
         return rc_reply(reply, reply_size, ret == ESP_OK, ret == ESP_OK ? "@ok kestrel find" : "@err kestrel busy");
     }
+    if (argc == 3 && strcmp(argv[1], "mode") == 0) {
+        // kestrel mode 0|1|2: Off, HUD, Phone, in memory only (as the page's dropdown before Save)
+        int mode = atoi(argv[2]);
+        if (mode < KESTREL_MODE_OFF || mode > KESTREL_MODE_PHONE) {
+            return rc_reply(reply, reply_size, false, "@err kestrel mode 0-2");
+        }
+        kestrel_settings.mode = (uint8_t) mode;
+        kestrel_settings_changed();
+        return rc_reply(reply, reply_size, true, "@ok kestrel mode=%d", mode);
+    }
     if (argc == 3 && strcmp(argv[1], "pick") == 0) {
         esp_err_t ret = kestrel_choose(atoi(argv[2]));
         return rc_reply(reply, reply_size, ret == ESP_OK, ret == ESP_OK ? "@ok kestrel pick %s" : "@err kestrel pick %s",
