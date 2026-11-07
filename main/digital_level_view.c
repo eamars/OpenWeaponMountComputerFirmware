@@ -178,8 +178,7 @@ void create_digital_level_view(lv_obj_t *parent)
 {
     parent_container = parent;
 
-    // Read configuration from NVS
-    ESP_ERROR_CHECK(load_digital_level_view_config());
+    // The settings are read at start-up (app_main)
 
     // Load digital level view widget
     current_digital_level_view = select_digital_level_view(digital_level_view_config.level_style);

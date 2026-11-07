@@ -15,6 +15,7 @@
 #include "nvs_flash.h"
 
 #include "app.h"
+#include "digital_level_view.h"
 #include "main_tileview.h"
 #include "app_cfg.h"
 #include "bno085.h"
@@ -150,6 +151,12 @@ void app_main(void)
     ESP_ERROR_CHECK(load_remote_control_config());
 
     ESP_ERROR_CHECK(load_sensor_config());
+
+#if USE_BNO085
+    // Read before the UI is created: the level view and the level's settings page both show these, so neither
+    // has to be created first (ADR-005 step 3)
+    ESP_ERROR_CHECK(load_digital_level_view_config());
+#endif  // USE_BNO085
 
     // Set buzzer
     ESP_ERROR_CHECK(buzzer_init());

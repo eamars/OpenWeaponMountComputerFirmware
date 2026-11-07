@@ -144,9 +144,8 @@ void create_main_tileview(lv_obj_t *parent)
     lv_obj_set_user_data(tile_sensor_calibration_view, enter_sensor_calibration_mode);  // No need for callback
     create_sensor_calibration_view(tile_sensor_calibration_view);
 
-    // Configuration view (Swiped right from digital level view)
-    // FIXME: The configuration view has to be added the latest, to ensure all other configurations are created (along with other tile views)
-    //  Perhaps the configuration should be loaded before the creation of the view off one go. 
+    // Configuration view (Swiped right from digital level view). Every setting it shows is read at start-up, so it
+    // does not depend on the other views being created first
     lv_obj_t * tile_config_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
     create_config_view(tile_config_view);
 

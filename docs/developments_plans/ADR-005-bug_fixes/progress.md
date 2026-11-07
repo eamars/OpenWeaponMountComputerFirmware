@@ -396,3 +396,15 @@ C1 to C4 done, each committed and checked on the unit's normal path. Still to ru
 ### ADR-005 closed (2026-11-07)
 
 Owner: no need for the closing 10-minute idle/wake run; continue to the next ADR. Steps 1 to 4 are built. Carried, not code work: B25's tare path (and its magnetic versus game rotation vector basis) is to be run on a later unit; the Wi-Fi status after a new provisioning is checked at the next provisioning.
+
+### Step 3 leftover: the configuration view no longer has to be created last (2026-11-07, reopened)
+
+Found after closing: step 3's plan said "any start-up order" would remove the `main_tileview.c` FIXME "the configuration view has to be added the latest". It had not. The level's settings page reads `digital_level_view_config`, which was loaded inside the level view's create function, so the configuration view had to come after it. Every other setting the configuration view shows was already read at start-up (system, remote control and sensor in `app_main`, Wi-Fi in `wifi_init`, PMIC in `axp2101_init`). Now `app_main` reads the level settings too, next to the sensor settings; the view's create no longer reads them; the FIXME is replaced by a comment saying why the order no longer matters.
+
+Proof: reboot (`rc_boot_timing_20261107_125616.log`): `NS: DLV` read at 38 ms, before the LVGL task starts (1.7 s); the level reports. `scenario state_change` PASS (`rc_state_change_20261107_125717.log`), rotation back to 1. Not seen by eye: the level settings page with the saved values.
+
+Seen in that run, once: on one wake from idle, `Sensor value queue is not initialized for sensor ID 2` (a gyroscope report, which nothing configures), right after the sensor's wake. First time in every log on record; the driver dropped it, as it should. Not caused by the C4 table change (the ID comes from the packet, and ID 2 is inside the table at either size). Recorded, not chased.
+
+Also found, older than this ADR: the countdown and dope tiles save their settings each time they are switched off, including at every boot (`NS: CT` and `NS: DOPE` "write successfully" in every boot log), whether or not anything changed. NVS spreads the wear; recorded, not changed.
+
+Owner on the two zeros (2026-11-07): intended. Tare is the factory calibration; zeroing captures the mounting offset on the gun.
