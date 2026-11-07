@@ -1,6 +1,6 @@
 # ADR-006: the timer tile, and screen corners for every view
 
-Status: **Draft** 2026-11-07, for the owner to decide.
+Status: **Open.** Approved 2026-11-07 ("Approve"), with every recommendation below.
 
 ## What we want
 
@@ -121,8 +121,8 @@ The level view: the timer widget (200 px round, `LEFT_MID` in landscape) and the
 ## For the owner to decide
 
 1. ~~The panel's corner radius~~: 30 px, from the panel datasheet (2026-11-07; CO5300 is SH8601-compatible).
-2. **Starting a preset returns to the level view** (recommended), or stays on the tile.
+2. ~~Starting a preset~~ returns to the level view (owner, 2026-11-07).
 3. ~~Editing step~~: a setting, 5, 10 or 15 s, default 5 s (owner, 2026-11-07).
-4. **Three presets** (recommended: 1:30, 2:00, 1:00), or two.
-5. **The order**: capture first (recommended), then corners, tile, saving.
+4. ~~Presets~~: three, 1:30, 2:00, 1:00 (owner, 2026-11-07).
+5. ~~The order~~: capture first, then corners, tile, saving. Owner: prioritise the implementation, and consider a screen capture or mirror over serial or the network so tests can run without the owner.
 6. ~~Settings placement~~: the timer's settings grouped on a Timer page in this ADR; the others move when their feature is reviewed (owner, 2026-11-07).
