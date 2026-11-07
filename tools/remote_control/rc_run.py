@@ -6,6 +6,7 @@ file, counts failure markers and prints a verdict.
 Usage (repo venv):
     venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py send "state"
     venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py scenario state_change --min-lvgl-stack 2048 --min-largest-dma 80000
+    venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py send snap   (PNG of the screen in logs/rc/snaps/)
 
 Opening the port may reset the board. After opening, the runner sends `state` every 2 s until
 the device answers, so the boot is part of the session and its markers are counted. During that
@@ -13,11 +14,14 @@ boot, `rst:` lines are expected, and one abort right after "Failed to detect BNO
 """
 
 import argparse
+import base64
 import datetime
 import pathlib
 import re
+import struct
 import sys
 import time
+import zlib
 
 import serial
 
@@ -26,6 +30,9 @@ BAUD_RATE = 115200
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 # Outside build/: idf.py fullclean and set-target delete build/, and with it the evidence (ADR-005 B22)
 DEFAULT_LOG_DIR = REPO_ROOT / "logs" / "rc"
+DEFAULT_SNAP_DIR = DEFAULT_LOG_DIR / "snaps"
+# The panel's pixel area has rounded corners: R2.30 mm at 0.078 mm a pixel (DO0164FMST05 datasheet, ADR-006)
+PANEL_CORNER_RADIUS_PX = 30
 
 COMMAND_TIMEOUT_S = 5.0
 READY_TIMEOUT_S = 60.0
@@ -51,6 +58,7 @@ REPLY_PREFIXES = {
     "stats": "@ok free_int=",
     "bt": "@ok bt",
     "pmic": "@ok pmic",
+    "snap": "@ok snap",
     "tap": "@ok tap",
     "swipe": "@ok swipe",
     "tile": "@ok tile=",
@@ -132,6 +140,8 @@ class Session:
         self.min_stack = {}       # task name -> lowest free stack seen (B)
         self.min_largest_dma = None
         self.last_stats_time = None
+        self.snap_header = None   # "@snap <w> <h> <format>" of the screen copy being received
+        self.snap_data = []       # its "@sd" base64 lines
 
     def close(self):
         """Close the port and the log file."""
@@ -170,6 +180,11 @@ class Session:
                 *complete, self.rx_buffer = self.rx_buffer.split(b"\n")
                 for raw in complete:
                     line = raw.decode("utf-8", errors="replace").rstrip("\r")
+                    if line.startswith("@sd "):
+                        self.snap_data.append(line[4:])  # screen copy data: kept, not logged line by line
+                        continue
+                    if line.startswith("@snap "):
+                        self.snap_header = line
                     self._write_log("<", line)
                     self.lines.append(line)
                     self._check_markers(line)
@@ -257,6 +272,40 @@ class Session:
         if line == "stats" and reply.startswith("@ok"):
             self._record_stats(reply)
         return reply
+
+    def snap(self, path: pathlib.Path) -> bool:
+        """Copy the screen (`snap`) and save it as a PNG; the panel's rounded corners are tinted red.
+
+        Args:
+            path: PNG file to write.
+
+        Returns:
+            True when the copy arrived whole and was saved.
+        """
+        self.snap_header = None
+        self.snap_data = []
+        reply = self.command("snap")
+        if not reply.startswith("@ok snap") or self.snap_header is None:
+            return False
+        _, width, height, fmt = self.snap_header.split()
+        width, height = int(width), int(height)
+        lines = int(reply.split("lines=")[1])
+        if fmt != "rgb565rle" or len(self.snap_data) != lines:
+            self.failures.append(f"snap: {len(self.snap_data)} of {lines} data lines")
+            return False
+
+        pairs = b"".join(base64.b64decode(chunk) for chunk in self.snap_data)
+        pixels = []
+        for count, value in struct.iter_unpack("<HH", pairs):
+            pixels.extend([value] * count)
+        if len(pixels) != width * height:
+            self.failures.append(f"snap: {len(pixels)} pixels, expected {width * height}")
+            return False
+
+        write_snap_png(path, width, height, pixels)
+        self._write_log("#", f"snap saved: {path}")
+        print(f"snap: {path}")
+        return True
 
     def _record_stats(self, reply: str):
         """Keep the lowest largest_dma and the lowest free stack per task from a stats reply."""
@@ -351,6 +400,41 @@ class Session:
             return False
         print("VERDICT PASS")
         return True
+
+
+def outside_panel(x: int, y: int, width: int, height: int, radius: int = PANEL_CORNER_RADIUS_PX) -> bool:
+    """True when pixel (x, y) lies in a rounded-off corner of the panel, where nothing is shown."""
+    cx = radius if x < radius else (width - 1 - radius if x > width - 1 - radius else None)
+    cy = radius if y < radius else (height - 1 - radius if y > height - 1 - radius else None)
+    if cx is None or cy is None:
+        return False
+    return (x - cx) ** 2 + (y - cy) ** 2 > radius ** 2
+
+
+def write_snap_png(path: pathlib.Path, width: int, height: int, pixels: list):
+    """Write RGB565 pixels as an RGB PNG; pixels the panel cannot show are tinted red, so content cut by a
+    corner stands out."""
+    rows = bytearray()
+    for y in range(height):
+        rows.append(0)  # PNG filter: none
+        for x in range(width):
+            v = pixels[y * width + x]
+            r = ((v >> 11) & 0x1F) * 255 // 31
+            g = ((v >> 5) & 0x3F) * 255 // 63
+            b = (v & 0x1F) * 255 // 31
+            if outside_panel(x, y, width, height):
+                r, g, b = (r + 255) // 2, g // 2, b // 2
+            rows += bytes((r, g, b))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n")
+        f.write(chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)))
+        f.write(chunk(b"IDAT", zlib.compress(bytes(rows), 9)))
+        f.write(chunk(b"IEND", b""))
 
 
 def wait_for_ip_address(session: Session, start_index: int, accept_connected: bool):
@@ -557,6 +641,8 @@ def main(argv) -> int:
             if args.action == "send":
                 if args.line == "stats":
                     session.stats()
+                elif args.line == "snap":
+                    session.snap(DEFAULT_SNAP_DIR / f"snap_{stamp}.png")
                 else:
                     session.command(args.line)
             else:

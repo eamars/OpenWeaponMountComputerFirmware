@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <inttypes.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -42,6 +43,7 @@
 #define RC_GESTURE_MARGIN_MS 1000
 #define RC_GESTURE_POLL_MS 10
 #define RC_TAP_PRESS_MS 100
+#define RC_TAP_HOLD_MAX_MS 1500     // `tap x y hold_ms`: a long press, within the serial stop timeout
 #define RC_SWIPE_STEPS 6
 #define RC_SWIPE_STEP_MS 25         // 6 steps over 150 ms
 #define RC_SWIPE_DISTANCE_PCT 60
@@ -52,7 +54,7 @@
 #define RC_MAX_ARGS 4
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats bt pmic tap swipe tile rot wifi save idle wake reboot hang bnoreset"
+#define RC_HELP_COMMANDS "help state stats bt pmic snap tap swipe tile rot wifi save idle wake reboot hang bnoreset"
 
 
 typedef struct {
@@ -329,7 +331,9 @@ static bool rc_cmd_stats(char *reply, size_t reply_size) {
 static bool rc_cmd_tap(int argc, char **argv, char *reply, size_t reply_size) {
     long x;
     long y;
-    if (argc != 3 || !rc_parse_long(argv[1], &x) || !rc_parse_long(argv[2], &y)) {
+    long hold_ms = RC_TAP_PRESS_MS;  // `tap x y hold_ms` holds longer, for a long press
+    if ((argc != 3 && argc != 4) || !rc_parse_long(argv[1], &x) || !rc_parse_long(argv[2], &y) ||
+        (argc == 4 && (!rc_parse_long(argv[3], &hold_ms) || hold_ms < 1 || hold_ms > RC_TAP_HOLD_MAX_MS))) {
         return rc_reply(reply, reply_size, false, "@err args");
     }
 
@@ -346,13 +350,13 @@ static bool rc_cmd_tap(int argc, char **argv, char *reply, size_t reply_size) {
     }
 
     const rc_point_t points[] = {
-        { .x = x, .y = y, .pressed = true, .hold_ms = RC_TAP_PRESS_MS },
+        { .x = x, .y = y, .pressed = true, .hold_ms = (uint32_t) hold_ms },
         { .x = x, .y = y, .pressed = false, .hold_ms = 0 },
     };
     rc_pointer_start(points, sizeof(points) / sizeof(points[0]));
     lvgl_port_unlock();
 
-    if (!rc_pointer_wait(RC_TAP_PRESS_MS)) {
+    if (!rc_pointer_wait((uint32_t) hold_ms)) {
         return rc_reply(reply, reply_size, false, "@err busy");
     }
 
@@ -621,6 +625,145 @@ static bool rc_cmd_pmic(char *reply, size_t reply_size) {
 }
 
 
+// Debug: copy what the screen shows and print it, for layout checks without a camera (ADR-006). The image is
+// RGB565 (LVGL's byte order), run-length encoded as little-endian (uint16 count, uint16 pixel) pairs, printed as
+// base64 lines "@sd <data>" between "@snap <w> <h> rgb565rle" and the reply. The copy lives in PSRAM only while
+// it is printed
+#define RC_SNAP_PAIRS_PER_LINE 96    // 384 bytes of pairs, 512 characters of base64 per line
+
+static const char rc_base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+HEAPS_CAPS_ATTR static uint8_t rc_snap_pairs[RC_SNAP_PAIRS_PER_LINE * 4];
+HEAPS_CAPS_ATTR static char rc_snap_line[4 + (RC_SNAP_PAIRS_PER_LINE * 4 / 3 + 1) * 4 + 2];
+
+// Print one data line from the first `len` bytes of rc_snap_pairs
+static void rc_snap_print_line(size_t len) {
+    size_t out = 0;
+    memcpy(rc_snap_line, "@sd ", 4);
+    out = 4;
+    for (size_t i = 0; i < len; i += 3) {
+        uint32_t v = (uint32_t) rc_snap_pairs[i] << 16;
+        if (i + 1 < len) {
+            v |= (uint32_t) rc_snap_pairs[i + 1] << 8;
+        }
+        if (i + 2 < len) {
+            v |= rc_snap_pairs[i + 2];
+        }
+        rc_snap_line[out++] = rc_base64_chars[(v >> 18) & 0x3F];
+        rc_snap_line[out++] = rc_base64_chars[(v >> 12) & 0x3F];
+        rc_snap_line[out++] = (i + 1 < len) ? rc_base64_chars[(v >> 6) & 0x3F] : '=';
+        rc_snap_line[out++] = (i + 2 < len) ? rc_base64_chars[v & 0x3F] : '=';
+    }
+    rc_snap_line[out] = '\0';
+    printf("%s\n", rc_snap_line);
+}
+
+
+// The copy is rendered in the LVGL task: rendering needs its stack (the serial task's overflowed)
+// rc_snap_wanted and rc_snap_buf change only with the LVGL lock held (the async call runs with it)
+static lv_draw_buf_t * rc_snap_buf = NULL;
+static bool rc_snap_wanted = false;
+static SemaphoreHandle_t rc_snap_done = NULL;
+
+static void rc_snap_render_async(void * p) {
+    if (!rc_snap_wanted) {
+        return;  // the command gave up waiting (LVGL was stopped, the unit idle)
+    }
+    rc_snap_buf = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB565);
+    xSemaphoreGive(rc_snap_done);
+}
+
+
+static bool rc_cmd_snap(char *reply, size_t reply_size) {
+    if (rc_snap_done == NULL) {
+        rc_snap_done = xSemaphoreCreateBinary();
+        if (rc_snap_done == NULL) {
+            return rc_reply(reply, reply_size, false, "@err nomem");
+        }
+    }
+
+    if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
+        return rc_reply(reply, reply_size, false, "@err busy");
+    }
+    rc_snap_buf = NULL;
+    rc_snap_wanted = true;
+    xSemaphoreTake(rc_snap_done, 0);
+    lv_async_call(rc_snap_render_async, NULL);
+    lvgl_port_unlock();
+    lvgl_port_task_wake(LVGL_PORT_EVENT_USER, NULL);
+
+    if (xSemaphoreTake(rc_snap_done, pdMS_TO_TICKS(RC_LVGL_LOCK_TIMEOUT_MS)) != pdTRUE) {
+        // LVGL is stopped while the unit is idle: withdraw the request, so the call does nothing when LVGL
+        // resumes; a copy that arrived meanwhile is freed here
+        bool locked = lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS);
+        rc_snap_wanted = false;
+        if (locked && rc_snap_buf != NULL) {
+            lv_draw_buf_destroy(rc_snap_buf);
+            rc_snap_buf = NULL;
+        }
+        if (locked) {
+            lvgl_port_unlock();
+        }
+        return rc_reply(reply, reply_size, false, "@err busy");
+    }
+    rc_snap_wanted = false;
+    lv_draw_buf_t * snap = rc_snap_buf;
+    rc_snap_buf = NULL;
+    if (snap == NULL) {
+        return rc_reply(reply, reply_size, false, "@err nomem");
+    }
+
+    uint32_t w = snap->header.w;
+    uint32_t h = snap->header.h;
+    uint32_t stride = snap->header.stride;
+    printf("@snap %" PRIu32 " %" PRIu32 " rgb565rle\n", w, h);
+
+    // Pixels in row order; a run may cross rows
+    size_t pair_bytes = 0;
+    uint32_t lines = 0;
+    uint16_t run_pixel = 0;
+    uint32_t run_count = 0;
+    for (uint32_t y = 0; y < h; y++) {
+        const uint16_t * row = (const uint16_t *) (snap->data + y * stride);
+        for (uint32_t x = 0; x < w; x++) {
+            uint16_t pixel = row[x];
+            if (run_count > 0 && pixel == run_pixel && run_count < UINT16_MAX) {
+                run_count++;
+                continue;
+            }
+            if (run_count > 0) {
+                rc_snap_pairs[pair_bytes++] = run_count & 0xFF;
+                rc_snap_pairs[pair_bytes++] = run_count >> 8;
+                rc_snap_pairs[pair_bytes++] = run_pixel & 0xFF;
+                rc_snap_pairs[pair_bytes++] = run_pixel >> 8;
+                if (pair_bytes == sizeof(rc_snap_pairs)) {
+                    rc_snap_print_line(pair_bytes);
+                    pair_bytes = 0;
+                    lines++;
+                }
+            }
+            run_pixel = pixel;
+            run_count = 1;
+        }
+    }
+    if (run_count > 0) {
+        rc_snap_pairs[pair_bytes++] = run_count & 0xFF;
+        rc_snap_pairs[pair_bytes++] = run_count >> 8;
+        rc_snap_pairs[pair_bytes++] = run_pixel & 0xFF;
+        rc_snap_pairs[pair_bytes++] = run_pixel >> 8;
+    }
+    if (pair_bytes > 0) {
+        rc_snap_print_line(pair_bytes);
+        lines++;
+    }
+    fflush(stdout);
+
+    lv_draw_buf_destroy(snap);
+
+    return rc_reply(reply, reply_size, true, "@ok snap %" PRIu32 " %" PRIu32 " lines=%" PRIu32, w, h, lines);
+}
+
+
 // Debug: print every task's backtrace to the console (ROM printing). Needs no LVGL lock, so it
 // still works when the LVGL task is stuck; decode the addresses with the matching ELF.
 static bool rc_cmd_bt(char *reply, size_t reply_size) {
@@ -671,7 +814,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     const char *cmd = argv[0];
     bool is_observer = strcmp(cmd, "idle") == 0 || strcmp(cmd, "state") == 0 ||
                        strcmp(cmd, "stats") == 0 || strcmp(cmd, "help") == 0 ||
-                       strcmp(cmd, "bt") == 0 || strcmp(cmd, "pmic") == 0;
+                       strcmp(cmd, "bt") == 0 || strcmp(cmd, "pmic") == 0 || strcmp(cmd, "snap") == 0;
     bool is_known = is_observer ||
                     strcmp(cmd, "tap") == 0 || strcmp(cmd, "swipe") == 0 || strcmp(cmd, "tile") == 0 ||
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
@@ -714,6 +857,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
             return rc_reply(reply, reply_size, false, "@err args");
         }
         return rc_cmd_bt(reply, reply_size);
+    }
+    if (strcmp(cmd, "snap") == 0) {
+        if (argc != 1) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        return rc_cmd_snap(reply, reply_size);
     }
     if (strcmp(cmd, "pmic") == 0) {
         if (argc != 1) {
