@@ -12,7 +12,6 @@
 #include "display_shape.h"
 #include "value_editor.h"
 #include "settings_ui.h"
-#include "config_view.h"
 #include "level_band.h"
 #include "kestrel_service.h"
 

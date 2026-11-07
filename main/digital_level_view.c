@@ -16,7 +16,6 @@
 #include "bno085.h"
 #include "esp_lvgl_port.h"
 #include "countdown_timer.h"
-#include "config_view.h"
 #include "dope_config_view.h"
 #include "level_band.h"
 #include "display_shape.h"

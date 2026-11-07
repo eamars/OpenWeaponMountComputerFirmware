@@ -1,6 +1,6 @@
 # ADR-008: the settings pages, in the design language of the other views
 
-Status: **Open** 2026-11-07. The owner: "Let's build first and I will see if my finger will like larger or smaller items." Steps 1 and 2 built ([progress](progress.md)); the owner chose 3 rows of 96 px in portrait by hand. Left: the owner's check of every page by hand, step 3 (removing the old helpers, the power button's menu).
+Status: **Built** 2026-11-07, for review. The owner: "Let's build first and I will see if my finger will like larger or smaller items." Steps 1 to 3 built ([progress](progress.md)); the owner chose 3 rows of 96 px in portrait and checked the pages and the power menu by hand. The update's screens rebuilt too, and the whole update run against the local OTA host (`scripts/ota_host.py`), with its manifest formats.
 
 ## What we want
 
@@ -75,9 +75,9 @@ No Save and no Reload. A choice, toggle or number is stored when it changes (onc
 | Kestrel | Mode; HUD name or Your Kestrel and Find Kestrels; status; Reset |
 | Level | Level style, Roll display gain, Pitch display gain, Level threshold, Left / Right / Level / Foreground colour, Reset |
 | Display | Screen rotation, Screen brightness, Reset |
-| Wi-Fi | Status, Wi-Fi on, Provisioning QR code, Forget network (asks), Reset |
+| Wi-Fi | Status, Wi-Fi on, Set-up QR code (only while waiting to be set up), Forget network (asks; only once set up; the page's reset) |
 | Power | Battery and supply status, Idle timeout, Sleep timeout, Reset |
-| Advanced | Log level, Remote control, Recoil trigger level, the three sensor reports, Tare calibration, Sensor calibration, VBUS current limit, Battery charge current and voltage |
+| Advanced | Log level, Remote control, Recoil trigger level, the three sensor reports, Tare calibration, USB current limit, Battery charge current and voltage |
 | About | Versions and build; Install update when one exists |
 
 Display takes rotation and brightness from System Config; Advanced takes the engineering settings that a shooter does not change at a match (log level, remote control, sensor reports and calibration, charging). Each setting keeps its storage; only where it is shown changes.
@@ -90,4 +90,4 @@ Display takes rotation and brightness from System Config; Advanced takes the eng
 
 ## Not in this ADR
 
-The level view, the timer and dope tiles (already in this design language), the provisioning flow itself, and the update flow beyond its row.
+The level view, the timer and dope tiles (already in this design language) and the provisioning flow itself. The update's screens came in at the end, at the owner's request (the OTA check); its flow is unchanged apart from the download's speed.

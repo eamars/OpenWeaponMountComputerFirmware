@@ -6,7 +6,6 @@
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 
-#include "config_view.h"
 #include "pmic_axp2101.h"
 #include "pmic_config.h"
 #include "wifi.h"
@@ -41,15 +40,10 @@ static void ui_bridge_show_wifi_status() {
 static void ui_bridge_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     lvgl_port_lock(0);
 
-    if (event_id == WIFI_SERVICE_EVENT_STATUS_CHANGED) {
+    // A provisioning reset (Forget network) shows through the status as well: the Wi-Fi page's status line and
+    // its rows follow it (ADR-008); a failure is logged by the Wi-Fi service and is not fatal (ADR-005 B10)
+    if (event_id == WIFI_SERVICE_EVENT_STATUS_CHANGED || event_id == WIFI_SERVICE_EVENT_PROVISION_RESET) {
         ui_bridge_show_wifi_status();
-    }
-    else if (event_id == WIFI_SERVICE_EVENT_PROVISION_RESET && msg_box != NULL) {
-        esp_err_t ret = *(esp_err_t *) event_data;
-        // A failure (e.g. Wi-Fi already shut down by the expiry) is reported, not fatal (ADR-005 B10)
-        update_info_msg_box(msg_box, ret == ESP_OK ?
-            "WiFi Provisioning reset. Please re-provision the device." :
-            "WiFi Provisioning reset failed. Power cycle the device and try again.");
     }
 
     lvgl_port_unlock();
@@ -82,7 +76,7 @@ static void ui_bridge_pmic_event_handler(void *arg, esp_event_base_t event_base,
         ui_bridge_show_pmic_status();
     }
     else if (event_id == PMIC_SERVICE_EVENT_POWER_KEY_LONG_PRESS) {
-        power_menu_make_visible();
+        power_menu_show(true);
     }
 
     lvgl_port_unlock();

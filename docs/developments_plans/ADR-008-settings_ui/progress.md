@@ -79,4 +79,48 @@ Owner: after the last target a tap should go to the first, and a hold on the fir
 
 On the unit (rotation 1, a card of 8 set targets: 1 to 6, 11, 12; captures `logs/rc/snaps/wrap`): taps 1 → 2 … 12 → 1, hold 6 → 5, hold on 1 → 12, tap → 1. Stepping is memory only; no setting written. Left on target 1.
 
-**The owner's check by hand (2026-11-07)**: "I have tested most of the feature you mentioned" (changing settings, the Resets, Forget network, the Kestrel search list, the QR page, the rows shown by state). Step 2 committed.
+**The owner's check by hand (2026-11-07)**: "I have tested most of the feature you mentioned" (changing settings, the Resets, Forget network, the Kestrel search list, the QR page, the rows shown by state). Step 2 committed (`3e07b4d`).
+
+## Step 3: the power button's menu, and the old helpers removed (2026-11-07)
+
+- **The power button's menu** (hold the power button) was the old light message box: two 200 x 60 px buttons (a red Reboot, a blue Power Off) and an OK. It is now a full black screen over whichever view shows, as the settings' confirmations: "Power", then Reboot (orange), Power off (red) and Cancel. Portrait: stacked, 95 px each; landscape: side by side under the title, Cancel on the left, 133 x 122 px each, their text 24 px (at 32 px "Power off" was cut). It follows a rotation while open.
+- **Removed**: the old settings helpers in `config_view.c` (menu rows, spin box, colour picker, drop-down, Save/Reload/Reset buttons, switch, single button, message box, page rebuild) and the shared message box. `config_view.h` now declares only the settings tile; the level's colour count moved to `digital_level_view.h`. Forget network's result showed in that message box; the Wi-Fi page's status line and rows now show it, and a failure to erase the credentials is logged.
+- **Remote control**: `settings power show|hide` opens and closes the menu for a capture; its buttons are never pressed by it.
+
+On the unit (`rc_power_*`, captures `logs/rc/snaps/power`): the menu over the level and over the settings, portrait and landscape, and rotated while open; closed, the view underneath is as it was. No setting written. Its buttons (Reboot, Power off, Cancel) are the owner's to press.
+
+The owner pressed the menu's buttons by hand: "Power menu works."
+
+## The update (OTA), last (2026-11-07)
+
+Owner: set up the OTA server and run the whole update; the screens first with mock data, then the full test.
+
+**Screens.** The update's two screens were the old light design: the offer (small Cancel and Start Upgrade buttons, recoloured inline text) and the OTA tile (circular-scrolling labels, a default bar, a small Reboot). Both rebuilt in the settings' design:
+
+- **The offer**: black, "Update available" (or "Important update") in orange, the version and the release note, scrolling with a scroll bar when long; Install (orange) and Cancel. Portrait: the text over the two buttons; landscape: Install over Cancel in a 150 px column on the right, the text beside them (over the buttons it had 90 px).
+- **The OTA tile**: the step (Connecting, Downloading, Checking) in orange, a 24 px orange bar, "1113 K of 2375 K"; at the end "Update installed / Restart to run it" or "Update failed", the reason, the error's name on its own line (so it is not broken inside) and "The unit keeps its firmware"; Restart. Landscape puts Restart in a column on the right (under the text it did not fit).
+- **The hub's row**: orange with its version in white (`settings_row_highlight`; orange on orange could not be read).
+- The update task now waits for the screen (1 s) to show each step and the outcome; it used to skip them when the screen was busy, which could leave the tile without its Restart.
+
+Checked with mock data (remote control `ota mock [critical] | offer show|hide | view connecting|downloading|done|failed`, memory only, no download), portrait and landscape (`logs/rc/snaps/ota_ui`).
+
+**The server.** `scripts/ota_host.py` (the owner's) announces `owmc_update.local` over mDNS and serves the manifest and the build: now with the declared version, the note and the importance as options, a manifest file served as written (format tests), every request printed, only those two paths served (it served the whole folder), and the network's address (the host name's address can be another adapter's).
+
+**Full update, three times, landscape, Install and Restart tapped on the real buttons** (`rc_ota_*`, `logs/rc/snaps/ota_full`): the check at boot finds the host, the hub shows the row and the offer the real note; Install downloads into `ota_1` with the progress shown, "Update installed", Restart, and the unit boots from `ota_1` (`Loaded app from partition at offset 0x720000`). No setting written.
+
+- **The download was slow: 87 s for 2.4 MB (28 KB/s).** It read 512 B at a time and paused 20 ms after each read. Now it reads 4 KB at a time with a 1 ms pause (the task runs above the screen's; the pause keeps the screen and the idle tasks' watchdog served): 41.5 s, no watchdog warning. The rest is the flash and the Wi-Fi; not pursued.
+- Found on the way: with progress shown four times a second, the finished screen read "2361 K of 2375 K"; the whole amount is now shown when the check starts. The final build went over the air and shows "2375 K of 2375 K".
+
+**Manifest formats**, each with a restart (`rc_ota_fmt_*`, `logs/rc/snaps/ota_formats`):
+
+| Manifest | Result |
+|---|---|
+| Critical (importance 1), newer | The offer at once, over the level; the hub's row |
+| The same version (v0.0.1), by version | Not offered |
+| Without `importance` | Rejected ("Failed to extract importance"); not offered |
+| Cut-off JSON | Rejected ("Failed to decode json string"); not offered |
+| Version "latest", by version | Rejected ("Cannot read the manifest version"); not offered |
+
+A rejected manifest goes on to the second source, the central server's placeholder, which does not answer, as before. The log line for a version not newer said "newer than"; it now says "the same as or newer than".
+
+Left on the unit: running from `ota_1` (the next USB flash goes back to `ota_0`); the hub shows "Update available" until the next restart (the host offered the same build whatever its version); rotation 1, the level.

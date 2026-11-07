@@ -99,6 +99,9 @@ void settings_row_status(settings_page_t * page, settings_text_fn text, void * c
  */
 void settings_row_shown_when(settings_page_t * page, bool (*shown)(void));
 
+/** @brief The row just added in orange, its icon and value in white: the one row that asks for attention (an update) */
+void settings_row_highlight(settings_page_t * page);
+
 /** @brief Whether the page is open (anywhere on the stack), and whether it is the one showing */
 bool settings_ui_is_open(settings_page_t * page);
 bool settings_ui_is_top(settings_page_t * page);

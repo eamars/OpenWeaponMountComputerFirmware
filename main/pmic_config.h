@@ -14,10 +14,11 @@ void pmic_settings_summary(char * buf, size_t size, void * ctx);
 void pmic_settings_add_advanced_rows(settings_page_t * page);
 void pmic_settings_reset_advanced(void);
 
-/** @brief The power button's menu (Reboot, Power off), built once at start-up */
+/** @brief The power button's menu (Reboot, Power off, Cancel), full screen over every view; built once at start-up */
 void create_power_menu_overlay(void);
 
-/** @brief Show the power menu (Reboot, Power Off). LVGL lock held; does nothing before the menu exists. */
-void power_menu_make_visible();
+/** @brief Show or close the power menu (the held power button shows it). LVGL lock held; nothing before it exists */
+void power_menu_show(bool show);
+bool power_menu_shown(void);
 
 #endif  // PMIC_CONFIG_H_

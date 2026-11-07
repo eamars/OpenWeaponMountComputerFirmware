@@ -6,7 +6,6 @@
 #include "nvs.h"
 #include "common.h"
 #include "esp_check.h"
-#include "config_view.h"
 #include "digital_level_view.h"
 #include "display_shape.h"
 #include "main_tileview.h"

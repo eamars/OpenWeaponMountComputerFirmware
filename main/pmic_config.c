@@ -10,8 +10,9 @@
 #include "nvs.h"
 #include "common.h"
 #include "app_cfg.h"
-#include "config_view.h"
 #include "settings_ui.h"
+#include "value_editor.h"
+#include "display_shape.h"
 #include "ota_mode.h"
 
 #include "lvgl.h"
@@ -21,7 +22,6 @@
 #define NVS_NAMESPACE "PMG"
 
 static lv_obj_t * power_menu = NULL;
-
 
 HEAPS_CAPS_ATTR power_management_config_t power_management_config;
 const power_management_config_t default_power_management_config = {
@@ -92,46 +92,120 @@ void on_power_off_button_pressed(lv_event_t * e) {
 }
 
 
-static void create_power_menu(lv_obj_t * parent) {
-    lv_obj_t * container = lv_obj_create(parent);
+/*
+----------------------------------------------------
+The power button's menu (ADR-008): a full screen over every view, as the settings' confirmations: what the
+held button can do, each a large button, and Cancel. Portrait: stacked; landscape: side by side under the title
+----------------------------------------------------
+*/
 
-    lv_obj_remove_style_all(container);  // nuclear option
-    lv_obj_set_style_pad_row(container, 20, 0);  // vertical spacing
+#define POWER_MENU_GAP_PX 20
 
-    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_size(container, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, LV_PART_MAIN);  // semi transparent background
+static lv_obj_t * power_menu_title = NULL;
+static lv_obj_t * reboot_button = NULL;
+static lv_obj_t * power_off_button = NULL;
+static lv_obj_t * power_cancel_button = NULL;
 
 
-    lv_obj_t * reboot_button = lv_button_create(container);
-    lv_obj_set_style_bg_color(reboot_button, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_size(reboot_button, 200, 60);
-    lv_obj_add_event_cb(reboot_button, on_reboot_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
+static void layout_power_menu(void) {
+    static const int32_t portrait_cols[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static const int32_t portrait_rows[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1),
+                                            LV_GRID_TEMPLATE_LAST};
+    static const int32_t landscape_cols[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static const int32_t landscape_rows[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
 
-    lv_obj_t * reboot_button_label = lv_label_create(reboot_button);
-    lv_label_set_text(reboot_button_label, "Reboot");
-    lv_obj_center(reboot_button_label);
-    lv_obj_set_style_text_font(reboot_button_label, &lv_font_montserrat_28, LV_PART_MAIN);
+    // Three buttons side by side in landscape are 133 px wide: "Power off" fits at 24 px, not at 32
+    bool portrait = lv_obj_get_height(power_menu) > lv_obj_get_width(power_menu);
+    const lv_font_t * font = portrait ? &lv_font_montserrat_32 : &lv_font_montserrat_24;
+    lv_obj_t * buttons[] = {reboot_button, power_off_button, power_cancel_button};
+    for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); i++) {
+        lv_obj_set_style_text_font(lv_obj_get_child(buttons[i], 0), font, LV_PART_MAIN);
+    }
 
-#if USE_PMIC
-    lv_obj_t * power_off_button = lv_button_create(container);
-    lv_obj_set_style_bg_color(power_off_button, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_size(power_off_button, 200, 60);
-    lv_obj_add_event_cb(power_off_button, on_power_off_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
-
-    lv_obj_t * power_off_button_label = lv_label_create(power_off_button);
-    lv_label_set_text(power_off_button_label, "Power Off");
-    lv_obj_center(power_off_button_label);
-    lv_obj_set_style_text_font(power_off_button_label, &lv_font_montserrat_28, LV_PART_MAIN);
-#endif  // USE_PMIC
+    if (portrait) {
+        lv_obj_set_grid_dsc_array(power_menu, portrait_cols, portrait_rows);
+        lv_obj_set_grid_cell(power_menu_title, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
+        lv_obj_set_grid_cell(reboot_button, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
+        lv_obj_set_grid_cell(power_off_button, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 2, 1);
+        lv_obj_set_grid_cell(power_cancel_button, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 3, 1);
+    }
+    else {
+        // Cancel on the left, as the settings' confirmations
+        lv_obj_set_grid_dsc_array(power_menu, landscape_cols, landscape_rows);
+        lv_obj_set_grid_cell(power_menu_title, LV_GRID_ALIGN_STRETCH, 0, 3, LV_GRID_ALIGN_CENTER, 0, 1);
+        lv_obj_set_grid_cell(power_cancel_button, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
+        lv_obj_set_grid_cell(reboot_button, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
+        lv_obj_set_grid_cell(power_off_button, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
+    }
 }
 
 
-void power_menu_make_visible() {
-    if (power_menu != NULL) {
-        lv_obj_clear_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+static void power_menu_size_changed_cb(lv_event_t * e) {
+    layout_power_menu();
+}
+
+
+static void power_cancel_cb(lv_event_t * e) {
+    power_menu_show(false);
+}
+
+
+static lv_obj_t * create_power_menu_button(const char * text, lv_color_t colour, lv_event_cb_t cb) {
+    lv_obj_t * button = value_editor_create_button(power_menu, LV_PALETTE_GREY);
+    lv_obj_set_style_bg_color(button, colour, LV_PART_MAIN);
+    lv_label_set_text(value_editor_create_label(button, &lv_font_montserrat_32), text);
+    lv_obj_add_event_cb(button, cb, LV_EVENT_SHORT_CLICKED, NULL);
+    return button;
+}
+
+
+void power_menu_show(bool show) {
+    if (power_menu == NULL) {
+        return;
     }
+    if (show) {
+        layout_power_menu();
+        lv_obj_remove_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(power_menu);
+    }
+    else {
+        lv_obj_add_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+
+bool power_menu_shown(void) {
+    return power_menu != NULL && !lv_obj_has_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+}
+
+
+// On the screen, over the tiles (brought to the front when shown), so it covers whichever view is showing; the
+// remote control's capture reads the screen
+void create_power_menu_overlay(void) {
+    power_menu = lv_obj_create(lv_screen_active());
+    lv_obj_remove_style_all(power_menu);
+    lv_obj_set_size(power_menu, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(power_menu, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(power_menu, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(power_menu, DISPLAY_MARGIN_PX, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(power_menu, POWER_MENU_GAP_PX, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(power_menu, POWER_MENU_GAP_PX, LV_PART_MAIN);
+    lv_obj_remove_flag(power_menu, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(power_menu, LV_OBJ_FLAG_CLICKABLE);       // nothing behind it takes a tap
+    lv_obj_add_event_cb(power_menu, power_menu_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
+
+    power_menu_title = value_editor_create_label(power_menu, &lv_font_montserrat_24);
+    lv_obj_set_style_text_align(power_menu_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_label_set_text(power_menu_title, "Power");
+
+    reboot_button = create_power_menu_button("Reboot", lv_palette_darken(LV_PALETTE_ORANGE, 2),
+                                             on_reboot_button_pressed);
+    power_off_button = create_power_menu_button("Power off", lv_palette_darken(LV_PALETTE_RED, 2),
+                                                on_power_off_button_pressed);
+    power_cancel_button = create_power_menu_button("Cancel", lv_palette_darken(LV_PALETTE_GREY, 3), power_cancel_cb);
+
+    layout_power_menu();
+    lv_obj_add_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
 }
 
 
@@ -269,8 +343,3 @@ void pmic_settings_reset_advanced(void) {
     save_charging();
 }
 
-
-// The power button's menu (Reboot, Power off), on the screen over every view
-void create_power_menu_overlay(void) {
-    power_menu = create_info_msg_box(lv_screen_active(), create_power_menu);
-}

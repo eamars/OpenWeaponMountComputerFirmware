@@ -87,7 +87,7 @@ The firmware builds views imperatively in `main/*.c`:
 - `set_rotation_*` functions mutate layout flow, size, scroll direction, object order, and alignment for the current `system_config.rotation`.
 - `LV_EVENT_SIZE_CHANGED` callbacks reapply rotation-dependent layout.
 - Tile screens are created under `main_tileview.c`; many views need to fill their tile with `lv_pct(100)`.
-- Sizes, gaps, corners and colours follow the `embedded-ui-design` skill (122 px targets, 20 px gaps, 8 px margin, concentric corners, black background). The `lv_menu` settings and the `config_view.c` helpers are the old design that ADR-008 replaces; do not build on them.
+- Sizes, gaps, corners and colours follow the `embedded-ui-design` skill (122 px targets, 20 px gaps, 8 px margin, concentric corners, black background). Settings pages use `settings_ui` (`main/settings_ui.h`); the old `lv_menu` settings and `config_view.c` helpers were removed in ADR-008.
 
 For rotation-aware screens, keep all rotation layout policy in one `set_rotation_*` function and call it both during creation and from the size-change callback. Avoid scattering orientation conditionals through child setup unless the child is itself a separate reusable widget.
 

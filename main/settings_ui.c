@@ -790,6 +790,22 @@ void settings_row_status(settings_page_t * page, settings_text_fn text, void * c
 }
 
 
+void settings_row_highlight(settings_page_t * page) {
+    if (page->row_count == 0) {
+        return;
+    }
+    row_t * row = page->rows[page->row_count - 1];
+    lv_obj_set_style_bg_color(row->button, lv_palette_darken(LV_PALETTE_ORANGE, 2), LV_PART_MAIN);
+    if (row->value_label != NULL) {
+        lv_obj_set_style_text_color(row->value_label, lv_color_white(), LV_PART_MAIN);
+    }
+    uint32_t children = lv_obj_get_child_count(row->button);        // the icon
+    for (uint32_t i = 0; i < children; i++) {
+        lv_obj_set_style_text_color(lv_obj_get_child(row->button, i), lv_color_white(), LV_PART_MAIN);
+    }
+}
+
+
 void settings_row_shown_when(settings_page_t * page, bool (*shown)(void)) {
     if (page->row_count == 0) {
         return;

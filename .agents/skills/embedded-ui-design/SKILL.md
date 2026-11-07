@@ -44,7 +44,7 @@ Unit conversion for watch guidance: one watchOS point (2/326 inch) and one Wear 
 
 ## Relation to the other project skills
 
-`lvgl-layout` and `lvgl-widget` cover the LVGL mechanics (Flex, Grid, rotation handlers, widget events, text lifetime); `c-style` the code. They point here for how a view looks and behaves. The old settings patterns (`lv_menu`, the `config_view.c` drop-down, spin box, colour picker, Save/Reload/Reset and message box helpers, circular-scrolling labels) are what ADR-008 replaces; if any guidance still disagrees, this skill wins.
+`lvgl-layout` and `lvgl-widget` cover the LVGL mechanics (Flex, Grid, rotation handlers, widget events, text lifetime); `c-style` the code. They point here for how a view looks and behaves. Settings pages are built with `settings_ui` (`main/settings_ui.h`: pages, rows, choice lists, the value editor, confirmations); the old `lv_menu` settings and their `config_view.c` helpers were removed in ADR-008. If any guidance still disagrees, this skill wins.
 
 ## Process
 

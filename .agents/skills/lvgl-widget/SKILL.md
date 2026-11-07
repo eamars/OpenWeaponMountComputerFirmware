@@ -58,7 +58,7 @@ Use the simplest widget with the right interaction contract:
 - `lv_buttonmatrix`: many button-like choices in a memory-light grid; buttons are virtual, not child widgets.
 - `lv_table`: rows/columns of text where cells do not need to be real child widgets.
 - `lv_list`: vertical list made from buttons and labels when each row can be a simple command/text item.
-- `lv_menu`: hierarchical configuration screens. Deprecated in LVGL 9.6 ("build menu navigation from base widgets instead"); ADR-008 replaces the settings' `lv_menu` with the project's own pages.
+- `lv_menu`: hierarchical configuration screens. Deprecated in LVGL 9.6 ("build menu navigation from base widgets instead"); The settings no longer use it (ADR-008: `settings_ui`).
 - `lv_textarea`: editable text or numeric-string input, including cursor, placeholder, password, accepted-character, and max-length support.
 - `lv_tileview`: swipe navigation between screen-sized tiles.
 - `lv_tabview`: tabbed organization when tabs are a better model than swipe-only tile navigation.
@@ -182,7 +182,7 @@ For `lv_dropdown`, newline-separated options are copied by `lv_dropdown_set_opti
 The firmware builds LVGL views directly in `main/*.c`:
 
 - `create_*_view(parent)` creates widgets, styles them, attaches callbacks, and stores object pointers when later updates need them.
-- Config pages are assembled through `lv_menu` and helper functions in `config_view.c` today; ADR-008 replaces both with the project's own pages and full-width rows.
+- Settings pages are built with `settings_ui` (`main/settings_ui.h`): a page per hub row, full-width rows (link, choice, colour, toggle, number, action, reset, status), shown only while they do something (`settings_row_shown_when`).
 - `main_tileview.c` uses `lv_tileview_add_tile`, tile user data, and `LV_EVENT_VALUE_CHANGED` to enable/disable tile-specific behavior.
 - Status/value labels often use static buffers declared with `HEAPS_CAPS_ATTR` and `lv_label_set_text_static`.
 - Buttons often use `lv_obj_set_style_bg_image_src(button, LV_SYMBOL_..., 0)` for symbol-only controls.

@@ -1,19 +1,43 @@
-import sys
-import socket
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-from zeroconf import ServiceInfo, Zeroconf
+"""The local OTA host: what the firmware's update check looks for (`main/ota_mode.c`).
+
+After its Wi-Fi connects at boot, the unit asks `owmc_update.local` port 8080 for `/p1/manifest.json`; when the
+manifest's version is newer than its own, or `ignore_version` is set, it offers the update, and Install downloads
+`path` from the same host and the manifest's `port`. The unit checks once per boot: start this, then restart it.
+
+This announces `owmc_update.local` on the local network (mDNS) and serves the manifest and the build's firmware
+(only those two paths). Every request is printed, with the bytes sent.
+
+Usage, from the repo root with the repo venv:
+    python scripts/ota_host.py                          # the build as it is, offered whatever its version
+    python scripts/ota_host.py --version v0.0.2 --respect-version   # declared newer: offered by version
+    python scripts/ota_host.py --importance 1           # critical: the unit shows the offer at once
+    python scripts/ota_host.py --manifest-file m.json   # a manifest as written (format tests)
+Options: --note, --ip (the address announced; default: the one this machine uses on the network), --port.
+
+Plain HTTP and no image signing, as the firmware is built (CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP): run it only on a
+network you trust.
+"""
+import argparse
+import http.server
 import json
+import socket
+import sys
+import time
 from enum import Enum
 from pathlib import Path
 
+from zeroconf import ServiceInfo, Zeroconf
 
 HOSTNAME = "owmc_update.local"
 PORT = 8080
+MANIFEST_PATH = "/p1/manifest.json"
+BUILD = Path(__file__).resolve().parents[1] / "build"
 
 
 class OtaImportance(Enum):
     NORMAL = 0
     CRITICAL = 1
+
 
 class OtaPackageType(Enum):
     FIRMWARE = 0
@@ -22,75 +46,88 @@ class OtaPackageType(Enum):
     BOOTLOADER = 3
 
 
-class OTARequestHandler(SimpleHTTPRequestHandler):
-    def log_message(self, format, *args):
-        sys.stdout.write("[HTTP] " + format % args + "\n")
+def log(text):
+    print(f"{time.strftime('%H:%M:%S')} {text}", flush=True)
 
-    def do_GET(self):
-        if self.path == "/p1/manifest.json":
-            project_description_path = Path("build") / "project_description.json"
-            with open(project_description_path, "r", encoding='utf-8') as fp:
-                project_description_json = json.load(fp)
-            version = project_description_json.get("project_version")
-            binary_path = "/build/" + project_description_json.get("app_bin")
 
-            manifest = {
-                "manifest_version": 1,
-                "version": version,
-                # "version": "1.0.0",
-                "path": binary_path,
-                "note": "This version fixes several stability issues, including the screen shattering, lagging and tearing.",
-                "port": PORT,
-                "ignore_version": True,
-                "type": OtaPackageType.FIRMWARE.value,
-                "importance": OtaImportance.NORMAL.value
-            }
-            body = json.dumps(manifest).encode("utf-8")
+def local_ip():
+    """The address this machine uses on the network (no packet is sent). gethostbyname(gethostname()) can name
+    another adapter (a virtual or Bluetooth one) that the unit cannot reach"""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("10.255.255.255", 1))
+        return s.getsockname()[0]
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--version", help="the version the manifest declares (default: the build's)")
+    ap.add_argument("--note", help="the release note the unit shows (up to 255 characters)")
+    ap.add_argument("--importance", type=int, default=OtaImportance.NORMAL.value, help="0 normal, 1 critical")
+    ap.add_argument("--respect-version", action="store_true",
+                    help="offered only when the declared version is newer than the unit's")
+    ap.add_argument("--manifest-file", help="serve this file as the manifest, as written")
+    ap.add_argument("--ip", default=None)
+    ap.add_argument("--port", type=int, default=PORT)
+    args = ap.parse_args()
+
+    project = json.loads((BUILD / "project_description.json").read_text(encoding="utf-8"))
+    image = (BUILD / project["app_bin"]).read_bytes()
+    image_path = "/build/" + project["app_bin"]
+    version = args.version or project["project_version"]
+    if args.manifest_file:
+        manifest = Path(args.manifest_file).read_bytes()
+    else:
+        manifest = json.dumps({
+            "manifest_version": 1,
+            "version": version,
+            "path": image_path,
+            "note": args.note or f"Local build {project['project_version']}.",
+            "port": args.port,
+            "ignore_version": not args.respect_version,
+            "type": OtaPackageType.FIRMWARE.value,
+            "importance": args.importance,
+        }).encode("utf-8")
+
+    class OTARequestHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == MANIFEST_PATH:
+                body, kind = manifest, "application/json"
+            elif self.path == image_path:
+                body, kind = image, "application/octet-stream"
+            else:
+                log(f"{self.client_address[0]} GET {self.path} -> 404")
+                self.send_error(404)
+                return
+            log(f"{self.client_address[0]} GET {self.path} ({len(body)} bytes)")
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", kind)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
-            print(f"[HTTP] Served manifest.json: {body}")
+            try:
+                self.wfile.write(body)
+            except OSError as e:
+                log(f"{self.client_address[0]} {self.path} broke off: {e}")
 
-        else:
-            super().do_GET()
+        def log_message(self, *a):
+            pass
 
-# Run HTTP server
-def run_http_server():
-    server = HTTPServer(("0.0.0.0", PORT), OTARequestHandler)
-    print(f"[INFO] HTTP server started on port {PORT}")
-    return server
-
-
-# Register mDNS
-def register_mdns_service(port):
+    ip = args.ip or local_ip()
     zeroconf = Zeroconf()
-    ip = socket.inet_aton(socket.gethostbyname(socket.gethostname()))
-
-    service_info = ServiceInfo(
-        "_http._tcp.local.",
-        f"{HOSTNAME}._http._tcp.local.",
-        addresses=[ip],
-        port=port,
-        properties={},
-        server=f"{HOSTNAME}.",
-    )
-
+    service_info = ServiceInfo("_http._tcp.local.", f"{HOSTNAME}._http._tcp.local.", addresses=[socket.inet_aton(ip)],
+                               port=args.port, properties={}, server=f"{HOSTNAME}.")
     zeroconf.register_service(service_info)
-    print(f"[INFO] mDNS service registered as http://{HOSTNAME}:{port}/")
-    return zeroconf, service_info
-
-
-
-if __name__ == "__main__":
-    server = run_http_server()
-    zeroconf, service_info = register_mdns_service(PORT)
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", args.port), OTARequestHandler)
+    log(f"http://{HOSTNAME}:{args.port}/ is {ip}; firmware {image_path} ({len(image)} bytes)")
+    log("manifest: " + manifest.decode("utf-8", errors="replace"))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n[INFO] Shutting down...")
+        log("shutting down")
     finally:
         zeroconf.unregister_service(service_info)
         zeroconf.close()
         server.server_close()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

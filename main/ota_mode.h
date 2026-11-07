@@ -52,9 +52,14 @@ void create_ota_prompt_view(lv_obj_t * parent);
 void enter_ota_mode(bool enable);
 /** @brief True while the OTA tile is shown (an update may be downloading); any task */
 bool ota_mode_is_active(void);
-void update_ota_mode_progress(int progress);
 /** @brief The hub's "Update available" row, hidden until a newer firmware is found (ADR-008) */
 lv_obj_t * create_settings_update_row(settings_page_t * hub);
+
+// Test hooks for the remote control (ADR-008): the offer and the OTA tile with mock data, without a server.
+// LVGL lock held. The mock's server does not exist, so installing it fails
+void ota_mode_test_mock(bool critical);
+void ota_mode_test_offer(bool show);
+bool ota_mode_test_view(const char * state);    // connecting | downloading | done | failed
 
 
 #ifdef __cplusplus

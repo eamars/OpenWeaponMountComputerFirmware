@@ -8,6 +8,9 @@
 #include "digital_level_view_controller.h"
 #include "countdown_timer.h"
 
+#define MAX_NUM_COLOURS 20                  // the 19 colours of lv_palette_t, and black
+#define LV_PALETTE_BLACK LV_PALETTE_LAST
+
 typedef struct {
     uint32_t crc32;
     

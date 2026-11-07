@@ -73,6 +73,7 @@ REPLY_PREFIXES = {
     "hang": "@ok hang",
     "bnoreset": "@ok bnoreset",
     "settings": "@ok settings",
+    "ota": "@ok ota",
 }
 FAILURE_MARKERS = (
     RESET_MARKER,

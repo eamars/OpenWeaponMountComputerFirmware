@@ -6,6 +6,8 @@
 #include "common.h"
 #include "mem_diag.h"
 #include "settings_ui.h"
+#include "value_editor.h"
+#include "display_shape.h"
 
 #include "esp_lvgl_port.h"
 #include "esp_log.h"
@@ -18,6 +20,7 @@
 #include "json_parser.h"
 #include "esp_system.h"
 #include "esp_partition.h"
+#include "esp_timer.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -25,6 +28,16 @@
 
 
 #define TAG "OTAMode"
+
+#define OTA_UI_LOCK_WAIT_MS 1000        // the OTA task waits this long for the screen to show a step or outcome
+#define OTA_GAP_PX 20
+#define OTA_BUTTON_PORTRAIT_PX 96
+#define OTA_BUTTON_LANDSCAPE_PX 122
+#define OTA_BAR_PX 24
+#define OTA_SIDE_BUTTON_PX 150         // landscape: the buttons' column on the right
+#define OTA_MIDDLE_GAP_PX 12
+#define OTA_READ_BUFFER_SIZE 4096
+#define OTA_PROGRESS_PERIOD_MS 250
 
 typedef enum {
     OTA_EVENT_MANIFEST_READY = (1 << 0),
@@ -153,12 +166,104 @@ static esp_err_t http_client_init_cb(esp_http_client_handle_t http_client) {
 }
 
 
-void set_ota_prompt_view_visibility(bool is_visible) {
+/*
+----------------------------------------------------
+The update's screens (ADR-008), in the settings' design: black, large buttons, wrapped text
+- The offer: what the update is and its note, Install and Cancel, full screen over every view. Shown from the
+  hub's "Update available" row, or at once for a critical update
+- The OTA tile: what is happening, a large progress bar and the amount read, then the outcome and Restart
+All with the LVGL lock held
+----------------------------------------------------
+*/
+
+static lv_obj_t * offer_text = NULL;            // the offer's scrolling text area
+static lv_obj_t * offer_title_label = NULL;
+static lv_obj_t * offer_install_button = NULL;
+static lv_obj_t * offer_cancel_button = NULL;
+static lv_obj_t * ota_detail_label = NULL;
+
+
+static bool is_portrait(lv_obj_t * obj) {
+    return lv_obj_get_height(obj) > lv_obj_get_width(obj);
+}
+
+
+static void set_ota_prompt_view_visibility(bool is_visible) {
     if (is_visible) {
-        // Shift to OTA view
         lv_obj_remove_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(ota_prompt_view);
+        lv_obj_scroll_to_y(offer_text, 0, LV_ANIM_OFF);
     } else {
         lv_obj_add_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+
+// The manifest found (or a mock): the offer's text, the hub's row, and the offer at once when critical
+static void offer_update(void) {
+    bool critical = ota_manifest.importance > OTA_IMPORTANCE_NORMAL;
+    lv_label_set_text(offer_title_label, critical ? "Important update" : "Update available");
+    lv_label_set_text_fmt(ota_description_label, "Firmware %s\n\n%s", ota_manifest.version, ota_manifest.note);
+    update_found = true;        // the hub's row shows from its next refresh, the hub laid out again with it
+    if (critical) {
+        set_ota_prompt_view_visibility(true);
+    }
+}
+
+
+// The OTA tile: the step under way, with the amount read when known
+static void show_ota_step(const char * step) {
+    lv_label_set_text(ota_title_label, step);
+}
+
+
+static void show_ota_progress(int read, int size) {
+    if (size > 0) {
+        lv_label_set_text_fmt(progress_label, "%d K of %d K", read / 1024, size / 1024);
+        lv_bar_set_value(progress_bar, (int32_t) ((int64_t) read * 100 / size), LV_ANIM_OFF);
+    }
+    else {
+        lv_label_set_text_fmt(progress_label, "%d K", read / 1024);    // the server sent no length
+    }
+}
+
+
+static lv_obj_t * ota_view = NULL;
+static void layout_ota_view(lv_obj_t * view);
+
+
+// The end, either way: what happened and Restart. A failed update leaves the running firmware in place; the
+// error's name goes on a line of its own, so it is not broken inside
+static void show_ota_result(bool ok, const char * reason, esp_err_t err) {
+    lv_label_set_text(ota_title_label, ok ? "Update installed" : "Update failed");
+    lv_obj_set_style_text_color(ota_title_label, ok ? lv_palette_main(LV_PALETTE_ORANGE) :
+                                lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN);
+    if (ok) {
+        lv_label_set_text(ota_detail_label, "Restart to run it.");
+        lv_bar_set_value(progress_bar, 100, LV_ANIM_OFF);
+    }
+    else {
+        lv_label_set_text_fmt(ota_detail_label, "%s\n%s\nThe unit keeps its firmware.", reason, esp_err_to_name(err));
+    }
+    lv_obj_remove_flag(ota_detail_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
+    layout_ota_view(ota_view);
+}
+
+
+// From the OTA task: each update waits for the lock, so no step or outcome is lost on a busy screen
+static void ota_ui_step(const char * step) {
+    if (lvgl_port_lock(OTA_UI_LOCK_WAIT_MS)) {
+        show_ota_step(step);
+        lvgl_port_unlock();
+    }
+}
+
+
+static void ota_ui_result(bool ok, const char * reason, esp_err_t err) {
+    if (lvgl_port_lock(OTA_UI_LOCK_WAIT_MS)) {
+        show_ota_result(ok, reason, err);
+        lvgl_port_unlock();
     }
 }
 
@@ -308,32 +413,16 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
 
         // Compare
         if (compare_version(&self_version, &other_version) >= 0) {
-            ESP_LOGI(TAG, "Current running version %s is newer than the target version %s, will skip OTA", app_desc->version, ota_manifest.version);
+            ESP_LOGI(TAG, "Running version %s is the same as or newer than the manifest's %s: not offered", app_desc->version, ota_manifest.version);
             // don't update
             ret = ESP_OK;
             goto finally;
         }
     }
 
-    if (lvgl_port_lock(0)) {
-        // Update the description field
-        lv_label_set_text_fmt(ota_description_label,
-            "Firmware #ff0000 %s # Available.\n"
-            "Release Note:\n"
-            "------\n"
-            "%s",
-            ota_manifest.version,
-            ota_manifest.note
-        );
-
-        // The hub's "Update available" row shows from its next refresh, the hub laid out again with it
-        update_found = true;
-
-        // If important, then also prompt directly to the user
-        if (ota_manifest.importance > OTA_IMPORTANCE_NORMAL) {
-            set_ota_prompt_view_visibility(true);
-        }
-
+    // Waits for the lock: a busy screen must not lose the offer
+    if (lvgl_port_lock(OTA_UI_LOCK_WAIT_MS)) {
+        offer_update();
         lvgl_port_unlock();
     }
 
@@ -392,17 +481,13 @@ void ota_update_task(void *p) {
     // Wait for manifest to be downloaded
     xEventGroupWaitBits(ota_event_group, OTA_EVENT_MANIFEST_READY | OTA_EVENT_USER_CONFIRMED, pdFALSE, pdTRUE, portMAX_DELAY);
 
-
     // -------------------------------------
     esp_err_t ret;
 
     // Register event. This runs once the user confirmed the update, so a failure is shown, not a reboot (ADR-005 C1)
     ret = esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, ota_event_handler, NULL);
     if (ret != ESP_OK) {
-        if (lvgl_port_lock(0)) {
-            lv_label_set_text_fmt(ota_title_label, "OTA Failed - %s", esp_err_to_name(ret));
-            lvgl_port_unlock();
-        }
+        ota_ui_result(false, "The update could not start.", ret);
         ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_event_handler_register failed");
     }
 
@@ -413,6 +498,7 @@ void ota_update_task(void *p) {
         .event_handler = http_client_event_handler,
         .keep_alive_enable = true,
         .timeout_ms = OTA_HTTP_TIMEOUT,
+        .buffer_size = OTA_READ_BUFFER_SIZE,    // each read of the image; the default 512 B made it 28 KB/s
     };
 
     // Determine the target partition
@@ -429,25 +515,12 @@ void ota_update_task(void *p) {
         },
     };
 
-    if (lvgl_port_lock(0)) {
-        lv_label_set_text(ota_title_label, "Locating Firmware");
-        lvgl_port_unlock();
-    }
+    ota_ui_step("Connecting");
     esp_https_ota_handle_t https_ota_handle = NULL;
     ret = esp_https_ota_begin(&ota_config, &https_ota_handle);
     if (ret != ESP_OK) {
-        if (lvgl_port_lock(0)) {
-            lv_label_set_text(ota_title_label, "OTA Failed - Unable to download firmware");
-            lvgl_port_unlock();
-        }
-
+        ota_ui_result(false, "The update server did not answer.", ret);
         ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_begin failed");
-    }
-    else {
-        if (lvgl_port_lock(0)) {
-            lv_label_set_text(ota_title_label, "Locating Firmware -- done");
-            lvgl_port_unlock();
-        }
     }
 
     // Read application size
@@ -455,94 +528,73 @@ void ota_update_task(void *p) {
     ESP_LOGI(TAG, "OTA Size: %d", ota_size);
 
     // Download the new application header
-    if (lvgl_port_lock(0)) {
-        lv_label_set_text(ota_title_label, "Downloading Header");
-        lvgl_port_unlock();
-    }
     esp_app_desc_t app_desc;
     memset(&app_desc, 0x0, sizeof(app_desc));
     ret = esp_https_ota_get_img_desc(https_ota_handle, &app_desc);
     if (ret != ESP_OK) {
-        if (lvgl_port_lock(0)) {
-            lv_label_set_text(ota_title_label, "OTA Failed - Unable to download application header");
-            lvgl_port_unlock();
-        }
+        ota_ui_result(false, "The firmware's header could not be read.", ret);
         ESP_GOTO_ON_ERROR(ret, abort, TAG, "esp_https_ota_get_img_desc failed");
     }
-    else {
-        if (lvgl_port_lock(0)) {
-            lv_label_set_text(ota_title_label, "Downloading Header -- done");
-            lvgl_port_unlock();
-        }
-    }
 
-    // We don't need to verify the target app header, 
+    // We don't need to verify the target app header,
     ESP_LOGI(TAG, "Declared image version: %s, actual image version: %s", ota_manifest.version, app_desc.version);
 
-    if (lvgl_port_lock(0)) {
-        lv_label_set_text(ota_title_label, "Applying Update");
-        // The size is -1 when the server sends none (chunked transfer); then only the bytes read are shown
-        if (ota_size > 0) {
-            lv_label_set_text_fmt(progress_label, "0K/%dK", ota_size / 1024);
-        }
-        else {
-            lv_label_set_text(progress_label, "0K");
-        }
+    if (lvgl_port_lock(OTA_UI_LOCK_WAIT_MS)) {
+        show_ota_step("Downloading");
+        show_ota_progress(0, ota_size);
         lvgl_port_unlock();
     }
 
     // esp_https_ota_perform returns after every read: ESP_ERR_HTTPS_OTA_IN_PROGRESS while data is
-    // still coming, ESP_OK once the whole image is read, any other code on a failure
+    // still coming, ESP_OK once the whole image is read, any other code on a failure. Reads follow each other
+    // with a 1 ms pause (a 20 ms pause after each 512 B read held the download to 28 KB/s), which still lets
+    // the lower-priority tasks run (the screen, the idle tasks' watchdog) when data keeps coming. The screen
+    // shows the progress a few times a second
+    int64_t shown_us = 0;
     while (1) {
         ret = esp_https_ota_perform(https_ota_handle);
         if (ret != ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
             break;
         }
 
-        int ota_read_size = esp_https_ota_get_image_len_read(https_ota_handle);
-        if (lvgl_port_lock(0)) {
-            // Update progress text and bar
-            if (ota_size > 0) {
-                lv_label_set_text_fmt(progress_label, "%dK/%dK", ota_read_size / 1024, ota_size / 1024);
-                lv_bar_set_value(progress_bar, (int) (ota_read_size * 100.0 / ota_size), LV_ANIM_OFF);
-            }
-            else {
-                lv_label_set_text_fmt(progress_label, "%dK", ota_read_size / 1024);
-            }
+        // Progress only when the screen is free: a missed step is shown by the next
+        int64_t now_us = esp_timer_get_time();
+        if (now_us - shown_us >= OTA_PROGRESS_PERIOD_MS * 1000 && lvgl_port_lock(0)) {
+            show_ota_progress(esp_https_ota_get_image_len_read(https_ota_handle), ota_size);
             lvgl_port_unlock();
+            shown_us = now_us;
         }
-
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(1);
     }
 
     if (ret != ESP_OK || !esp_https_ota_is_complete_data_received(https_ota_handle)) {
-        if (lvgl_port_lock(0)) {
-            lv_label_set_text_fmt(ota_title_label, "OTA Failed - Download incomplete (%s)", esp_err_to_name(ret));
-            lvgl_port_unlock();
-        }
         ret = (ret == ESP_OK) ? ESP_FAIL : ret;
+        ota_ui_result(false, "The download stopped.", ret);
         ESP_GOTO_ON_ERROR(ret, abort, TAG, "esp_https_ota_perform failed");
+    }
+
+    // The whole amount read (the last progress may have been skipped, shown only a few times a second)
+    if (lvgl_port_lock(OTA_UI_LOCK_WAIT_MS)) {
+        show_ota_progress(esp_https_ota_get_image_len_read(https_ota_handle), ota_size);
+        show_ota_step("Checking");
+        lvgl_port_unlock();
     }
 
     // Validates the image and frees the handle, whether it succeeds or not
     ret = esp_https_ota_finish(https_ota_handle);
     https_ota_handle = NULL;
     if (ret != ESP_OK) {
-        if (lvgl_port_lock(0)) {
-            lv_label_set_text_fmt(ota_title_label, "OTA Failed - %s", esp_err_to_name(ret));
-            lvgl_port_unlock();
-        }
+        ota_ui_result(false, "The firmware did not pass its check.", ret);
         ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_finish failed");
-    }
-
-    if (lvgl_port_lock(0)) {
-        lv_label_set_text(ota_title_label, "OTA Success");
-        lvgl_port_unlock();
     }
 
     // Set the next boot partition
     ret = esp_ota_set_boot_partition(ota_partition);
-    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to set boot partition");
+    if (ret != ESP_OK) {
+        ota_ui_result(false, "The new firmware could not be selected.", ret);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to set boot partition");
+    }
+    ota_ui_result(true, NULL, ESP_OK);
     goto finally;
 
 abort:
@@ -551,15 +603,8 @@ abort:
     esp_https_ota_abort(https_ota_handle);
 
 finally:
-    ESP_LOGI(TAG, "OTA Complete");
-    // Display reboot button
-    if (lvgl_port_lock(0)) {
-        lv_obj_remove_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
-        lvgl_port_unlock();
-    }
-
+    ESP_LOGI(TAG, "OTA Complete: %s", esp_err_to_name(ret));
     vTaskDelete(NULL);   // safely remove this task
-
 }
 
 static void on_ota_cancel_button_pressed(lv_event_t *e) {
@@ -568,7 +613,7 @@ static void on_ota_cancel_button_pressed(lv_event_t *e) {
 }
 
 static void on_ota_accept_button_pressed(lv_event_t * e) {
-    ESP_LOGI(TAG, "Start Upgrade pressed");
+    ESP_LOGI(TAG, "Install pressed");
     set_ota_prompt_view_visibility(false);
 
     // Shift to OTA view
@@ -584,57 +629,111 @@ void on_reboot_button_pressed(lv_event_t * e) {
     esp_restart();
 }
 
+
+static lv_obj_t * create_black_screen(lv_obj_t * parent) {
+    lv_obj_t * screen = lv_obj_create(parent);
+    lv_obj_remove_style_all(screen);
+    lv_obj_set_size(screen, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(screen, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(screen, DISPLAY_MARGIN_PX, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(screen, OTA_GAP_PX, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(screen, OTA_GAP_PX, LV_PART_MAIN);
+    lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    return screen;
+}
+
+
+static lv_obj_t * create_wrapped_label(lv_obj_t * parent, const lv_font_t * font) {
+    lv_obj_t * label = value_editor_create_label(parent, font);
+    lv_obj_set_width(label, lv_pct(100));
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+    return label;
+}
+
+
+// The OTA tile: the step and progress in the middle; Restart, once it ends, along the bottom in portrait and in a
+// column on the right in landscape (the screen is too low for both); the middle takes the whole width until then
+static void layout_ota_view(lv_obj_t * view) {
+    static const int32_t portrait_cols[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static const int32_t portrait_rows[] = {LV_GRID_FR(1), OTA_BUTTON_PORTRAIT_PX, LV_GRID_TEMPLATE_LAST};
+    static const int32_t landscape_cols[] = {LV_GRID_FR(1), OTA_SIDE_BUTTON_PX, LV_GRID_TEMPLATE_LAST};
+    static const int32_t landscape_rows[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+
+    lv_obj_t * middle = lv_obj_get_child(view, 0);
+    bool done = !lv_obj_has_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
+    if (is_portrait(view)) {
+        lv_obj_set_grid_dsc_array(view, portrait_cols, portrait_rows);
+        lv_obj_set_grid_cell(middle, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
+        lv_obj_set_grid_cell(reboot_button, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
+    }
+    else {
+        lv_obj_set_grid_dsc_array(view, landscape_cols, landscape_rows);
+        lv_obj_set_grid_cell(middle, LV_GRID_ALIGN_STRETCH, 0, done ? 1 : 2, LV_GRID_ALIGN_CENTER, 0, 1);
+        lv_obj_set_grid_cell(reboot_button, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+    }
+}
+
+
+static void ota_view_size_changed_cb(lv_event_t * e) {
+    layout_ota_view(lv_event_get_target_obj(e));
+}
+
+
 void create_ota_mode_view(lv_obj_t * parent) {
     create_ota_prompt_view(lv_screen_active());
 
-    // Draw a container to allow vertical stacking
-    lv_obj_t * container = lv_obj_create(parent);
-    lv_obj_set_size(container, lv_pct(100), lv_pct(100));
-    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(container, 
-        LV_FLEX_ALIGN_CENTER, 
-        LV_FLEX_ALIGN_CENTER, 
-        LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_bg_opa(container, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_t * view = create_black_screen(parent);
+    ota_view = view;
+    lv_obj_add_event_cb(view, ota_view_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
 
+    lv_obj_t * middle = lv_obj_create(view);
+    lv_obj_remove_style_all(middle);
+    lv_obj_set_height(middle, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(middle, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(middle, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(middle, OTA_MIDDLE_GAP_PX, LV_PART_MAIN);
+    lv_obj_remove_flag(middle, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Put Title Label
-    ota_title_label = lv_label_create(container);
-    lv_obj_set_width(ota_title_label, lv_pct(100));
-    lv_obj_set_align(ota_title_label, LV_ALIGN_CENTER);
-    lv_label_set_long_mode(ota_title_label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-    lv_label_set_text(ota_title_label, "OTA Update");
+    ota_title_label = create_wrapped_label(middle, &lv_font_montserrat_28);
+    lv_obj_set_style_text_align(ota_title_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ota_title_label, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_MAIN);
+    lv_label_set_text(ota_title_label, "Update");
 
-    // Put progress label
-    progress_label = lv_label_create(container);
-    lv_obj_set_align(progress_label, LV_ALIGN_CENTER);
-    lv_label_set_text(progress_label, "0/0");
-    lv_obj_set_width(progress_label, lv_pct(100));
-    lv_label_set_long_mode(progress_label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+    progress_bar = lv_bar_create(middle);
+    lv_obj_set_size(progress_bar, lv_pct(100), OTA_BAR_PX);
+    lv_obj_set_style_radius(progress_bar, OTA_BAR_PX / 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(progress_bar, OTA_BAR_PX / 2, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(progress_bar, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(progress_bar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(progress_bar, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
+    lv_bar_set_range(progress_bar, 0, 100);
 
-    // Put progress bar
-    progress_bar = lv_bar_create(container);
-    lv_obj_set_size(progress_bar, lv_pct(80), 20);
+    progress_label = create_wrapped_label(middle, &lv_font_montserrat_24);
+    lv_obj_set_style_text_align(progress_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_label_set_text(progress_label, "");
 
-    // Put Exit and Reboot button
-    reboot_button = lv_button_create(container);
+    ota_detail_label = create_wrapped_label(middle, &lv_font_montserrat_20);
+    lv_obj_set_style_text_align(ota_detail_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_add_flag(ota_detail_label, LV_OBJ_FLAG_HIDDEN);
+
+    // Restart, once the update ended either way
+    reboot_button = value_editor_create_button(view, LV_PALETTE_ORANGE);
+    lv_obj_set_style_bg_color(reboot_button, lv_palette_darken(LV_PALETTE_ORANGE, 2), LV_PART_MAIN);
+    lv_label_set_text(value_editor_create_label(reboot_button, &lv_font_montserrat_32), "Restart");
+    lv_obj_add_event_cb(reboot_button, on_reboot_button_pressed, LV_EVENT_SHORT_CLICKED, NULL);
     lv_obj_add_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_bg_color(reboot_button, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_add_event_cb(reboot_button, on_reboot_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
 
-    lv_obj_t * reboot_button_label = lv_label_create(reboot_button);
-    lv_label_set_text(reboot_button_label, "Reboot");
-    lv_obj_center(reboot_button_label);
-    lv_obj_set_style_text_font(reboot_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
+    layout_ota_view(view);
 
     // Create the task to poll for OTA update
     BaseType_t rtos_return;
     mem_diag_log_checkpoint("ota_poller_create begin");
     rtos_return = xTaskCreateWithCaps(
-        ota_poller_task, 
+        ota_poller_task,
         "ota_poller",
         OTA_POLLER_TASK_STACK,
-        NULL, 
+        NULL,
         OTA_POLLER_TASK_PRIORITY,
         &ota_poller_task_handle,
         HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
@@ -649,10 +748,10 @@ void create_ota_mode_view(lv_obj_t * parent) {
     // Create the task to perform OTA update
     mem_diag_log_checkpoint("ota_updater_create begin");
     rtos_return = xTaskCreate(
-        ota_update_task, 
+        ota_update_task,
         "ota_updater",
         OTA_UPDATE_TASK_STACK,
-        NULL, 
+        NULL,
         OTA_UPDATE_TASK_PRIORITY,
         &ota_update_task_handle
     );
@@ -683,45 +782,129 @@ void enter_ota_mode(bool enable) {
 }
 
 
+// The offer: its text scrolls in the space beside the buttons. Portrait: Install over Cancel under the text;
+// landscape: Install over Cancel in a column on the right (the screen is too low for text over buttons)
+static void layout_offer(void) {
+    static const int32_t portrait_cols[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static const int32_t portrait_rows[] = {LV_GRID_FR(1), OTA_BUTTON_PORTRAIT_PX, OTA_BUTTON_PORTRAIT_PX,
+                                            LV_GRID_TEMPLATE_LAST};
+    static const int32_t landscape_cols[] = {LV_GRID_FR(1), OTA_SIDE_BUTTON_PX, LV_GRID_TEMPLATE_LAST};
+    static const int32_t landscape_rows[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+
+    if (is_portrait(ota_prompt_view)) {
+        lv_obj_set_grid_dsc_array(ota_prompt_view, portrait_cols, portrait_rows);
+        lv_obj_set_grid_cell(offer_text, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+        lv_obj_set_grid_cell(offer_install_button, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
+        lv_obj_set_grid_cell(offer_cancel_button, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 2, 1);
+    }
+    else {
+        lv_obj_set_grid_dsc_array(ota_prompt_view, landscape_cols, landscape_rows);
+        lv_obj_set_grid_cell(offer_text, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 2);
+        lv_obj_set_grid_cell(offer_install_button, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+        lv_obj_set_grid_cell(offer_cancel_button, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
+    }
+}
+
+
+static void offer_size_changed_cb(lv_event_t * e) {
+    layout_offer();
+}
+
+
 void create_ota_prompt_view(lv_obj_t * parent) {
-    ota_prompt_view = lv_obj_create(parent);
-    lv_obj_set_size(ota_prompt_view, lv_pct(100), lv_pct(100));
-    // set hide by default
+    ota_prompt_view = create_black_screen(parent);
+    lv_obj_add_flag(ota_prompt_view, LV_OBJ_FLAG_CLICKABLE);       // nothing behind it takes a tap
+    lv_obj_add_event_cb(ota_prompt_view, offer_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
+
+    // The title, the version and the release note; scrolls when the note is long
+    offer_text = lv_obj_create(ota_prompt_view);
+    lv_obj_remove_style_all(offer_text);
+    lv_obj_set_flex_flow(offer_text, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(offer_text, 12, LV_PART_MAIN);
+    lv_obj_set_style_pad_hor(offer_text, 12, LV_PART_MAIN);
+    lv_obj_set_scroll_dir(offer_text, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(offer_text, LV_SCROLLBAR_MODE_AUTO);      // as the settings' lists
+    lv_obj_set_style_width(offer_text, 4, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(offer_text, 2, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(offer_text, lv_palette_lighten(LV_PALETTE_GREY, 1), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(offer_text, LV_OPA_COVER, LV_PART_SCROLLBAR);
+
+    offer_title_label = create_wrapped_label(offer_text, &lv_font_montserrat_28);
+    lv_obj_set_style_text_color(offer_title_label, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_MAIN);
+    lv_label_set_text(offer_title_label, "Update available");
+
+    ota_description_label = create_wrapped_label(offer_text, &lv_font_montserrat_20);
+    lv_label_set_text(ota_description_label, "");
+
+    offer_install_button = value_editor_create_button(ota_prompt_view, LV_PALETTE_ORANGE);
+    lv_obj_set_style_bg_color(offer_install_button, lv_palette_darken(LV_PALETTE_ORANGE, 2), LV_PART_MAIN);
+    lv_label_set_text(value_editor_create_label(offer_install_button, &lv_font_montserrat_32), "Install");
+    lv_obj_add_event_cb(offer_install_button, on_ota_accept_button_pressed, LV_EVENT_SHORT_CLICKED, NULL);
+
+    offer_cancel_button = value_editor_create_button(ota_prompt_view, LV_PALETTE_GREY);
+    lv_label_set_text(value_editor_create_label(offer_cancel_button, &lv_font_montserrat_32), "Cancel");
+    lv_obj_add_event_cb(offer_cancel_button, on_ota_cancel_button_pressed, LV_EVENT_SHORT_CLICKED, NULL);
+
+    layout_offer();
     set_ota_prompt_view_visibility(false);
-    
-    lv_obj_set_scroll_dir(ota_prompt_view, LV_DIR_VER);  // only vertical scroll
-    lv_obj_set_style_pad_all(ota_prompt_view, 5, LV_PART_MAIN);
-    lv_obj_set_flex_flow(ota_prompt_view, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(ota_prompt_view,
-                    LV_FLEX_ALIGN_START,  // main axis (row) center
-                    LV_FLEX_ALIGN_CENTER,  // cross axis center
-                    LV_FLEX_ALIGN_CENTER); // track cross axis center
+}
 
-    // Add cancel button at top
-    lv_obj_t * ota_cancel_button = lv_button_create(ota_prompt_view);
-    lv_obj_add_event_cb(ota_cancel_button, on_ota_cancel_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
 
-    lv_obj_t * ota_cancel_button_label = lv_label_create(ota_cancel_button);
-    lv_label_set_text(ota_cancel_button_label, "Cancel");
-    lv_obj_center(ota_cancel_button_label);
-    lv_obj_set_style_text_font(ota_cancel_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
+/*
+----------------------------------------------------
+Test hooks for the remote control: the offer and the OTA tile's states with mock data, without a server
+----------------------------------------------------
+*/
 
-    // Add update description
-    ota_description_label = lv_label_create(ota_prompt_view);
-    lv_obj_set_width(ota_description_label, lv_pct(100));
-    lv_label_set_recolor(ota_description_label, true);  // allow inline colour annotation
-    lv_label_set_long_mode(ota_description_label, LV_LABEL_LONG_MODE_WRAP);
-    lv_label_set_text(ota_description_label, "OTA Not Ready");
+void ota_mode_test_mock(bool critical) {
+    memset(&ota_manifest, 0, sizeof(ota_manifest));
+    ota_manifest.manifest_version = 1;
+    snprintf(ota_manifest.version, sizeof(ota_manifest.version), "v0.0.2");
+    snprintf(ota_manifest.path, sizeof(ota_manifest.path), "/p1/mock/firmware.bin");
+    snprintf(ota_manifest.note, sizeof(ota_manifest.note),
+             "Mock update for checking the screens. Settings pages in the new design; the level's dope band "
+             "goes round the card; the power button's menu. Installing it fails: there is no such server.");
+    ota_manifest.host = "mock.invalid";
+    ota_manifest.port = OTA_MANIFEST_PORT;
+    ota_manifest.importance = critical ? OTA_IMPORTANCE_CRITICAL : OTA_IMPORTANCE_NORMAL;
+    ota_manifest.initialized = true;
+    offer_update();
+}
 
-    // Add accept button at bottom
-    lv_obj_t * ota_accept_button = lv_button_create(ota_prompt_view);
-    lv_obj_set_style_bg_color(ota_accept_button, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_add_event_cb(ota_accept_button, on_ota_accept_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
 
-    lv_obj_t * ota_accept_button_label = lv_label_create(ota_accept_button);
-    lv_label_set_text(ota_accept_button_label, "Start Upgrade");
-    lv_obj_center(ota_accept_button_label);
-    lv_obj_set_style_text_font(ota_accept_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
+void ota_mode_test_offer(bool show) {
+    set_ota_prompt_view_visibility(show);
+}
+
+
+// The OTA tile in one state: "connecting", "downloading" (mock progress), "done" or "failed". Shows the tile
+// without starting the update task (a tap on its Restart would restart the unit)
+bool ota_mode_test_view(const char * state) {
+    lv_obj_set_style_text_color(ota_title_label, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_MAIN);
+    lv_obj_add_flag(ota_detail_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
+    layout_ota_view(ota_view);
+    lv_label_set_text(progress_label, "");
+    lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
+    if (strcmp(state, "connecting") == 0) {
+        show_ota_step("Connecting");
+    }
+    else if (strcmp(state, "downloading") == 0) {
+        show_ota_step("Downloading");
+        show_ota_progress(1260 * 1024, 2372 * 1024);
+    }
+    else if (strcmp(state, "done") == 0) {
+        show_ota_progress(2372 * 1024, 2372 * 1024);
+        show_ota_result(true, NULL, ESP_OK);
+    }
+    else if (strcmp(state, "failed") == 0) {
+        show_ota_progress(1260 * 1024, 2372 * 1024);
+        show_ota_result(false, "The download stopped.", ESP_ERR_HTTP_EAGAIN);
+    }
+    else {
+        return false;
+    }
+    return true;
 }
 
 
@@ -744,7 +927,7 @@ static bool update_row_shown(void) {
 lv_obj_t * create_settings_update_row(settings_page_t * hub) {
     menu_ota_upgrade_button = settings_row_action(hub, LV_SYMBOL_DOWNLOAD, "Update available", update_row_text, NULL,
                                                   open_update_prompt, NULL, NULL, false);
-    lv_obj_set_style_bg_color(menu_ota_upgrade_button, lv_palette_darken(LV_PALETTE_ORANGE, 2), LV_PART_MAIN);
+    settings_row_highlight(hub);
     settings_row_shown_when(hub, update_row_shown);
     return menu_ota_upgrade_button;
 }
