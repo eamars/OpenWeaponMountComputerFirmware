@@ -1,83 +1,100 @@
-# ADR-006: the timer view, and screen corners for every view
+# ADR-006: the timer tile, and screen corners for every view
 
 Status: **Draft** 2026-11-07, for the owner to decide.
 
 ## What we want
 
-A countdown timer that is quick and sure to use on a small touch screen, mounted on a rifle: its settings tile laid out cleanly in every rotation, its widget on the level view never colliding with the dope strip, and every view placed with the panel's rounded corners in mind, by one rule rather than padding chosen by eye. No settings write when nothing changed.
+A countdown timer tile that is quick and sure to use at a precision rifle match, on a small touch screen mounted on the rifle, in portrait and landscape alike; every view placed with the panel's rounded corners in mind, by one rule rather than padding chosen by eye; and no settings write when nothing changed.
 
 ## Owner's direction (2026-11-07)
 
-1. The timer view comes first in the user-experience work; the dope view and settings usability follow.
+1. The timer comes first in the user-experience work; the dope view and settings usability follow.
 2. The layout looks off, and the owner was not sure how LVGL layout works.
 3. The AMOLED has rounded corners (see its datasheet). Padding at the edges is not how the design should handle them; treat the corners as a property of the screen that every view shares.
-4. The timer widget overlaps the dope strip on the level view; propose something better.
-5. The timer settings layout: propose a better one; usability comes first on a small touch screen.
-6. Saving on swipe-away is a design issue: avoid unnecessary NVS writes.
+4. The timer settings layout: propose a better one; usability comes first on a small touch screen. Each button must be physically large enough, and the design must follow how a timer is used in a PRS match (research it).
+5. Saving on swipe-away is a design issue: avoid unnecessary NVS writes.
+6. Every proposal shows portrait and landscape.
+7. The level view stays as it is in this ADR: its timer widget and the dope strip (which overlap in landscape) are to be designed together, as one system, later.
 
-## What we know (from the code, 2026-11-07)
+## What we know
 
-The screen is 280 x 456 (portrait); the owner uses rotation 1, so the views below are 456 wide and 280 high.
+### The screen (panel datasheet, 2026-11-07)
 
-**The timer widget on the level view** (`countdown_timer.c`, created in the level view's overlay): a 200 x 200 round button with the progress arc and a 48-pt label. Landscape: `LEFT_MID`, 20 px in, so it spans y 40 to 240. Portrait: centred. Tap pauses, resumes, or restarts an expired timer; long press restarts.
+The panel is DWO's DO0164FMST05: 1.64", 280 x 456, ICNA3311 / CO5300 driver, which the firmware drives as the SH8601 it is compatible with (datasheet in the hardware repository, `pcb/datasheet/DO0164FMST02_05.pdf`). Its outline drawing (page 6) gives the pixel area (AMOLED A.A) as 21.84 x 35.57 mm with four corners of R2.30 mm:
 
-**The dope strip** (`dope_config_view.c`): 80 px high, the full width, aligned to the bottom (y 200 to 280 in landscape), cards 70 x 55. In landscape it overlaps the timer by 40 px: both are placed by hand on the same overlay, so nothing stops them meeting. In portrait they miss each other (timer y 128 to 328, strip y 376 to 456), by the numbers rather than by design.
+- Pixel pitch 0.078 mm: **10 mm is 128 px**. The whole screen is 21.8 mm wide: two targets of about 10 mm fit side by side, three along the long side.
+- Corner radius 29.5 px: **30 px**. A point on the 45-degree diagonal clears a corner 9 px in from both edges; the views' 20 px offsets today are more than twice that.
+- The cover glass's visible area (22.34 x 36.06 mm) is a little larger than the pixel area, so the black print hides no pixels; the rounded pixel area is the limit.
 
-**The angle readout**: an 80 px wide button, `TOP_MID` +20 in portrait, `RIGHT_MID` (-20, -20) in landscape.
+### How a timer is used at a PRS match (research, 2026-11-07)
 
-**The timer settings tile** (`countdown_timer_config_view.c`, swipe up from the level): two rollers (minutes 0 to 10, seconds 0 to 59) above two preset buttons ("2:00" and "1:30"). The rollers stay greyed out until a preset is selected. Tapping a preset selects it and starts the timer straight away, and the widget appears on the level; tapping it again stops and hides the timer. Turning a roller edits the selected preset and changes the running time. The presets are saved when the tile is swiped away.
+- Each stage has a par time, given in the match book with the course of fire. PRS rules ask match directors for "a nearly uniform par time for most stages"; in practice most stages are 90 to 120 s, 105 s happens, and longer stages are exceptions ([PRS 2026 rules](https://s3.us-east-1.amazonaws.com/impactscoring-uploads/rulebooks/prs_rules.pdf), [Precision Rifle Blog](https://precisionrifleblog.com/2024/02/20/new-upgrades-to-the-prs-barricade-skills-stage/), [American Rifleman](https://www.americanrifleman.org/content/american-rifleman-guide-precision-rifle-series), [Rifle Shooter](https://www.rifleshootermag.com/editorial/precision-rifle-a-beginners-guide/83624)). The skills stage used to be fixed at 90 s.
+- The RO starts the shooter: "Load and/or make ready", "Stand by", "Engage", then within 1 to 3 s the beep of the RO's shot timer; "Time" when the par time runs out (PRS rules 3.3.6). The official time is the RO's; a shooter's own timer is for pacing, knowing how much is left at each position change. Timing out is a common new-shooter problem ([Snipershide](https://www.snipershide.com/shooting/posts/12238000), [Bullet Central](https://bulletcentral.com/blog/speed-and-timing-in-prs-train-with-a-timer)).
+- At "Stand by" the shooter is behind the rifle, hands on it; at the beep they move or shoot at once. Starting a personal timer is a single movement at the beep, or hands-free (an Apple Watch PRS timer starts on a wrist shake for that reason, [Precision Match Timer](https://apps.apple.com/us/app/-/id1519610860)). This unit can already start on the first shot's recoil (level setting "Auto Start Countdown Timer on Recoil"), which starts late by the time to the first shot.
+- Other timed moments: the squad's stage walk-through, at most one minute (rule 3.3.5); and practice, where shooters run stages against a countdown and shorten it, for example 180 s down to 90 s ([Outdoor Life](https://www.outdoorlife.com/at-home-precision-rifle-hunting-drills/)).
+- So: a match runs on one or two par times, set once per stage or once per match, between stages when there is time; the start happens under stress, with one hand, at the beep; and the values are multiples of 15 s almost always.
 
-**Why the layout looks off**: LVGL's flex layout places children one after another and adds the parent's padding and a gap between children; both come from the theme unless the code sets them. A size in percent is a percent of the parent's content area, which is the parent minus its padding. The tile sets its two halves to 38 % + 60 % (portrait) and 50 % + 48 % (landscape) and the rollers to 45 % + 45 %, so the gaps decide whether things fit, and the leftover space lands unevenly. Flex `grow` gives each child its share of what is left after the gaps, so the parts always fill the screen exactly; that is the fix, not new percentages.
+### Touch target size (research, 2026-11-07)
 
-**Rounded corners**: no code knows the panel's corner radius; the views keep away from the corners with fixed offsets (20 px here and there). The panel is DWO's DO0164FMST05 (1.64", 280 x 456, ICNA3311 / CO5300 driver, which the firmware drives as the SH8601 it is compatible with; datasheet in the hardware repository, `pcb/datasheet/DO0164FMST02_05.pdf`). Its outline drawing (page 6) gives the pixel area (AMOLED A.A) as 21.84 x 35.57 mm with four corners of R2.30 mm. That is a 0.078 mm pixel pitch, so the corner radius is 29.5 px: **30 px**. The cover glass's visible area (22.34 x 36.06 mm) is a little larger than the pixel area, so the black print hides no pixels; the rounded pixel area is the limit. A point on the 45-degree diagonal clears a corner 9 px in from both edges; today's 20 px offsets are more than twice that.
+Phone guidelines put a target at about 9 mm (Apple 44 pt, Material 48 dp). MIL-STD-1472 asks 15 mm bare-handed and 20 mm with gloves, with 3 mm between targets ([summary](https://specification.website/spec/accessibility/touch-target-size/)). On a 21.8 mm wide screen, 15 mm leaves room for one target per row. This ADR sets **9.5 mm (122 px) on the short side as the smallest target, above the phone guidelines, and 1.5 mm (20 px) between targets**, with fewer, larger targets wherever the screen allows; the action taken at the beep gets the largest targets on the tile (10.4 x 20.6 mm).
 
-**NVS on swipe-away**: ESP-IDF's NVS already compares a blob with the stored one and skips the flash write when they are equal (`nvs_storage.cpp`, `writeItem`: "it is cheaper to purposefully not write out new data"). So an unchanged swipe-away writes nothing to flash today; what it costs is a read and compare, and a "Configuration write successfully" log line that says otherwise. The countdown and dope tiles also save when they are switched off at boot.
+### The timer tile today (`countdown_timer_config_view.c`)
 
-**Screen capture**: LVGL's snapshot is already built in (`CONFIG_LV_USE_SNAPSHOT=y`) and unused.
+Swipe up from the level: two rollers (minutes 0 to 10, seconds 0 to 59) above two preset buttons ("2:00" and "1:30"). The rollers stay greyed out until a preset is selected. Tapping a preset selects it and starts the timer straight away; tapping it again stops and hides the timer. Turning a roller edits the selected preset and changes the running time. Rollers are 45 % of their half each, about 105 px wide in portrait (8 mm) and need a short vertical fling to land on one of 60 values.
+
+**Why the layout looks off**: LVGL's flex layout places children one after another and adds the parent's padding and a gap between children; both come from the theme unless the code sets them. A size in percent is a percent of the parent's content area, which is the parent minus its padding. The tile sets its halves to 38 % + 60 % (portrait) and 50 % + 48 % (landscape) and the rollers to 45 % + 45 %, so the gaps decide whether things fit, and the leftover space lands unevenly. Flex `grow` gives each child its share of what is left after the gaps, so the parts always fill the screen exactly; that is the fix, not new percentages.
+
+### NVS on swipe-away
+
+ESP-IDF's NVS already compares a blob with the stored one and skips the flash write when they are equal (`nvs_storage.cpp`, `writeItem`: "it is cheaper to purposefully not write out new data"). So an unchanged swipe-away writes nothing to flash today; what it costs is a read and compare, and a "Configuration write successfully" log line that says otherwise. The countdown and dope tiles also save when they are switched off at boot.
+
+### Screen capture
+
+LVGL's snapshot is already built in (`CONFIG_LV_USE_SNAPSHOT=y`) and unused.
 
 ## What we will do, and why
 
 ### Step 1: a screen capture over the remote control
 
-A `snap` command copies what the screen shows (`lv_snapshot`, one 255 KB RGB565 frame in PSRAM, freed after) and streams it to the host, where the runner saves a PNG with the panel's corner outline drawn on it. Why first: every later step is a layout change, and today the only way to see one is the owner's eyes on the unit. With `snap`, each change is checked on the real render, at every rotation, before the owner looks, and the ADR keeps before and after pictures. Cost: a debug command and about 255 KB of PSRAM while it runs.
+A `snap` command copies what the screen shows (`lv_snapshot`, one 255 KB RGB565 frame in PSRAM, freed after) and streams it to the host, where the runner saves a PNG with the panel's corner outline drawn on it. Why first: every later step is a layout change, and today the only way to see one is the owner's eyes on the unit. With `snap`, each change is checked on the real render, in portrait and landscape, before the owner looks, and the ADR keeps before and after pictures.
 
 ### Step 2: the corners, one rule for every view
 
-- One number: the panel's corner radius `DISP_CORNER_RADIUS_PX` (30, from the datasheet), next to the resolution in `app_cfg.h`. The corners are the panel's, so they are the same at every rotation.
-- One small helper, `display_shape.c`, answers the only question a view has: how far in must this object sit to clear a corner? For an object whose edge lies `d` px from one screen edge, near a corner, the clearance along the other edge is `R - sqrt(R^2 - (R - d)^2)` for `d < R`, and 0 beyond. Anything centred on an edge (top middle, left middle) needs nothing; only what reaches into a corner square is moved, and only by what that corner takes.
-- The rules for a view: edge-centred objects use no offset; corner-anchored objects take their offset from the helper; full-width strips (the dope strip, list rows) pad their ends by the clearance at their depth, so their contents can still scroll under the corner but come to rest clear of it.
-- A debug outline (the panel's rounded rectangle, drawn on LVGL's top layer, off by default) shows the safe shape on the real screen and in every `snap`.
-- This ADR applies the rule to the timer tile and the level view's overlay; other views move to it in their own ADRs.
+- One number: `DISP_CORNER_RADIUS_PX` (30), next to the resolution in `app_cfg.h`. The corners are the panel's, so they are the same at every rotation.
+- **Concentric corners**: a view keeps a margin `m` from the screen edge, and whatever sits in a corner gets a corner radius of `R - m`, so its outline runs parallel to the screen's corner and nothing is cut, without giving up the edges. This is how phones and watches place content in rounded screens. With an 8 px margin, corner buttons get a 22 px radius.
+- For objects that are not rounded (text, icons) near a corner, one helper in `display_shape.c` gives how far in they must sit: for an edge `d` px from one screen edge, the clearance along the other is `R - sqrt(R^2 - (R - d)^2)` for `d < R`, and 0 beyond. Anything centred on an edge needs nothing.
+- Full-width strips that scroll pad their ends by the clearance at their depth, so their contents rest clear of the corner but can scroll under it.
+- A debug outline (the panel's rounded rectangle on LVGL's top layer, off by default) shows the shape on the real screen and in every `snap`.
+- This ADR applies the rule to the timer tile; other views move to it in their own ADRs.
 
-### Step 3: the level view's overlay laid out by LVGL, not by hand
+### Step 3: the timer tile, rebuilt for the thumb
 
-The overlay becomes a flex column: a content area that grows to fill, and below it the dope strip at its 80 px. While the strip is hidden the content area takes the whole screen (LVGL leaves hidden children out of a layout). The timer and the angle readout sit in the content area (side by side in landscape, stacked in portrait), and the timer's diameter follows the content area's height, up to 200 px: about 180 px in landscape with the strip shown, 200 px without. They cannot overlap, because the layout gives each its own space.
+Drawn in portrait (280 x 456) and landscape (456 x 280) in the proposal pictures; 8 px margin, 20 px gaps, concentric corners.
 
-The alternative considered: shrink the timer to a small pill in a corner while the strip shows. It frees more space, but the timer jumps between two looks during a stage, which is harder to read at a glance; the layout keeps one look and only scales it.
+- **Three presets, as the whole tile.** Portrait: three full-width buttons stacked, 264 x 133 px (20.6 x 10.4 mm). Landscape: three side by side, 133 x 264 px. Each shows its time large. Defaults 1:30, 2:00 and 1:00 (the two common par times and the walk-through); the owner's current two values are kept as the first two.
+- **Tap a preset: the timer starts and the view goes back to the level.** At "Stand by" the shooter has the tile up; at the beep, one tap on a 10 x 20 mm target starts the timer and shows the level with the time running. Tapping the running preset again stops and hides the timer, as today. The recoil start stays as it is.
+- **Long press a preset to edit it.** The editor shows the time large and has three buttons: **minus 15 s, plus 15 s** (holding repeats, faster after a second), and **Done**. Portrait: the time on top (96 px), minus and plus side by side below (122 x 148 px each, 9.5 x 11.5 mm), Done across the bottom (264 x 156 px). Landscape: the time and Done on the left, plus above minus on the right (140 x 122 px each, 11 x 9.5 mm). Range 0:15 to 10:00. Why 15 s steps and no minute buttons: par times are multiples of 15 s, and the common ones are a few steps apart (1:30 to 2:00 is two taps), so two large buttons beat four smaller ones or a roller. Rollers need a short, precise fling; fixed targets do not.
+- Editing happens between stages, so a long press (not reachable by a stray tap) and a separate editor are acceptable; starting happens at the beep, so it is the largest and simplest action on the tile.
+- The tile and editor are laid out with flex grow, so they fill the screen exactly in every rotation, and the rotation handler only switches the flow (column in portrait, row in landscape).
 
-### Step 4: the timer settings tile, rebuilt for the thumb
+### Step 4: save only what changed
 
-Proposed (owner to decide, see below):
-- The tile shows the presets as large buttons, each with its time. **Tap a preset: the timer starts and the view goes back to the level**, so starting a stage is swipe up, tap.
-- **Long press a preset to edit it**: an editor with the time in large digits and four large buttons, minutes -1 / +1 and seconds -5 / +5 (holding repeats), and Done. Buttons replace the rollers: a roller needs a short, precise fling on a 280 px high screen, and is easy to miss with gloves or while holding the rifle; four fixed targets are not.
-- Stopping and hiding the timer moves to the timer itself: a long press on the widget on the level view. Restarting a stage is a tap on its preset again. Today stopping is done by unselecting the preset in the tile, which is not discoverable.
-- The tile is laid out with flex grow (step 3's reasoning), so it fills the screen exactly in every rotation.
+The timer tile saves when the editor's Done changes a preset, and only then; swiping away saves nothing. The dope tile keeps its swipe-away save but only when its settings differ from what it last loaded or saved. NVS would skip identical writes anyway; this removes the read and compare and the log line that wrongly reports a write.
 
-### Step 5: save only what changed
+## Not in this ADR
 
-Each tile keeps a copy of what it last loaded or saved and saves on swipe-away only when its settings differ. NVS would skip the identical write anyway; this removes the read and compare, and the log line that wrongly reports a write. The dope tile gets the same.
+The level view: the timer widget (200 px round, `LEFT_MID` in landscape) and the dope strip (80 px, bottom) overlap by 40 px in landscape, because both are placed by hand on the same overlay. The owner wants the widget and the dope strip designed together as one system, in the dope ADR.
 
 ## How the device shows it works
 
-- `snap` pictures at rotations 0 to 3 for the level view (strip shown and hidden, timer running) and the timer tile, with the corner outline: nothing crosses the outline, nothing overlaps.
-- The owner uses the timer tile and the widget by hand.
-- Swiping away an unchanged timer or dope tile logs no save; a changed one saves once.
+- `snap` pictures of the tile and the editor in portrait and landscape, with the corner outline: nothing crosses it, every button measures at least 122 px on its short side.
+- The owner uses the tile at a stage-like start: tile up, tap at a beep, level shows the time.
+- Swiping away the timer tile logs no save; Done after a change saves once; the dope tile saves only after a change.
 
 ## For the owner to decide
 
-1. ~~The panel's corner radius~~: 30 px, from the panel datasheet the owner pointed to (2026-11-07; CO5300 is SH8601-compatible).
+1. ~~The panel's corner radius~~: 30 px, from the panel datasheet (2026-11-07; CO5300 is SH8601-compatible).
 2. **Starting a preset returns to the level view** (recommended), or stays on the tile.
-3. **Editing**: buttons with -1 / +1 min and -5 / +5 s (recommended), or keep the rollers (1 s steps). Is 5 s fine enough?
-4. **Stopping the timer**: long press on the widget stops and hides it (recommended; restart is a tap on the preset), or keep long press as restart.
-5. **Number of presets**: two as today, or three.
-6. **The order**: the steps as above (capture first), or start with the timer tile.
+3. **Editing in 15 s steps** with two large buttons (recommended), or finer steps.
+4. **Three presets** (recommended: 1:30, 2:00, 1:00), or two.
+5. **The order**: capture first (recommended), then corners, tile, saving.
