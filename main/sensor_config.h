@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "lvgl.h"
 #include "esp_err.h"
+#include "settings_ui.h"
 
 typedef enum {
     TRIGGER_RISING_EDGE,
@@ -21,7 +22,10 @@ typedef struct {
 } sensor_config_t;
 
 
-lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page);
+/** @brief Advanced: the recoil trigger level, the sensor reports, the tare calibration; their part of
+ * Advanced's Reset (ADR-008) */
+void sensor_settings_add_advanced_rows(settings_page_t * page);
+void sensor_settings_reset_advanced(void);
 esp_err_t load_sensor_config();
 esp_err_t save_sensor_config();
 

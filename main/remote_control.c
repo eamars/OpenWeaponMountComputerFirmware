@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "settings_ui.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -22,6 +23,8 @@
 
 #include "remote_control.h"
 #include "app_cfg.h"
+#include "pmic_config.h"
+#include "ota_mode.h"
 #include "common.h"
 #include "bno085.h"
 #include "low_power_mode.h"
@@ -54,10 +57,10 @@
 
 #define RC_REBOOT_DELAY_US (100 * 1000)
 
-#define RC_MAX_ARGS 4
+#define RC_MAX_ARGS 6   // "settings open How to pair"
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset"
+#define RC_HELP_COMMANDS "help state stats bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota"
 
 
 typedef struct {
@@ -497,6 +500,95 @@ static bool rc_cmd_rot(int argc, char **argv, char *reply, size_t reply_size) {
 }
 
 
+// settings home | open <title> | row <n> | back | scroll <n> | power show|hide: look at the settings pages and the
+// power button's menu without touching the screen (ADR-008). Never changes a setting: toggles and actions that do
+// not ask are refused, back cancels
+static bool rc_cmd_settings(int argc, char **argv, char *reply, size_t reply_size) {
+    if (argc < 2) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    char title[48] = "";
+    if (strcmp(argv[1], "open") == 0) {
+        for (int i = 2; i < argc; i++) {
+            size_t used = strlen(title);
+            snprintf(&title[used], sizeof(title) - used, "%s%s", i > 2 ? " " : "", argv[i]);
+        }
+    }
+    long n = 0;
+    bool needs_n = strcmp(argv[1], "row") == 0 || strcmp(argv[1], "scroll") == 0;
+    if (needs_n && (argc != 3 || !rc_parse_long(argv[2], &n))) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
+        return rc_reply(reply, reply_size, false, "@err busy");
+    }
+    bool ok = true;
+    if (strcmp(argv[1], "home") == 0) {
+        settings_ui_test_home();
+    }
+    else if (strcmp(argv[1], "open") == 0) {
+        ok = settings_ui_test_open(title);
+    }
+    else if (strcmp(argv[1], "row") == 0) {
+        ok = settings_ui_test_row((int) n);
+    }
+    else if (strcmp(argv[1], "back") == 0) {
+        settings_ui_test_back();
+    }
+    else if (strcmp(argv[1], "scroll") == 0) {
+        settings_ui_test_scroll((int) n);
+    }
+#if USE_PMIC
+    else if (strcmp(argv[1], "power") == 0 && argc == 3 &&
+             (strcmp(argv[2], "show") == 0 || strcmp(argv[2], "hide") == 0)) {
+        power_menu_show(strcmp(argv[2], "show") == 0);  // only shows or closes it: its buttons are the owner's
+        bool shown = power_menu_shown();
+        lvgl_port_unlock();
+        return rc_reply(reply, reply_size, true, "@ok settings power %s", shown ? "shown" : "hidden");
+    }
+#endif  // USE_PMIC
+    else {
+        ok = false;
+    }
+    char top[48];
+    snprintf(top, sizeof(top), "%s", settings_ui_test_title());
+    lvgl_port_unlock();
+    return rc_reply(reply, reply_size, ok, ok ? "@ok settings %s" : "@err settings %s", top);
+}
+
+
+// ota mock [critical] | offer show|hide|end | view connecting|downloading|done|failed: the update's screens with mock
+// data (ADR-008), memory only. `tile 0 1` shows the OTA tile; its view here does not start a download
+static bool rc_cmd_ota(int argc, char **argv, char *reply, size_t reply_size) {
+    if (argc < 2 || argc > 3) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
+        return rc_reply(reply, reply_size, false, "@err busy");
+    }
+    bool ok = true;
+    if (strcmp(argv[1], "mock") == 0) {
+        ota_mode_test_mock(argc == 3 && strcmp(argv[2], "critical") == 0);
+    }
+    else if (strcmp(argv[1], "offer") == 0 && argc == 3) {
+        if (strcmp(argv[2], "end") == 0) {
+            ota_mode_test_offer_end();
+        }
+        else {
+            ota_mode_test_offer(strcmp(argv[2], "show") == 0);
+        }
+    }
+    else if (strcmp(argv[1], "view") == 0 && argc == 3) {
+        ok = ota_mode_test_view(argv[2]);
+    }
+    else {
+        ok = false;
+    }
+    lvgl_port_unlock();
+    return rc_reply(reply, reply_size, ok, ok ? "@ok ota %s" : "@err ota %s", argv[1]);
+}
+
+
 // kestrel: the pull's status in one line; kestrel pull: start a pull (ADR-007). The pull logs every phase and
 // target; this command only starts it and reports
 static bool rc_cmd_kestrel(int argc, char **argv, char *reply, size_t reply_size) {
@@ -891,7 +983,8 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "tap") == 0 || strcmp(cmd, "swipe") == 0 || strcmp(cmd, "tile") == 0 ||
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
                     strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
-                    strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0;
+                    strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0 ||
+                    strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -987,11 +1080,17 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     if (strcmp(cmd, "rot") == 0) {
         return rc_cmd_rot(argc, argv, reply, reply_size);
     }
+    if (strcmp(cmd, "settings") == 0) {
+        return rc_cmd_settings(argc, argv, reply, reply_size);
+    }
     if (strcmp(cmd, "wifi") == 0) {
         return rc_cmd_wifi(argc, argv, reply, reply_size);
     }
     if (strcmp(cmd, "kestrel") == 0) {
         return rc_cmd_kestrel(argc, argv, reply, reply_size);
+    }
+    if (strcmp(cmd, "ota") == 0) {
+        return rc_cmd_ota(argc, argv, reply, reply_size);
     }
     return rc_cmd_save(argc, argv, reply, reply_size);
 }

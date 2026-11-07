@@ -4,8 +4,12 @@
 
 #include <lvgl.h>
 #include "esp_err.h"
+#include "settings_ui.h"
 #include "digital_level_view_controller.h"
 #include "countdown_timer.h"
+
+#define MAX_NUM_COLOURS 20                  // the 19 colours of lv_palette_t, and black
+#define LV_PALETTE_BLACK LV_PALETTE_LAST
 
 typedef struct {
     uint32_t crc32;
@@ -37,7 +41,10 @@ typedef struct {
 
 
 void create_digital_level_view(lv_obj_t *parent);
-lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page);
+/** @brief The Level page of the settings (ADR-008) */
+settings_page_t * create_digital_level_settings_page(void);
+/** @brief One line for the hub */
+void digital_level_settings_summary(char * buf, size_t size, void * ctx);
 
 esp_err_t load_digital_level_view_config();
 esp_err_t save_digital_level_view_config();

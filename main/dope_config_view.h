@@ -7,6 +7,7 @@
 
 #include <lvgl.h>
 #include "esp_err.h"
+#include "settings_ui.h"
 
 // The dope card (ADR-007): 10, 12 or 15 targets (the Card Size setting), named A, B, C... or 1, 2, 3... as the
 // Kestrel's Target Card. Holds are in mil x 10, signed: elevation + up / - down, wind + right / - left. Filled by
@@ -72,8 +73,10 @@ static inline int dope_target_count(void) {
 /** @brief "A" or "1" for target 0, as the Target Names setting says */
 void dope_target_name(char * buf, size_t size, int index);
 
-/** @brief The Dope page in the settings menu */
-lv_obj_t * create_dope_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page);
+/** @brief The Dope page of the settings (ADR-008) */
+settings_page_t * create_dope_settings_page(void);
+/** @brief One line for the hub: the card size and the names */
+void dope_settings_summary(char * buf, size_t size, void * ctx);
 
 static inline bool dope_target_is_set(const dope_target_t * target) {
     return (target->flags & DOPE_TARGET_SET) != 0;

@@ -87,7 +87,7 @@ The firmware builds views imperatively in `main/*.c`:
 - `set_rotation_*` functions mutate layout flow, size, scroll direction, object order, and alignment for the current `system_config.rotation`.
 - `LV_EVENT_SIZE_CHANGED` callbacks reapply rotation-dependent layout.
 - Tile screens are created under `main_tileview.c`; many views need to fill their tile with `lv_pct(100)`.
-- Config UI should reuse helpers in `config_view.c` where practical: menu rows, spinboxes, color picker, switches, save/reload/reset buttons, and info message boxes.
+- Sizes, gaps, corners and colours follow the `embedded-ui-design` skill (122 px targets, 20 px gaps, 8 px margin, concentric corners, black background). Settings pages use `settings_ui` (`main/settings_ui.h`); the old `lv_menu` settings and `config_view.c` helpers were removed in ADR-008.
 
 For rotation-aware screens, keep all rotation layout policy in one `set_rotation_*` function and call it both during creation and from the size-change callback. Avoid scattering orientation conditionals through child setup unless the child is itself a separate reusable widget.
 
@@ -191,14 +191,7 @@ lv_obj_set_scroll_dir(card_list, LV_DIR_HOR);
 lv_obj_set_scrollbar_mode(card_list, LV_SCROLLBAR_MODE_OFF);
 ```
 
-For labels in constrained rows, set a width or allow grow, then set a long mode:
-
-```c
-lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-lv_obj_set_flex_grow(label, 1);
-```
-
-For multi-line text, use wrap and a concrete width:
+For labels in constrained rows, set a width or allow grow, then wrap. Do not use `LV_LABEL_LONG_MODE_SCROLL_CIRCULAR` for text the user must read: a moving label cannot be read at a glance (`embedded-ui-design`). Shorten the text or let it wrap to a second line:
 
 ```c
 lv_obj_set_width(label, lv_pct(100));
@@ -217,8 +210,9 @@ Before finalizing LVGL layout changes, check:
 - The view is initialized with the same layout policy used after `LV_EVENT_SIZE_CHANGED`.
 - Hidden children can disappear without leaving gaps; floating overlays do not change content size.
 - `LV_SIZE_CONTENT`, `lv_pct`, and flex grow are not fighting each other.
-- Long labels have a width/grow policy and long mode.
-- Fixed pixel sizes are justified by touch target, visual design, or hardware constraints.
+- Long labels have a width/grow policy and wrap (no circular scrolling).
+- Fixed pixel sizes are justified by touch target, visual design, or hardware constraints, as `embedded-ui-design` sets them.
+- Scrolling lists stop on whole items (see `embedded-ui-design`).
 - UI updates from FreeRTOS tasks use the project's LVGL lock pattern.
 - Changes match existing local style and helper APIs.
 

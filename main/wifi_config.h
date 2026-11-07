@@ -4,9 +4,12 @@
 #include "lvgl.h"
 
 #include "wifi.h"
+#include "settings_ui.h"
 
 
-/** @brief The Wi-Fi settings page; needs ui_bridge_init() first, not the Wi-Fi service. */
-lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page);
+/** @brief The Wi-Fi page of the settings (ADR-008); needs ui_bridge_init() first, not the Wi-Fi service */
+settings_page_t * create_wifi_settings_page(void);
+/** @brief One line for the hub: the Wi-Fi state */
+void wifi_settings_summary(char * buf, size_t size, void * ctx);
 
 #endif  // WIFI_CONFIG_H_

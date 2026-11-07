@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "lvgl.h"
+#include "settings_ui.h"
 
 typedef enum {
     OTA_IMPORTANCE_NORMAL = 0,
@@ -24,7 +25,7 @@ typedef struct {
     int manifest_version;
     char version[32];
     char path[128];
-    char note[256];
+    char note[1024];        // the release note, cut beyond this
     int port;
     bool ignore_version;
     ota_package_type_e type;
@@ -51,8 +52,15 @@ void create_ota_prompt_view(lv_obj_t * parent);
 void enter_ota_mode(bool enable);
 /** @brief True while the OTA tile is shown (an update may be downloading); any task */
 bool ota_mode_is_active(void);
-void update_ota_mode_progress(int progress);
-lv_obj_t * create_menu_ota_upgrade_button(lv_obj_t * parent);
+/** @brief The hub's "Update available" row, hidden until a newer firmware is found (ADR-008) */
+lv_obj_t * create_settings_update_row(settings_page_t * hub);
+
+// Test hooks for the remote control (ADR-008): the offer and the OTA tile with mock data, without a server.
+// LVGL lock held. The mock's server does not exist, so installing it fails
+void ota_mode_test_mock(bool critical);
+void ota_mode_test_offer(bool show);
+void ota_mode_test_offer_end(void);
+bool ota_mode_test_view(const char * state);    // connecting | downloading | done | failed
 
 
 #ifdef __cplusplus

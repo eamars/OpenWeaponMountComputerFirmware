@@ -2,13 +2,23 @@
 #define PMIC_CONFIG_H_
 
 #include "lvgl.h"
+#include "settings_ui.h"
 
 // The power management settings page and the power menu. They show the PMIC service (pmic_axp2101.h) through
 // the UI bridge and ask the service for changes (ADR-005 step 3).
 
-lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page);
+/** @brief The Power page of the settings and its line on the hub; Advanced's charging rows and their part
+ * of its Reset (ADR-008) */
+settings_page_t * create_power_settings_page(void);
+void pmic_settings_summary(char * buf, size_t size, void * ctx);
+void pmic_settings_add_advanced_rows(settings_page_t * page);
+void pmic_settings_reset_advanced(void);
 
-/** @brief Show the power menu (Reboot, Power Off). LVGL lock held; does nothing before the menu exists. */
-void power_menu_make_visible();
+/** @brief The power button's menu (Reboot, Power off, Cancel), full screen over every view; built once at start-up */
+void create_power_menu_overlay(void);
+
+/** @brief Show or close the power menu (the held power button shows it). LVGL lock held; nothing before it exists */
+void power_menu_show(bool show);
+bool power_menu_shown(void);
 
 #endif  // PMIC_CONFIG_H_

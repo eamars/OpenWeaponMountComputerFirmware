@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "app_cfg.h"
+#include "lvgl.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +31,19 @@ int32_t display_concentric_radius(int32_t margin);
  * from a screen edge. 0 at a depth of the corner radius or more.
  */
 int32_t display_corner_clearance(int32_t depth);
+
+/**
+ * @brief Row height for a scrolling list that shows whole rows only (ADR-008, the owner: no half row at the end of
+ * a scroll): as many rows of at least `min_row` px as fit in `viewport` with `gap` between them, stretched to fill
+ * it exactly. Used with LV_SCROLL_SNAP_START, every scroll then stops on a row edge.
+ */
+int32_t display_locked_row_height(int32_t viewport, int32_t min_row, int32_t gap);
+
+/**
+ * @brief For a list snapping row starts: the last `rows_per_screen` - 1 shown rows are no snap points, so the last
+ * stop is the last full screen (a snap to a later row's start scrolled past the list's end, leaving blank rows)
+ */
+void display_locked_list_snap(lv_obj_t * list, int32_t rows_per_screen);
 
 /**
  * @brief Debug: draw the panel's outline on the top layer (remote control `outline on|off`). LVGL lock held.

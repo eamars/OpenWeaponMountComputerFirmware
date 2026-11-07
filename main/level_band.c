@@ -146,21 +146,29 @@ void level_band_refresh_dope(void) {
 }
 
 
-void level_band_next_target(void) {
-    int next = find_set_target(current_target + 1, 1);
-    if (next >= 0) {        // after the last target it stays there
-        current_target = next;
+// One set target on, or back; `wrap` goes round the card (after the last the first, before the first the last)
+static void step_target(int direction, bool wrap) {
+    int found = find_set_target(current_target + direction, direction);
+    if (found < 0 && wrap) {
+        found = find_set_target(direction > 0 ? 0 : dope_target_count() - 1, direction);
+    }
+    if (found >= 0) {
+        current_target = found;
         show_target();
     }
 }
 
 
-void level_band_previous_target(void) {
-    int previous = find_set_target(current_target - 1, -1);
-    if (previous >= 0) {
-        current_target = previous;
-        show_target();
-    }
+// Recoil: stops at the last target, so a further shot or a false trigger there does not bring back the first
+// target's dope during the stage
+void level_band_next_target(void) {
+    step_target(1, false);
+}
+
+
+// The band's tap and long press: round the card (owner, 2026-11-07)
+static void band_event_cb(lv_event_t * e) {
+    step_target(lv_event_get_code(e) == LV_EVENT_SHORT_CLICKED ? 1 : -1, true);
 }
 
 
@@ -209,16 +217,6 @@ void level_band_update_timer(int time_left_ms) {
         colour = lv_palette_main(LV_PALETTE_GREY);      // paused
     }
     lv_obj_set_style_bg_color(timer_bar, colour, LV_PART_INDICATOR);
-}
-
-
-static void band_event_cb(lv_event_t * e) {
-    if (lv_event_get_code(e) == LV_EVENT_SHORT_CLICKED) {
-        level_band_next_target();
-    }
-    else {
-        level_band_previous_target();
-    }
 }
 
 

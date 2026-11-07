@@ -351,6 +351,7 @@ static esp_err_t wifi_reprovision() {
 
     esp_err_t ret = wifi_provision_reset();
     if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to erase the credentials: %s", esp_err_to_name(ret));
         wifi_apply_radio();
         return ret;
     }

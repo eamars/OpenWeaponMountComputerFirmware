@@ -48,9 +48,9 @@ Use the simplest widget with the right interaction contract:
 - `lv_label`: read-only text, symbols, status text, headings, and values that are not directly edited.
 - `lv_button` plus a child label or symbol: a momentary command, confirmation action, or checkable toggle with custom content.
 - `lv_switch`: binary on/off setting when the current state should be visible without reading text.
-- `lv_dropdown`: compact one-of-many selection where options can be hidden until interaction.
+- `lv_dropdown`: compact one-of-many selection where options can be hidden until interaction. Not for this device's touch UI: its rows are far below the 122 px target; a choice opens a full-screen list instead (`embedded-ui-design`).
 - `lv_roller`: one-of-many selection when the visible wheel affordance is useful and space allows.
-- `lv_spinbox`: bounded numeric editing with digit control, often paired with plus/minus buttons.
+- `lv_spinbox`: bounded numeric editing with digit control, often paired with plus/minus buttons. On this device numbers are edited with the shared `value_editor` instead.
 - `lv_slider`: bounded numeric editing where approximate touch adjustment is acceptable.
 - `lv_bar`: read-only progress, percentage, or range feedback.
 - `lv_arc`: circular progress or knob-like value visualization; use carefully on small screens because it consumes stable square space.
@@ -58,13 +58,13 @@ Use the simplest widget with the right interaction contract:
 - `lv_buttonmatrix`: many button-like choices in a memory-light grid; buttons are virtual, not child widgets.
 - `lv_table`: rows/columns of text where cells do not need to be real child widgets.
 - `lv_list`: vertical list made from buttons and labels when each row can be a simple command/text item.
-- `lv_menu`: hierarchical configuration screens and menu pages; prefer local helper functions already present in `config_view.c`.
+- `lv_menu`: hierarchical configuration screens. Deprecated in LVGL 9.6 ("build menu navigation from base widgets instead"); The settings no longer use it (ADR-008: `settings_ui`).
 - `lv_textarea`: editable text or numeric-string input, including cursor, placeholder, password, accepted-character, and max-length support.
 - `lv_tileview`: swipe navigation between screen-sized tiles.
 - `lv_tabview`: tabbed organization when tabs are a better model than swipe-only tile navigation.
 - `lv_msgbox` or a custom modal container: confirmation, warning, or short blocking prompt.
 
-Prefer project helpers in `config_view.c` for configuration UI: menu containers, static labels, spinboxes, color picker, dropdowns, switches, save/reload/reset buttons, and info message boxes. Reusing those helpers keeps behavior consistent across settings pages.
+How a control looks and behaves on this device (sizes, colours, corners, one action per row, store on change) is set by the `embedded-ui-design` skill; reuse its shared pieces (`value_editor_create_button`, `value_editor_create_label`, `value_editor`). The `config_view.c` helpers (menu containers, spin boxes, colour picker, drop-downs, Save/Reload/Reset, info message box) are the old settings design that ADR-008 replaces.
 
 ## Text And Lifetime
 
@@ -82,12 +82,9 @@ For rapidly changing labels where text length changes often, prefer a persistent
 
 Be careful with `LV_LABEL_LONG_MODE_DOTS`: LVGL edits the text buffer in place. Do not combine it with a ROM string passed through `lv_label_set_text_static`; use copied or writable text instead.
 
-Constrained labels need both a width/grow policy and a long mode. Common local patterns:
+Constrained labels need both a width/grow policy and a long mode. Wrap text the user must read; do not scroll it in a loop (`LV_LABEL_LONG_MODE_SCROLL_CIRCULAR` cannot be read at a glance):
 
 ```c
-lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-lv_obj_set_flex_grow(label, 1);
-
 lv_obj_set_width(label, lv_pct(100));
 lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
 ```
@@ -185,7 +182,7 @@ For `lv_dropdown`, newline-separated options are copied by `lv_dropdown_set_opti
 The firmware builds LVGL views directly in `main/*.c`:
 
 - `create_*_view(parent)` creates widgets, styles them, attaches callbacks, and stores object pointers when later updates need them.
-- Config pages are assembled through `lv_menu` and helper functions in `config_view.c`.
+- Settings pages are built with `settings_ui` (`main/settings_ui.h`): a page per hub row, full-width rows (link, choice, colour, toggle, number, action, reset, status), shown only while they do something (`settings_row_shown_when`).
 - `main_tileview.c` uses `lv_tileview_add_tile`, tile user data, and `LV_EVENT_VALUE_CHANGED` to enable/disable tile-specific behavior.
 - Status/value labels often use static buffers declared with `HEAPS_CAPS_ATTR` and `lv_label_set_text_static`.
 - Buttons often use `lv_obj_set_style_bg_image_src(button, LV_SYMBOL_..., 0)` for symbol-only controls.

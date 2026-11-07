@@ -29,6 +29,37 @@ int32_t display_corner_clearance(int32_t depth) {
 }
 
 
+int32_t display_locked_row_height(int32_t viewport, int32_t min_row, int32_t gap) {
+    if (viewport <= 0 || min_row <= 0) {
+        return min_row;
+    }
+    // n rows and n - 1 gaps fill the viewport: n (row + gap) = viewport + gap
+    int32_t rows = (viewport + gap) / (min_row + gap);
+    if (rows < 1) {
+        return viewport;    // not even one row fits: a row is the whole viewport
+    }
+    return (viewport + gap) / rows - gap;
+}
+
+
+void display_locked_list_snap(lv_obj_t * list, int32_t rows_per_screen) {
+    int32_t tail = rows_per_screen - 1;   // shown rows from the end that are no snap points
+    for (int32_t i = (int32_t) lv_obj_get_child_count(list) - 1; i >= 0; i--) {
+        lv_obj_t * child = lv_obj_get_child(list, i);
+        if (lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
+            continue;
+        }
+        if (tail > 0) {
+            lv_obj_remove_flag(child, LV_OBJ_FLAG_SNAPPABLE);
+            tail--;
+        }
+        else {
+            lv_obj_add_flag(child, LV_OBJ_FLAG_SNAPPABLE);
+        }
+    }
+}
+
+
 void display_shape_show_outline(bool show) {
     if (!show) {
         if (display_outline) {

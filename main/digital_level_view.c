@@ -11,11 +11,11 @@
 #include "esp_check.h"
 
 #include "digital_level_view.h"
+#include "settings_ui.h"
 #include "app_cfg.h"
 #include "bno085.h"
 #include "esp_lvgl_port.h"
 #include "countdown_timer.h"
-#include "config_view.h"
 #include "dope_config_view.h"
 #include "level_band.h"
 #include "display_shape.h"
@@ -265,33 +265,13 @@ void create_digital_level_view(lv_obj_t *parent)
 }
 
 
-/* 
+/*
 ----------------------------------------------------
-Configuration Menu Items
+Settings page: Level (ADR-008: each change stored when made)
 ----------------------------------------------------
 */
 
-static void update_float_item_gain_10(lv_event_t *e) {
-    lv_obj_t * spinbox = lv_event_get_target_obj(e);
-    float * target_ptr = lv_event_get_user_data(e);
-    int32_t value = lv_spinbox_get_value(spinbox);
-    *target_ptr = value / 10.0;
-}
-
-
-static void update_roll_offset(lv_event_t *e) {
-    lv_obj_t * spinbox = lv_event_get_target_obj(e);
-    float * target_ptr = lv_event_get_user_data(e);
-    int32_t value = lv_spinbox_get_value(spinbox);
-    
-    ESP_LOGI(TAG, "Roll offset updated to %d", value);
-}
-
-
-static lv_obj_t * digital_level_config_page = NULL;
-
-
-// Show the style the settings ask for (the style dropdown, Reload, Reset); the level reads its other settings live
+// Show the style the settings ask for; the level reads its other settings live
 static void apply_digital_level_view_style() {
     digital_level_view_t * wanted = select_digital_level_view(digital_level_view_config.level_style);
     if (wanted == NULL || wanted == current_digital_level_view) {
@@ -307,30 +287,6 @@ static void apply_digital_level_view_style() {
     lv_obj_move_foreground(overlay_container);
 }
 
-static void on_save_button_pressed(lv_event_t * e) {
-    update_info_msg_box_result(msg_box, save_digital_level_view_config(), "Configuration Saved", "Save failed");
-}
-
-static void on_reload_button_pressed(lv_event_t * e) {
-    esp_err_t ret = load_digital_level_view_config();
-    apply_digital_level_view_style();
-    config_page_rebuild(digital_level_config_page);
-
-    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
-}
-
-static void on_reset_button_pressed(lv_event_t * e) {
-    // Initialize with default values. Reset restores the preferences, not the calibration: the zero (the mounting
-    // offset, and after a tare the rotation it was taken at) stays, as the tare stays in the sensor (owner, ADR-005)
-    float zero_rad = digital_level_view_config.user_roll_rad_offset;
-    memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
-    digital_level_view_config.user_roll_rad_offset = zero_rad;
-    apply_digital_level_view_style();
-    config_page_rebuild(digital_level_config_page);
-
-    update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-}
-
 
 void digital_level_view_rotation_event_callback(lv_event_t * e) {
     set_rotation_roll_deg_indicator(system_config.rotation);
@@ -338,76 +294,127 @@ void digital_level_view_rotation_event_callback(lv_event_t * e) {
 }
 
 
-static void update_level_style(lv_event_t *e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    digital_level_view_config.level_style = (digital_level_view_type_t) lv_dropdown_get_selected(dropdown);
-    ESP_LOGI(TAG, "Level style set to %d", digital_level_view_config.level_style);
+static const char * const level_style_names[] = {"Level", "Block"};
 
+// The colours a tilt or the level can show: LVGL's palette, and black (LV_PALETTE_BLACK, after the palette)
+static const char * const colour_names[MAX_NUM_COLOURS] = {
+    "Red", "Pink", "Purple", "Deep purple", "Indigo", "Blue", "Light blue", "Cyan", "Teal", "Green",
+    "Light green", "Lime", "Yellow", "Amber", "Orange", "Deep orange", "Brown", "Blue grey", "Grey", "Black",
+};
+
+
+static lv_color_t colour_of(int index) {
+    return index < LV_PALETTE_LAST ? lv_palette_main((lv_palette_t) index) : lv_color_black();
+}
+
+
+static void save_level(void) {
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_digital_level_view_config());
+}
+
+
+static int get_style(void * ctx) {
+    return digital_level_view_config.level_style;
+}
+
+
+static void set_style(int index, void * ctx) {
+    digital_level_view_config.level_style = (digital_level_view_type_t) index;
     apply_digital_level_view_style();
+    save_level();
 }
 
 
-// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
-static void fill_digital_level_config_page(lv_obj_t * sub_page_config_view) {
-    lv_obj_t * container;
-    lv_obj_t * config_item;
-
-    // Type
-    const char level_style_options[] = "Level\nBlock";
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Level Style");
-    config_item = create_dropdown_list(container, level_style_options, digital_level_view_config.level_style, update_level_style, NULL);
-
-    // Roll display gain
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Roll Display Gain");
-    config_item = create_spin_box(container, 10, 20, 1, 2, 1, (int32_t) (digital_level_view_config.roll_display_gain * 10), update_float_item_gain_10, &digital_level_view_config.roll_display_gain);
-
-    // Pitch display gain
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Pitch Display Gain");
-    config_item = create_spin_box(container, 1, 10, 1, 2, 1, (int32_t) (digital_level_view_config.pitch_display_gain * 10), update_float_item_gain_10, &digital_level_view_config.pitch_display_gain);
-
-    // delta level threshold
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Level Threshold (deg)");
-    config_item = create_spin_box(container, 5, 20, 1, 2, 1, (int32_t) (digital_level_view_config.delta_level_threshold * 10), update_float_item_gain_10, &digital_level_view_config.delta_level_threshold);
-
-    // Left tilt indicator colour
-    container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Left Tilt Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_left_tilt_indicator, NULL);
-
-    // Right tilt indicator colour
-    container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Right Tilt Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_right_tilt_indicator, NULL);
-
-    // Horizontal tilt indicator colour
-    container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Leveled Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_horizontal_level_indicator, NULL);
-
-    // Horizontal tilt indicator colour
-    container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Foreground Colour");
-    config_item = create_colour_picker(container, &digital_level_view_config.colour_foreground, NULL);
-
-    // Save Reload
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
-    config_item = create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
+// The gains and the threshold are kept as floats; the page edits them in tenths
+static int32_t get_tenths(void * ctx) {
+    return (int32_t) lroundf(*(float *) ctx * 10.0f);
 }
 
 
-lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
-    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_digital_level_config_page);
-    digital_level_config_page = sub_page_config_view;
+static void set_tenths(int32_t value, void * ctx) {
+    *(float *) ctx = value / 10.0f;
+    save_level();
+}
 
-    // Add to the menu
-    lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
-    lv_obj_t * img = lv_image_create(cont);
-    lv_obj_t * label = lv_label_create(cont);
 
-    lv_image_set_src(img, LV_SYMBOL_SETTINGS);
-    lv_label_set_text(label, "Digital Level");
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-    lv_obj_set_flex_grow(label, 1);
+static void format_gain(char * buf, size_t size, int32_t tenths) {
+    snprintf(buf, size, "%ld.%ld x", (long) (tenths / 10), (long) (tenths % 10));
+}
 
-    lv_menu_set_load_page_event(parent, cont, sub_page_config_view);
 
-    return sub_page_config_view;
+static void format_degrees(char * buf, size_t size, int32_t tenths) {
+    snprintf(buf, size, "%ld.%ld\xC2\xB0", (long) (tenths / 10), (long) (tenths % 10));
+}
+
+
+static void format_tenth_step(char * buf, size_t size, int direction, int32_t step) {
+    snprintf(buf, size, "%c0.%ld", direction < 0 ? '-' : '+', (long) step);
+}
+
+
+// The display gains scale the Level style's line; the Block style does not use them
+static bool gains_shown(void) {
+    return digital_level_view_config.level_style == DIGITAL_LEVEL_VIEW_TYPE_1;
+}
+
+
+static int get_colour(void * ctx) {
+    return *(lv_palette_t *) ctx;
+}
+
+
+static void set_colour(int index, void * ctx) {
+    *(lv_palette_t *) ctx = (lv_palette_t) index;
+    save_level();
+}
+
+
+// Reset restores the preferences, not the calibration: the zero (the mounting offset, and after a tare the rotation
+// it was taken at) stays, as the tare stays in the sensor (owner, ADR-005)
+static void reset_level(void * ctx) {
+    float zero_rad = digital_level_view_config.user_roll_rad_offset;
+    memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
+    digital_level_view_config.user_roll_rad_offset = zero_rad;
+    apply_digital_level_view_style();
+    save_level();
+}
+
+
+void digital_level_settings_summary(char * buf, size_t size, void * ctx) {
+    int32_t tenths = (int32_t) lroundf(digital_level_view_config.delta_level_threshold * 10.0f);
+    snprintf(buf, size, "%s, within %ld.%ld\xC2\xB0", level_style_names[digital_level_view_config.level_style % 2],
+             (long) (tenths / 10), (long) (tenths % 10));
+}
+
+
+settings_page_t * create_digital_level_settings_page(void) {
+    static const settings_number_t roll_gain = {.min = 10, .max = 20, .step = 1, .fast_steps = 1,
+                                                .format_value = format_gain, .format_step = format_tenth_step};
+    static const settings_number_t pitch_gain = {.min = 1, .max = 10, .step = 1, .fast_steps = 1,
+                                                 .format_value = format_gain, .format_step = format_tenth_step};
+    static const settings_number_t threshold = {.min = 5, .max = 20, .step = 1, .fast_steps = 1,
+                                                .format_value = format_degrees, .format_step = format_tenth_step};
+
+    settings_page_t * page = settings_page_create("Level");
+    settings_row_choice(page, "Level style", level_style_names, 2, get_style, set_style, NULL);
+    settings_row_number(page, "Roll display gain", &roll_gain, get_tenths, set_tenths,
+                        &digital_level_view_config.roll_display_gain);
+    settings_row_shown_when(page, gains_shown);
+    settings_row_number(page, "Pitch display gain", &pitch_gain, get_tenths, set_tenths,
+                        &digital_level_view_config.pitch_display_gain);
+    settings_row_shown_when(page, gains_shown);
+    settings_row_number(page, "Level threshold", &threshold, get_tenths, set_tenths,
+                        &digital_level_view_config.delta_level_threshold);
+    settings_row_colour(page, "Left tilt colour", colour_names, MAX_NUM_COLOURS, colour_of, get_colour, set_colour,
+                        &digital_level_view_config.colour_left_tilt_indicator);
+    settings_row_colour(page, "Right tilt colour", colour_names, MAX_NUM_COLOURS, colour_of, get_colour, set_colour,
+                        &digital_level_view_config.colour_right_tilt_indicator);
+    settings_row_colour(page, "Levelled colour", colour_names, MAX_NUM_COLOURS, colour_of, get_colour, set_colour,
+                        &digital_level_view_config.colour_horizontal_level_indicator);
+    settings_row_colour(page, "Foreground colour", colour_names, MAX_NUM_COLOURS, colour_of, get_colour, set_colour,
+                        &digital_level_view_config.colour_foreground);
+    settings_row_reset(page, "Reset Level settings", "Reset the Level settings? The zero stays.", reset_level, NULL);
+    return page;
 }
 
 

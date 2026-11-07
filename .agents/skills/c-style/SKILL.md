@@ -181,15 +181,7 @@ When writing a new config feature, follow this shape before inventing a separate
 
 LVGL UI code is intentionally direct: create the object, set its style/layout, attach callbacks, and return it. Use small helper functions only when they remove repeated UI setup already present in the module.
 
-Prefer existing helpers from `config_view.c` for settings UI:
-
-- `create_menu_container_with_text`
-- `create_dropdown_list`
-- `create_spin_box`
-- `create_colour_picker`
-- `create_switch`
-- `create_save_reload_reset_buttons`
-- `create_info_msg_box` / `update_info_msg_box`
+What a view looks like and how it behaves follows the `embedded-ui-design` skill. Reuse the shared pieces built for it: `value_editor_create_button` / `value_editor_create_label` (buttons and cells), `value_editor` (editing a number), `display_concentric_radius` / `display_corner_clearance` (corners). The old settings helpers in `config_view.c` (menu rows, drop-downs, spin boxes, colour picker, Save/Reload/Reset buttons, info message box) are what ADR-008 replaces: do not use them in new code.
 
 Use LVGL locks when updating UI from tasks:
 

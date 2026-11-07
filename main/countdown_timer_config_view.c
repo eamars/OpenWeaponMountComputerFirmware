@@ -6,11 +6,11 @@
 #include "nvs.h"
 #include "common.h"
 #include "esp_check.h"
-#include "config_view.h"
 #include "digital_level_view.h"
 #include "display_shape.h"
 #include "main_tileview.h"
 #include "value_editor.h"
+#include "settings_ui.h"
 
 #include <string.h>
 
@@ -38,7 +38,6 @@ const countdown_timer_config_t countdown_timer_config_default = {
 
 // The step choices, as the settings page lists them
 static const uint8_t timer_step_options_s[] = {5, 10, 15};
-static const char * timer_step_options = "5 s\n10 s\n15 s";
 
 
 typedef struct {
@@ -51,8 +50,6 @@ static timer_preset_widget_t preset_widgets[TIMER_PRESET_COUNT];
 static int selected_preset = -1;    // the preset the timer is armed with; -1: none, the timer is hidden
 
 static value_editor_t * editor = NULL;
-
-static lv_obj_t * timer_config_page = NULL;
 
 
 static void format_time(char * buf, size_t size, uint16_t seconds) {
@@ -271,21 +268,15 @@ void enable_countdown_timer_config_view(bool enable) {
 
 /*
 ----------------------------------------------------
-Settings page: Timer
+Settings page: Timer (ADR-008: each change stored when made)
 ----------------------------------------------------
 */
 
-static void update_step_event_cb(lv_event_t * e) {
-    lv_obj_t * dropdown = lv_event_get_target_obj(e);
-    uint32_t selected = lv_dropdown_get_selected(dropdown);
-    if (selected < sizeof(timer_step_options_s)) {
-        countdown_timer_config.step_s = timer_step_options_s[selected];
-    }
-}
+static const char * const step_option_names[] = {"5 s", "10 s", "15 s"};
 
 
-static uint32_t step_option_index() {
-    for (uint32_t i = 0; i < sizeof(timer_step_options_s); i++) {
+static int step_option_index() {
+    for (int i = 0; i < (int) sizeof(timer_step_options_s); i++) {
         if (timer_step_options_s[i] == countdown_timer_config.step_s) {
             return i;
         }
@@ -294,60 +285,47 @@ static uint32_t step_option_index() {
 }
 
 
-static void on_save_button_pressed(lv_event_t * e) {
-    update_info_msg_box_result(msg_box, save_countdown_timer_config(), "Configuration Saved", "Save failed");
+static int get_step(void * ctx) {
+    return step_option_index();
 }
 
 
-static void on_reload_button_pressed(lv_event_t * e) {
-    // Nothing to apply: the step and the first-shot start are read when used; the presets show on the tile
-    esp_err_t ret = load_countdown_timer_config();
-    refresh_preset_widgets();
-    config_page_rebuild(timer_config_page);
-
-    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
+static void set_step(int index, void * ctx) {
+    countdown_timer_config.step_s = timer_step_options_s[index];
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_countdown_timer_config());
 }
 
 
-static void on_reset_button_pressed(lv_event_t * e) {
+static bool get_first_shot(void * ctx) {
+    return countdown_timer_config.start_on_first_shot;
+}
+
+
+static void set_first_shot(bool on, void * ctx) {
+    countdown_timer_config.start_on_first_shot = on;
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_countdown_timer_config());
+}
+
+
+// The step, the first-shot start and the three presets
+static void reset_timer(void * ctx) {
     memcpy(&countdown_timer_config, &countdown_timer_config_default, sizeof(countdown_timer_config));
     refresh_preset_widgets();
-    config_page_rebuild(timer_config_page);
-
-    update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_countdown_timer_config());
 }
 
 
-// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
-static void fill_timer_config_page(lv_obj_t * sub_page_config_view) {
-    lv_obj_t * container;
-
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Editor Step");
-    create_dropdown_list(container, timer_step_options, step_option_index(), update_step_event_cb, NULL);
-
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Start on First Shot");
-    create_switch(container, &countdown_timer_config.start_on_first_shot, NULL);
-
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
-    create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
+void countdown_timer_settings_summary(char * buf, size_t size, void * ctx) {
+    snprintf(buf, size, "%u s step, first shot %s", (unsigned) countdown_timer_config.step_s,
+             countdown_timer_config.start_on_first_shot ? "on" : "off");
 }
 
 
-lv_obj_t * create_countdown_timer_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
-    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_timer_config_page);
-    timer_config_page = sub_page_config_view;
-
-    // Add to the menu
-    lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
-    lv_obj_t * img = lv_image_create(cont);
-    lv_obj_t * label = lv_label_create(cont);
-
-    lv_image_set_src(img, LV_SYMBOL_SETTINGS);
-    lv_label_set_text(label, "Timer");
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-    lv_obj_set_flex_grow(label, 1);
-
-    lv_menu_set_load_page_event(parent, cont, sub_page_config_view);
-
-    return sub_page_config_view;
+settings_page_t * create_countdown_timer_settings_page(void) {
+    settings_page_t * page = settings_page_create("Timer");
+    settings_row_choice(page, "Editor step", step_option_names, sizeof(step_option_names) / sizeof(step_option_names[0]),
+                        get_step, set_step, NULL);
+    settings_row_toggle(page, "Start on first shot", get_first_shot, set_first_shot, NULL);
+    settings_row_reset(page, "Reset Timer", "Reset the Timer settings and presets?", reset_timer, NULL);
+    return page;
 }
