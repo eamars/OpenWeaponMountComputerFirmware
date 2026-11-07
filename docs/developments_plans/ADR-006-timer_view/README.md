@@ -15,7 +15,7 @@ A countdown timer tile that is quick and sure to use at a precision rifle match,
 5. Saving on swipe-away is a design issue: avoid unnecessary NVS writes.
 6. Every proposal shows portrait and landscape.
 7. The editor's step is a setting: 5, 10 or 15 s (owner, 2026-11-07: "15 s step seems huge").
-8. Consider where each setting belongs. Nothing important is saved yet, so an NVS reset of moved settings is accepted (owner, 2026-11-07).
+8. Consider where each setting belongs. Scope of this ADR: the timer tile, its editor and the timer's settings, grouped together; the level view is out. The rest of the settings move when their feature is reviewed. NVS resets of moved settings are accepted, as often as needed (owner, 2026-11-07).
 9. The level view stays as it is in this ADR: its timer widget and the dope strip (which overlap in landscape) are to be designed together, as one system, later.
 
 ## What we know
@@ -89,20 +89,20 @@ Today the settings menu follows the code modules (System, Digital Level, Sensor,
 | Timer presets | Timer tile | Timer tile (edited there, this ADR) |
 | Timer step (new) | - | **Timer** page (this ADR) |
 | Start timer on first shot | Digital Level | **Timer** page (this ADR) |
-| Advance dope card on shot | Digital Level | Dope page (dope ADR) |
-| Recoil trigger level | Sensor | Sensor, renamed "Shot detection sensitivity" (settings ADR) |
+| Advance dope card on shot | Digital Level | Dope page (when the dope view is reviewed) |
+| Recoil trigger level | Sensor | Sensor, renamed "Shot detection sensitivity" (when its feature is reviewed) |
 | Level style, roll and pitch gain, level threshold, four colours | Digital Level | Digital Level |
-| Screen rotation, brightness | System | **Display and power** page (settings ADR) |
-| Idle timeout (screen off), sleep timeout (power off) | Power Management | **Display and power** (settings ADR): they are what the user sees, not the PMIC |
-| VBUS current limit, charge current, charge voltage | Power Management | **Battery** page, with the battery readings (settings ADR) |
-| Wi-Fi on/off, reset provisioning, QR code | WiFi | WiFi; the Wi-Fi window (600 s, not in the menu today) could join it (settings ADR) |
+| Screen rotation, brightness | System | **Display and power** page (when its feature is reviewed) |
+| Idle timeout (screen off), sleep timeout (power off) | Power Management | **Display and power** (when its feature is reviewed): they are what the user sees, not the PMIC |
+| VBUS current limit, charge current, charge voltage | Power Management | **Battery** page, with the battery readings (when its feature is reviewed) |
+| Wi-Fi on/off, reset provisioning, QR code | WiFi | WiFi; the Wi-Fi window (600 s, not in the menu today) could join it (when its feature is reviewed) |
 | Tare, sensor calibration | Sensor | Sensor |
-| Global log level, remote control | System | **Developer** page (settings ADR) |
-| Game rotation vector, linear acceleration, rotation vector reports | Sensor | **Developer** page (settings ADR): switching the game rotation vector off stops the level |
+| Global log level, remote control | System | **Developer** page (when its feature is reviewed) |
+| Game rotation vector, linear acceleration, rotation vector reports | Sensor | **Developer** page (when its feature is reviewed): switching the game rotation vector off stops the level |
 
 Menu order by how often a page is opened: Timer, Digital Level, Display and power, Sensor, WiFi, Battery, Developer, About. Two values have no menu entry today and need none: the level zero (set by tapping the angle) and the recoil edge.
 
-This ADR does the timer rows: a Timer page with the step and "Start timer on first shot", moved out of Digital Level (both saved blocks reset once). The rest waits for the settings ADR, so the menu is reorganised once, by one rule, and the owner sees the whole of it together.
+This ADR does the timer rows: a Timer page with the step and "Start timer on first shot", moved out of Digital Level (both saved blocks reset). Every other row moves when its feature is reviewed (owner, 2026-11-07), by the same rule; the table is the plan they follow, and each of those ADRs may revise its own rows.
 
 ### Step 4: save only what changed
 
@@ -125,4 +125,4 @@ The level view: the timer widget (200 px round, `LEFT_MID` in landscape) and the
 3. ~~Editing step~~: a setting, 5, 10 or 15 s, default 5 s (owner, 2026-11-07).
 4. **Three presets** (recommended: 1:30, 2:00, 1:00), or two.
 5. **The order**: capture first (recommended), then corners, tile, saving.
-6. **Settings placement**: the map above as the plan, with only the timer rows in this ADR (recommended), or the whole menu reorganised here.
+6. ~~Settings placement~~: the timer's settings grouped on a Timer page in this ADR; the others move when their feature is reviewed (owner, 2026-11-07).
