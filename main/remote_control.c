@@ -557,7 +557,7 @@ static bool rc_cmd_settings(int argc, char **argv, char *reply, size_t reply_siz
 }
 
 
-// ota mock [critical] | offer show|hide | view connecting|downloading|done|failed: the update's screens with mock
+// ota mock [critical] | offer show|hide|end | view connecting|downloading|done|failed: the update's screens with mock
 // data (ADR-008), memory only. `tile 0 1` shows the OTA tile; its view here does not start a download
 static bool rc_cmd_ota(int argc, char **argv, char *reply, size_t reply_size) {
     if (argc < 2 || argc > 3) {
@@ -571,7 +571,12 @@ static bool rc_cmd_ota(int argc, char **argv, char *reply, size_t reply_size) {
         ota_mode_test_mock(argc == 3 && strcmp(argv[2], "critical") == 0);
     }
     else if (strcmp(argv[1], "offer") == 0 && argc == 3) {
-        ota_mode_test_offer(strcmp(argv[2], "show") == 0);
+        if (strcmp(argv[2], "end") == 0) {
+            ota_mode_test_offer_end();
+        }
+        else {
+            ota_mode_test_offer(strcmp(argv[2], "show") == 0);
+        }
     }
     else if (strcmp(argv[1], "view") == 0 && argc == 3) {
         ok = ota_mode_test_view(argv[2]);

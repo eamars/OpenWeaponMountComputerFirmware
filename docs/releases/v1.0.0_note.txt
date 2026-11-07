@@ -1,0 +1,7 @@
+Firmware 1.0
+• Level: timer bar and dope target on the band; tap for the next target, hold for the previous
+• Dope card of 10, 12 or 15 targets, by hand or pulled from a Kestrel
+• Timer tile rebuilt; start on the first shot or the button
+• Settings redesigned: dark, large rows, stored when changed
+• Power button menu: Reboot, Power off
+• Faster, clearer updates

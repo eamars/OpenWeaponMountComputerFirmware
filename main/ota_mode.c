@@ -1,4 +1,8 @@
 #include "ota_mode.h"
+
+#include <ctype.h>
+#include <string.h>
+
 #include "low_power_mode.h"
 #include "wifi.h"
 #include "main_tileview.h"
@@ -267,9 +271,110 @@ static void ota_ui_result(bool ok, const char * reason, esp_err_t err) {
     }
 }
 
+// One code point as UTF-8, or its plain-text stand-in: the panel's fonts have ASCII, the degree sign and the
+// bullet, so typographic quotes, dashes and the ellipsis would show as boxes
+static size_t put_code_point(char * out, uint32_t cp) {
+    switch (cp) {
+    case 0x2018: case 0x2019: out[0] = '\''; return 1;
+    case 0x201C: case 0x201D: out[0] = '"'; return 1;
+    case 0x2013: case 0x2014: out[0] = '-'; return 1;
+    case 0x2026: memcpy(out, "...", 3); return 3;
+    default: break;
+    }
+    if (cp < 0x80) {
+        out[0] = (char) cp;
+        return 1;
+    }
+    if (cp < 0x800) {
+        out[0] = (char) (0xC0 | (cp >> 6));
+        out[1] = (char) (0x80 | (cp & 0x3F));
+        return 2;
+    }
+    out[0] = (char) (0xE0 | (cp >> 12));
+    out[1] = (char) (0x80 | ((cp >> 6) & 0x3F));
+    out[2] = (char) (0x80 | (cp & 0x3F));
+    return 3;
+}
+
+
+// A JSON string's escapes decoded in place (the parser hands the text as written: "\n" showed as a backslash and an
+// n). The result is never longer than the text
+static void json_unescape(char * s) {
+    char * out = s;
+    for (const char * in = s; *in != '\0'; in++) {
+        if (*in != '\\' || in[1] == '\0') {
+            *out++ = *in;
+            continue;
+        }
+        in++;
+        switch (*in) {
+        case 'n': *out++ = '\n'; break;
+        case 't': *out++ = ' '; break;
+        case 'r': case 'b': case 'f': break;
+        case 'u': {
+            uint32_t cp = 0;
+            int digits = 0;
+            while (digits < 4 && isxdigit((unsigned char) in[1])) {
+                char c = *++in;
+                cp = cp * 16 + (uint32_t) (isdigit((unsigned char) c) ? c - '0' : (tolower((unsigned char) c) - 'a' + 10));
+                digits++;
+            }
+            // A character beyond 0xFFFF (an emoji) comes as a pair of surrogates and has no glyph here: one '?' for
+            // the pair (the low half that follows is skipped)
+            bool surrogate = digits == 4 && cp >= 0xD800 && cp <= 0xDFFF;
+            if (surrogate && cp <= 0xDBFF && in[1] == '\\' && in[2] == 'u' &&
+                (in[3] == 'd' || in[3] == 'D') && strchr("cdefCDEF", in[4]) != NULL && in[4] != '\0') {
+                in += 6;    // the low half: \uDCxx to \uDFxx
+            }
+            out += put_code_point(out, (digits == 4 && !surrogate) ? cp : '?');
+            break;
+        }
+        default: *out++ = *in; break;   // \" \\ \/
+        }
+    }
+    *out = '\0';
+}
+
+
+// The release note, as long as the manifest has it, up to the buffer and cut with "..." beyond (inside no
+// character); a long note used to reject the whole manifest, so no update was offered
+static esp_err_t read_note(jparse_ctx_t * jctx, char * note, size_t size) {
+    int len = 0;
+    if (json_obj_get_strlen(jctx, "note", &len) != OS_SUCCESS) {
+        return ESP_FAIL;
+    }
+    char * text = heap_caps_malloc(len + 1, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+    if (text == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    if (json_obj_get_string(jctx, "note", text, len + 1) != OS_SUCCESS) {
+        heap_caps_free(text);
+        return ESP_FAIL;
+    }
+    json_unescape(text);
+    size_t used = strlen(text);
+    if (used < size) {
+        memcpy(note, text, used + 1);
+    }
+    else {
+        size_t keep = size - 4;
+        while (keep > 0 && ((unsigned char) text[keep] & 0xC0) == 0x80) {
+            keep--;     // not inside a character's bytes
+        }
+        memcpy(note, text, keep);
+        memcpy(&note[keep], "...", 4);
+        ESP_LOGW(TAG, "The note has %u bytes; shown up to %u", (unsigned) used, (unsigned) keep);
+    }
+    heap_caps_free(text);
+    return ESP_OK;
+}
+
+
 esp_err_t fetch_manifest_from_source(const char * ota_source) {
     esp_err_t ret;
     char * manifest_json_raw = NULL;
+    jparse_ctx_t jctx;
+    bool parsing = false;       // the parser's tokens are freed at the end (they were left allocated)
 
     ESP_LOGI(TAG, "Fetching manifest from %s", ota_source);
 
@@ -313,11 +418,11 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
             "path": "/1.2.3/firmware.bin"
         }
     */
-    jparse_ctx_t jctx;
     if (json_parse_start(&jctx, manifest_json_raw, byte_read) != OS_SUCCESS) {
         ret = ESP_FAIL;
         ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to decode json string: %s", manifest_json_raw);
     }
+    parsing = true;
 
     // Read manifest_version
     if (json_obj_get_int(&jctx, "manifest_version", &ota_manifest.manifest_version)) {
@@ -346,14 +451,10 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
         ESP_LOGI(TAG, "path: %s", ota_manifest.path);
     }
 
-    // Read fw_note
-    if (json_obj_get_string(&jctx, "note", ota_manifest.note, sizeof(ota_manifest.note)) != OS_SUCCESS) {
-        ret = ESP_FAIL;
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract fw_note: %s", manifest_json_raw);
-    }
-    else {
-        ESP_LOGI(TAG, "note: %s", ota_manifest.note);
-    }
+    // Read the release note
+    ret = read_note(&jctx, ota_manifest.note, sizeof(ota_manifest.note));
+    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract note: %s", manifest_json_raw);
+    ESP_LOGI(TAG, "note: %s", ota_manifest.note);
 
     // Read port number
     if (json_obj_get_int(&jctx, "port", &ota_manifest.port)) {
@@ -432,6 +533,9 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
     ret = ESP_OK;
 
 finally:
+    if (parsing) {
+        json_parse_end(&jctx);
+    }
     esp_http_client_cleanup(client_handle);
 
     if (manifest_json_raw) {
@@ -887,6 +991,13 @@ void ota_mode_test_offer(bool show) {
 }
 
 
+// The offer's note scrolled to its end (a long note)
+void ota_mode_test_offer_end(void) {
+    lv_obj_update_layout(offer_text);
+    lv_obj_scroll_to_y(offer_text, lv_obj_get_scroll_y(offer_text) + lv_obj_get_scroll_bottom(offer_text), LV_ANIM_OFF);
+}
+
+
 // The OTA tile in one state: "connecting", "downloading" (mock progress), "done" or "failed". Shows the tile
 // without starting the update task (a tap on its Restart would restart the unit)
 bool ota_mode_test_view(const char * state) {
@@ -918,11 +1029,6 @@ bool ota_mode_test_view(const char * state) {
 }
 
 
-static void update_row_text(char * buf, size_t size, void * ctx) {
-    snprintf(buf, size, "Firmware %s", ota_manifest.version);
-}
-
-
 static void open_update_prompt(void * ctx) {
     set_ota_prompt_view_visibility(true);
 }
@@ -933,9 +1039,10 @@ static bool update_row_shown(void) {
 }
 
 
-// "Update available" at the top of the settings hub, in orange, shown once a newer firmware is found (ADR-008)
+// "Update available" at the top of the settings hub, in orange, shown once a newer firmware is found (ADR-008). No
+// version under it: in portrait the label takes two lines of the row (the offer shows the version)
 lv_obj_t * create_settings_update_row(settings_page_t * hub) {
-    menu_ota_upgrade_button = settings_row_action(hub, LV_SYMBOL_DOWNLOAD, "Update available", update_row_text, NULL,
+    menu_ota_upgrade_button = settings_row_action(hub, LV_SYMBOL_DOWNLOAD, "Update available", NULL, NULL,
                                                   open_update_prompt, NULL, NULL, false);
     settings_row_highlight(hub);
     settings_row_shown_when(hub, update_row_shown);

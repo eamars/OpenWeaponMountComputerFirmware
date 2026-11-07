@@ -25,7 +25,7 @@ typedef struct {
     int manifest_version;
     char version[32];
     char path[128];
-    char note[256];
+    char note[1024];        // the release note, cut beyond this
     int port;
     bool ignore_version;
     ota_package_type_e type;
@@ -59,6 +59,7 @@ lv_obj_t * create_settings_update_row(settings_page_t * hub);
 // LVGL lock held. The mock's server does not exist, so installing it fails
 void ota_mode_test_mock(bool critical);
 void ota_mode_test_offer(bool show);
+void ota_mode_test_offer_end(void);
 bool ota_mode_test_view(const char * state);    // connecting | downloading | done | failed
 
 

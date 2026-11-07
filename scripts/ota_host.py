@@ -8,9 +8,11 @@ This announces `owmc_update.local` on the local network (mDNS) and serves the ma
 (only those two paths). Every request is printed, with the bytes sent.
 
 Usage, from the repo root with the repo venv:
-    python scripts/ota_host.py                          # the build as it is, offered whatever its version
-    python scripts/ota_host.py --version v0.0.2 --respect-version   # declared newer: offered by version
+    python scripts/ota_host.py                          # the build, offered to units with an older version
+    python scripts/ota_host.py --force                  # offered whatever the unit's version (tests)
+    python scripts/ota_host.py --version v0.0.2         # declared as another version
     python scripts/ota_host.py --importance 1           # critical: the unit shows the offer at once
+    python scripts/ota_host.py --note-file notes.txt    # a release note of several lines
     python scripts/ota_host.py --manifest-file m.json   # a manifest as written (format tests)
 Options: --note, --ip (the address announced; default: the one this machine uses on the network), --port.
 
@@ -61,10 +63,11 @@ def local_ip():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", help="the version the manifest declares (default: the build's)")
-    ap.add_argument("--note", help="the release note the unit shows (up to 255 characters)")
+    ap.add_argument("--note", help="the release note the unit shows (up to 1023 bytes; cut with ... beyond)")
+    ap.add_argument("--note-file", help="the release note from a file (UTF-8; line breaks kept)")
     ap.add_argument("--importance", type=int, default=OtaImportance.NORMAL.value, help="0 normal, 1 critical")
-    ap.add_argument("--respect-version", action="store_true",
-                    help="offered only when the declared version is newer than the unit's")
+    ap.add_argument("--force", action="store_true",
+                    help="offered whatever the unit's version (ignore_version); by default only to older units")
     ap.add_argument("--manifest-file", help="serve this file as the manifest, as written")
     ap.add_argument("--ip", default=None)
     ap.add_argument("--port", type=int, default=PORT)
@@ -81,9 +84,10 @@ def main():
             "manifest_version": 1,
             "version": version,
             "path": image_path,
-            "note": args.note or f"Local build {project['project_version']}.",
+            "note": (Path(args.note_file).read_text(encoding="utf-8").strip() if args.note_file else
+                     args.note or f"Local build {project['project_version']}."),
             "port": args.port,
-            "ignore_version": not args.respect_version,
+            "ignore_version": args.force,
             "type": OtaPackageType.FIRMWARE.value,
             "importance": args.importance,
         }).encode("utf-8")

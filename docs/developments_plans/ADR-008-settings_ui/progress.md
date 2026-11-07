@@ -134,4 +134,18 @@ A rejected manifest goes on to the second source, the central server's placehold
 
 The flash was the limit: erasing each 4 KB sector as the download reached it took half the time. Kept: the erase in one go (it runs at the first read, about 6 s, so the tile shows "Preparing" until data arrives, then "Downloading"). Not taken: the larger TCP window, 1.6 s (7%) for undoing part of the owner's reduced network memory profile (`097bd26`). Final build over the air: 21.9 s, booted from `ota_1`.
 
+**The owner's review: the release note untested, the hub's row too full in portrait, OTA not run in portrait.**
+
+- **Hub's row**: "Update available" only, no version under it (in portrait the label takes two lines of the 96 px row; the offer shows the version).
+- **Release note, tested with three notes** (`--note-file`, each with a restart; `logs/rc/snaps/ota_notes`), which found two faults in the code:
+  - **A note over 255 bytes blocked the update.** The parser refuses to copy a string into a smaller buffer and the check rejected the whole manifest, so a long note meant no update offered. The note now takes up to 1 KB and is cut with "..." beyond (inside no character); checked with 1427 bytes: offered, shown to 1020 bytes and "...".
+  - **Escapes were shown as written**: a line break as a backslash and an n. They are decoded now; typographic quotes, dashes and the ellipsis become their plain forms (the panel's fonts have ASCII, the degree sign and the bullet, others show as boxes); an emoji is one "?".
+  - Also: the parser's tokens were never freed (once a boot); they are now.
+  - On the unit: line breaks, bullets and the degree sign shown; a 900-byte note scrolls, by a real swipe in landscape and to its end in portrait (`ota offer end`), with the scroll bar.
+- **Full update in portrait** (`rc_ota_*` rotation 0, `logs/rc/snaps/ota_full/r0_*`): the offer with the multi-line note, Install tapped, "Preparing", "Downloading", "Update installed" (2376 K of 2376 K) in 21.9 s, Restart tapped, booted from `ota_1` (About: "Running ota_1"). No setting written.
+
+**The host offers by version by default** (owner: "put the OTA server to non force upgrade mode"): `scripts/ota_host.py` now declares `ignore_version: false` unless `--force`. On the unit, the host serving the build the unit runs: "Running version ... is the same as or newer than the manifest's ...: not offered", and the hub starts at Timer, no "Update available".
+
+**Release v1.0.0 prepared**: [release notes](../../releases/v1.0.0.md) and the note the unit shows (`docs/releases/v1.0.0_note.txt`). The version comes from the git tag (`git describe`), as v0.0.1 did; the tag is set on `main` once this is merged, and the release built from it.
+
 Left on the unit: running from `ota_1` (the next USB flash goes back to `ota_0`); the hub shows "Update available" until the next restart (the host offered the same build whatever its version); rotation 1, the level.
