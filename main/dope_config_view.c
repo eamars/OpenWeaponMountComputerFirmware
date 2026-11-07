@@ -645,9 +645,10 @@ static void create_kestrel_row(lv_obj_t * parent) {
 
 
 static void set_rotation_kestrel_row(bool portrait) {
-    // Portrait: the status over a full-width Pull; landscape: the status on the left, Pull on the right
+    // Portrait: the status over a full-width Pull, each half the row (owner: Pull filling the rest of the 210 px row
+    // was too big; about 95 px each, as a settings row); landscape: the status on the left, Pull on the right
     static const int32_t portrait_cols[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static const int32_t portrait_rows[] = {LV_GRID_CONTENT, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static const int32_t portrait_rows[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
     static const int32_t landscape_cols[] = {LV_GRID_FR(1), DOPE_PULL_BUTTON_LANDSCAPE_PX, LV_GRID_TEMPLATE_LAST};
     static const int32_t landscape_rows[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
 
