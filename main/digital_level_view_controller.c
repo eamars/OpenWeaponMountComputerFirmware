@@ -10,6 +10,7 @@
 
 #include "digital_level_view_controller.h"
 #include "digital_level_view.h"
+#include "countdown_timer_config_view.h"
 #include "app_cfg.h"
 #include "bno085.h"
 #include "system_config.h"
@@ -167,12 +168,8 @@ void unified_sensor_poller_task(void *p) {
                     sensor_config.trigger_edge == TRIGGER_RISING_EDGE
                 ) {
 
-                    // ESP_LOGI(TAG, "Recoil detected, auto_start_countdown_timer_on_recoil: %d, get_countdown_timer_widget_enabled: %d, get_countdown_timer_state: %d",
-                    //          digital_level_view_config.auto_start_countdown_timer_on_recoil,
-                    //          get_countdown_timer_widget_enabled(),
-                    //          get_countdown_timer_state(&countdown_timer));
                     // Shot has fired, start the timer if not started already
-                    if (digital_level_view_config.auto_start_countdown_timer_on_recoil &&     // recoil detected
+                    if (countdown_timer_start_on_first_shot() &&                              // the Timer page's setting
                         get_countdown_timer_widget_enabled() &&                               // widget is enabled
                         (get_countdown_timer_state(&countdown_timer) == COUNTDOWN_TIMER_PAUSE)  // timer is ready
                     ) {
