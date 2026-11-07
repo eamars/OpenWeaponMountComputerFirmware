@@ -15,7 +15,8 @@ A countdown timer tile that is quick and sure to use at a precision rifle match,
 5. Saving on swipe-away is a design issue: avoid unnecessary NVS writes.
 6. Every proposal shows portrait and landscape.
 7. The editor's step is a setting: 5, 10 or 15 s (owner, 2026-11-07: "15 s step seems huge").
-8. The level view stays as it is in this ADR: its timer widget and the dope strip (which overlap in landscape) are to be designed together, as one system, later.
+8. Consider where each setting belongs. Nothing important is saved yet, so an NVS reset of moved settings is accepted (owner, 2026-11-07).
+9. The level view stays as it is in this ADR: its timer widget and the dope strip (which overlap in landscape) are to be designed together, as one system, later.
 
 ## What we know
 
@@ -75,9 +76,33 @@ Drawn in portrait (280 x 456) and landscape (456 x 280) in the proposal pictures
 - **Three presets, as the whole tile.** Portrait: three full-width buttons stacked, 264 x 133 px (20.6 x 10.4 mm). Landscape: three side by side, 133 x 264 px. Each shows its time large. Defaults 1:30, 2:00 and 1:00 (the two common par times and the walk-through); the owner's current two values are kept as the first two.
 - **Tap a preset: the timer starts and the view goes back to the level.** At "Stand by" the shooter has the tile up; at the beep, one tap on a 10 x 20 mm target starts the timer and shows the level with the time running. Tapping the running preset again stops and hides the timer, as today. The recoil start stays as it is.
 - **Long press a preset to edit it.** The editor shows the time large and has three buttons: **minus and plus one step** (holding repeats, faster after a second), and **Done**. The step is a setting (below), 5 s by default. Portrait: the time on top (96 px), minus and plus side by side below (122 x 148 px each, 9.5 x 11.5 mm), Done across the bottom (264 x 156 px). Landscape: the time and Done on the left, plus above minus on the right (140 x 122 px each, 11 x 9.5 mm). Range one step to 10:00. Why two step buttons and no minute buttons: par times sit a few steps apart (1:30 to 2:00 is six taps at 5 s, two at 15 s, and holding repeats), so two large buttons beat four smaller ones or a roller. Rollers need a short, precise fling; fixed targets do not.
-- **The step setting**: 5, 10 or 15 s, on a new Countdown Timer page in the settings menu (the same page pattern as the others: Save, Reload, Reset). A time that is not on the step (1:37 with a 10 s step) snaps on the first press: plus gives 1:40, minus 1:30. The step has its own NVS entry: adding it to the presets' saved block would change that block's size, which the loader takes as missing settings and replaces with the defaults, losing the owner's presets.
+- **The step setting**: 5, 10 or 15 s, on a new Countdown Timer page in the settings menu (the same page pattern as the others: Save, Reload, Reset). A time that is not on the step (1:37 with a 10 s step) snaps on the first press: plus gives 1:40, minus 1:30. The step is saved with the presets (`CT`); that changes the block's size, so the loader treats the old block as missing and starts from the defaults once (accepted by the owner).
 - Editing happens between stages, so a long press (not reachable by a stray tap) and a separate editor are acceptable; starting happens at the beep, so it is the largest and simplest action on the tile.
 - The tile and editor are laid out with flex grow, so they fill the screen exactly in every rotation, and the rotation handler only switches the flow (column in portrait, row in landscape).
+
+### Where each setting belongs
+
+Today the settings menu follows the code modules (System, Digital Level, Sensor, WiFi, Power Management), so a user looking for "start the timer on my first shot" must know it is in Digital Level. Proposed rule: a setting lives with the feature the user thinks of when they want to change it; settings used during a match stay on the feature's tile, settings set once go in the menu; switches only an engineer should touch go to one Developer page at the bottom.
+
+| Setting | Today | Proposed |
+|---|---|---|
+| Timer presets | Timer tile | Timer tile (edited there, this ADR) |
+| Timer step (new) | - | **Timer** page (this ADR) |
+| Start timer on first shot | Digital Level | **Timer** page (this ADR) |
+| Advance dope card on shot | Digital Level | Dope page (dope ADR) |
+| Recoil trigger level | Sensor | Sensor, renamed "Shot detection sensitivity" (settings ADR) |
+| Level style, roll and pitch gain, level threshold, four colours | Digital Level | Digital Level |
+| Screen rotation, brightness | System | **Display and power** page (settings ADR) |
+| Idle timeout (screen off), sleep timeout (power off) | Power Management | **Display and power** (settings ADR): they are what the user sees, not the PMIC |
+| VBUS current limit, charge current, charge voltage | Power Management | **Battery** page, with the battery readings (settings ADR) |
+| Wi-Fi on/off, reset provisioning, QR code | WiFi | WiFi; the Wi-Fi window (600 s, not in the menu today) could join it (settings ADR) |
+| Tare, sensor calibration | Sensor | Sensor |
+| Global log level, remote control | System | **Developer** page (settings ADR) |
+| Game rotation vector, linear acceleration, rotation vector reports | Sensor | **Developer** page (settings ADR): switching the game rotation vector off stops the level |
+
+Menu order by how often a page is opened: Timer, Digital Level, Display and power, Sensor, WiFi, Battery, Developer, About. Two values have no menu entry today and need none: the level zero (set by tapping the angle) and the recoil edge.
+
+This ADR does the timer rows: a Timer page with the step and "Start timer on first shot", moved out of Digital Level (both saved blocks reset once). The rest waits for the settings ADR, so the menu is reorganised once, by one rule, and the owner sees the whole of it together.
 
 ### Step 4: save only what changed
 
@@ -100,3 +125,4 @@ The level view: the timer widget (200 px round, `LEFT_MID` in landscape) and the
 3. ~~Editing step~~: a setting, 5, 10 or 15 s, default 5 s (owner, 2026-11-07).
 4. **Three presets** (recommended: 1:30, 2:00, 1:00), or two.
 5. **The order**: capture first (recommended), then corners, tile, saving.
+6. **Settings placement**: the map above as the plan, with only the timer rows in this ADR (recommended), or the whole menu reorganised here.
