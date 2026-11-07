@@ -42,5 +42,9 @@ The timer tile saves on Done after a change and on the settings page's Save, not
 ## Checks
 
 - `scenario state_change` PASS after steps 1 to 4 (`rc_state_change_20261107_140419.log`): no error or warning lines, no timer or dope saves, rotation back to 1.
-- Not seen by the owner yet: the tile, the editor and the Timer page by hand; the hold-to-repeat feel; Start on First Shot with a real shot.
+- Owner's hands-on check (2026-11-07): the tile and the editor by hand, hold-to-repeat, and Start on First Shot with a real shot: "Works on three checks."
 - Seen on the way, not in scope: the settings menu is the theme's light grey with square corners (settings usability, later); on the level view the timer still overlaps the dope strip in landscape (the level view's ADR).
+
+## ADR-006 closed (2026-11-07)
+
+Owner: "it looks really good!" and the three hands-on checks pass. Left for other ADRs: the level view's timer widget and dope strip, as one system; the settings menu's look; the other settings moving to their features (the placement table in the README).

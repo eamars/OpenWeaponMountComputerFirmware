@@ -1,6 +1,6 @@
 # ADR-006: the timer tile, and screen corners for every view
 
-Status: **Open.** Approved 2026-11-07 ("Approve"), with every recommendation below. Steps 1 to 4 built and checked on the unit 2026-11-07 ([progress](progress.md), pictures in `pictures/`); the owner's hands-on check is left.
+Status: **Built** 2026-11-07. Approved the same day ("Approve"), with every recommendation below; steps 1 to 4 built, checked on the unit with screen captures ([progress](progress.md), pictures in `pictures/`) and by the owner by hand.
 
 ## What we want
 
