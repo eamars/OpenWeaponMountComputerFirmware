@@ -50,9 +50,15 @@ void countdown_timer_update_time(countdown_timer_t *ctx, int new_time_ms);
 countdown_timer_state_t get_countdown_timer_state(countdown_timer_t *ctx);
 // void set_countdown_timer_state(countdown_timer_t *ctx, countdown_timer_state_t new_state);
 
-lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * countdown_timer);
+/** @brief Start the timer's task; the level view's band shows it (level_band.c) */
+void countdown_timer_setup(countdown_timer_t * countdown_timer);
+/** @brief Show or hide the timer on the level view (armed by a preset, hidden when disarmed) */
 void enable_countdown_timer_widget(bool enable);
 bool get_countdown_timer_widget_enabled(void);
-void set_rotation_countdown_timer_widget(lv_display_rotation_t rotation);
+/**
+ * @brief The timer's controls (the band's time and bar, the hardware button): a tap starts, pauses or continues;
+ * a long press re-arms with the full time. User data: the countdown_timer_t.
+ */
+void countdown_timer_button_press_event_cb(lv_event_t * e);
 
 #endif  // COUNTDOWN_TIMER_H_

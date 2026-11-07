@@ -26,8 +26,9 @@ typedef struct {
     lv_palette_t colour_horizontal_level_indicator;
     lv_palette_t colour_foreground;
 
-    // Other widget control
-    bool auto_move_dope_card_on_recoil;
+    // Unused: was "move the dope card on recoil", now the Dope page's (ADR-007). Kept so the saved block keeps its
+    // size and the level's zero survives the update
+    bool reserved_was_auto_move_dope_card;
 
     // Type of digital level view
     digital_level_view_type_t level_style;

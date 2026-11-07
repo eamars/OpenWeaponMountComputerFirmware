@@ -1,6 +1,6 @@
 # ADR-007: the dope card with windage, its place on the level view, and the Kestrel link
 
-Status: **Open** 2026-11-07. Approved by the owner ("Approve, start"). Step 1 built and checked on the unit ([progress](progress.md)); steps 2 to 5 left.
+Status: **Open** 2026-11-07. Approved by the owner ("Approve, start"). Steps 1 and 2 built and checked on the unit ([progress](progress.md)); steps 3 to 5 left.
 
 ## What we want
 
@@ -77,7 +77,7 @@ The level is the primary feature, and the view must be read at a glance (owner, 
 The layout, the same in both rotations:
 - **The level stays as it is**: the colour field fills the screen, the horizon and the edge ticks in the middle. When level, **the whole screen** turns the level colour, under the text as well.
 - **The tilt box** stays an outlined box, because it says "button" (owner): centred at the top in both rotations, digits centred with the sign hung to the left so the number does not shift. A tap shows "Hold to set zero"; holding sets the mount offset, so a touch on the clock cannot move the zero.
-- **A band** of black at about 28 % from 20 px below the ticks to the bottom edge, behind the timer and the dope only; the level's colour shows through it (owner: a light overlay with text is acceptable).
+- **A band** from 20 px below the ticks to the bottom edge holds the timer and the dope, with no background: white text reads on every level colour on the AMOLED (owner, 2026-11-07, after using it; a light black overlay was built first and removed).
 - **The timer** is a bar across the top of the band: its length is the time left (orange; red in the last 10 s; grey when paused), the digits at the right of the dope's first line. While armed, a tap anywhere above the band starts it: the largest target on the screen for the moment of the beep. While running, only the time row pauses it.
 - **The dope**: the target letter, range and next target on the first line; the elevation as the largest text on the screen; the wind and, when known, the gust after it. Portrait stacks elevation over wind (elevation digits about 84 px tall, 6.5 mm); landscape puts them on one row (about 60 px). Larger than montserrat 48 needs a digits-only font, a few KB of flash.
 - **Switching targets is manual first** (owner, 2026-11-07: recoil detection is unreliable with .22LR and heavy rifles, where handling makes more noise than the shot): tap the band for the next target, hold for the previous. Moving on recoil stays as the existing setting, now built, **off by default**. After the last target it stays there.

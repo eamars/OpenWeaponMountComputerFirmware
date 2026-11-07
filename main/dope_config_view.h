@@ -44,6 +44,8 @@ typedef enum {
 // The Dope settings page
 typedef struct {
     uint8_t target_names;           // dope_target_names_t
+    bool next_target_on_recoil;     // the level shows the next target after a shot (off: unreliable with .22LR and
+                                    // heavy rifles, owner 2026-11-07)
 } dope_settings_t;
 
 extern dope_settings_t dope_settings;
@@ -69,9 +71,6 @@ void dope_format_elevation(char * buf, size_t size, int32_t elevation_x10);
 void dope_format_wind(char * buf, size_t size, int32_t wind_x10);
 
 void create_dope_config_view(lv_obj_t * parent);
-lv_obj_t * create_dope_card_list_widget(lv_obj_t * parent);
-
-void set_rotation_dope_card_list(lv_display_rotation_t rotation);
 void enable_dope_config_view(bool enable);
 void dope_config_view_rotation_event_callback(lv_event_t * e);
 

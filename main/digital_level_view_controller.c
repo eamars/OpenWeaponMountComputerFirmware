@@ -17,6 +17,8 @@
 #include "common.h"
 #include "sensor_config.h"
 #include "countdown_timer.h"
+#include "dope_config_view.h"
+#include "level_band.h"
 #include "esp_task_wdt.h"
 #include "bno085.h"
 #include "app.h"
@@ -175,6 +177,12 @@ void unified_sensor_poller_task(void *p) {
                     ) {
                         countdown_timer_continue(&countdown_timer);
                         ESP_LOGI(TAG, "Countdown timer started due to recoil");
+                    }
+
+                    // The Dope page's setting: the level shows the next target (ADR-007)
+                    if (dope_settings.next_target_on_recoil && lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {
+                        level_band_next_target();
+                        lvgl_port_unlock();
                     }
                 }
             }

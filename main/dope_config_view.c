@@ -12,6 +12,7 @@
 #include "display_shape.h"
 #include "value_editor.h"
 #include "config_view.h"
+#include "level_band.h"
 
 #define TAG "DopeConfigView"
 #define NVS_NAMESPACE "DOPE"
@@ -37,6 +38,7 @@ static const dope_card_t dope_card_default = {0};   // every target empty
 HEAPS_CAPS_ATTR dope_settings_t dope_settings;
 static const dope_settings_t dope_settings_default = {
     .target_names = DOPE_TARGET_NAMES_LETTERS,
+    .next_target_on_recoil = false,
 };
 static const char * target_names_options = "A, B, C\n1, 2, 3";
 
@@ -55,9 +57,6 @@ typedef struct {
     lv_obj_t * cell_caption[2];
     lv_obj_t * cell_value[2];
 
-    lv_obj_t * strip_card;          // on the level view
-    lv_obj_t * strip_name;
-    lv_obj_t * strip_value;
 } dope_target_widgets_t;
 
 static dope_target_widgets_t target_widgets[DOPE_TARGET_COUNT];
@@ -73,8 +72,6 @@ static lv_obj_t * confirm_clear_button = NULL;
 static lv_obj_t * confirm_cancel_button = NULL;
 static int confirm_target = -1;
 
-// The strip on the level view (until ADR-007 step 2 replaces it)
-static lv_obj_t * dope_card_list = NULL;
 
 
 /*
@@ -134,7 +131,7 @@ Showing the card
 ----------------------------------------------------
 */
 
-// LVGL lock held. The tile's row and the level's strip card for one target
+// LVGL lock held. The tile's row for one target
 static void refresh_target(int index) {
     const dope_target_t * target = &dope_card.target[index];
     dope_target_widgets_t * w = &target_widgets[index];
@@ -175,36 +172,15 @@ static void refresh_target(int index) {
             lv_label_set_text(w->cell_caption[DOPE_FIELD_WIND], "Wind");
         }
     }
-
-    if (w->strip_card != NULL) {
-        lv_label_set_text(w->strip_name, name);
-        if (set) {
-            dope_format_elevation(text, sizeof(text), target->elevation_x10);
-            lv_label_set_text(w->strip_value, text);
-            lv_obj_remove_flag(w->strip_card, LV_OBJ_FLAG_HIDDEN);
-        }
-        else {
-            lv_obj_add_flag(w->strip_card, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
 }
 
 
+// The tile and the level's band, after the card or the names changed
 static void refresh_card() {
-    bool any_set = false;
     for (int i = 0; i < DOPE_TARGET_COUNT; i++) {
         refresh_target(i);
-        any_set |= dope_target_is_set(&dope_card.target[i]);
     }
-
-    if (dope_card_list != NULL) {
-        if (any_set) {
-            lv_obj_remove_flag(dope_card_list, LV_OBJ_FLAG_HIDDEN);
-        }
-        else {
-            lv_obj_add_flag(dope_card_list, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
+    level_band_refresh_dope();
 }
 
 
@@ -547,7 +523,7 @@ void set_rotation_dope_card_config_view(lv_display_rotation_t rotation) {
 }
 
 
-// The card is read at start-up (app_main), so the level's strip and the tile show the same targets
+// The card is read at start-up (app_main), so the level's band and the tile show the same targets
 void create_dope_config_view(lv_obj_t * parent) {
     target_list = create_screen(parent);
     lv_obj_set_flex_flow(target_list, LV_FLEX_FLOW_COLUMN);
@@ -636,6 +612,9 @@ static void fill_dope_config_page(lv_obj_t * sub_page_config_view) {
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Target Names");
     create_dropdown_list(container, target_names_options, dope_settings.target_names, target_names_changed_cb, NULL);
 
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Next Target on Recoil");
+    create_switch(container, &dope_settings.next_target_on_recoil, NULL);
+
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
     create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
 }
@@ -658,58 +637,3 @@ lv_obj_t * create_dope_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_pag
     return dope_config_page;
 }
 
-
-/*
-----------------------------------------------------
-The strip on the level view: the set targets' elevations (replaced in ADR-007 step 2)
-----------------------------------------------------
-*/
-
-static lv_obj_t * create_strip_card(lv_obj_t * parent, int index) {
-    lv_obj_t * column_layout = lv_obj_create(parent);
-    lv_obj_remove_style_all(column_layout);
-    lv_obj_set_size(column_layout, 70, 55);
-    lv_obj_remove_flag(column_layout, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t * name = lv_label_create(column_layout);
-    lv_obj_set_style_text_font(name, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_set_style_text_color(name, lv_color_white(), LV_PART_MAIN);
-    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 0);
-    target_widgets[index].strip_name = name;
-
-    target_widgets[index].strip_value = lv_label_create(column_layout);
-    lv_obj_set_style_text_color(target_widgets[index].strip_value, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(target_widgets[index].strip_value, &lv_font_montserrat_32, LV_PART_MAIN);
-    lv_obj_align(target_widgets[index].strip_value, LV_ALIGN_BOTTOM_MID, 0, 0);
-
-    return column_layout;
-}
-
-
-void set_rotation_dope_card_list(lv_display_rotation_t rotation) {
-    lv_obj_set_flex_flow(dope_card_list, LV_FLEX_FLOW_ROW);
-    lv_obj_set_size(dope_card_list, lv_pct(100), 80);
-    lv_obj_set_scroll_dir(dope_card_list, LV_DIR_HOR);
-    lv_obj_set_flex_align(dope_card_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_align(dope_card_list, LV_ALIGN_BOTTOM_MID, 0, 0);
-}
-
-
-lv_obj_t * create_dope_card_list_widget(lv_obj_t * parent) {
-    if (!dope_card_list) {
-        dope_card_list = lv_obj_create(parent);
-    }
-
-    set_rotation_dope_card_list(system_config.rotation);
-    lv_obj_set_scroll_snap_x(dope_card_list, LV_SCROLL_SNAP_CENTER);
-    lv_obj_set_scrollbar_mode(dope_card_list, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_style_bg_opa(dope_card_list, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(dope_card_list, 0, LV_PART_MAIN);
-
-    for (int i = 0; i < DOPE_TARGET_COUNT; i++) {
-        target_widgets[i].strip_card = create_strip_card(dope_card_list, i);
-    }
-
-    refresh_card();
-    return dope_card_list;
-}
