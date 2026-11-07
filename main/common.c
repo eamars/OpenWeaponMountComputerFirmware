@@ -53,6 +53,11 @@ int compare_version(version_t *self, version_t *other) {
 
 
 esp_err_t load_config(const char *ns, void *cfg, const void *default_cfg, size_t size) {
+    return load_config_grown(ns, cfg, default_cfg, size, size);
+}
+
+
+esp_err_t load_config_grown(const char *ns, void *cfg, const void *default_cfg, size_t size, size_t min_size) {
     esp_err_t ret;
 
     // Open NVS partition
@@ -91,14 +96,20 @@ esp_err_t load_config(const char *ns, void *cfg, const void *default_cfg, size_t
         return ret;
     }
 
+    // The stored size: the structure's, or an older, shorter one it grew from (min_size up to size)
+    size_t stored_size = read_size >= sizeof(uint32_t) ? read_size - sizeof(uint32_t) : 0;
+    bool size_ok = stored_size >= min_size && stored_size <= size;
+
     // Verify CRC
     uint32_t calculated_crc32 = 0;
     uint32_t received_crc32 = 0;
 
-    calculated_crc32 = crc32_wrapper(buf, size, 0);
-    memcpy(&received_crc32, buf + size, sizeof(received_crc32));
+    if (size_ok) {
+        calculated_crc32 = crc32_wrapper(buf, stored_size, 0);
+        memcpy(&received_crc32, buf + stored_size, sizeof(received_crc32));
+    }
 
-    if (calculated_crc32 != received_crc32) {
+    if (!size_ok || calculated_crc32 != received_crc32) {
         ESP_LOGW(TAG, "NS: %s, CRC32 mismatch. Expected 0x%08x, Received 0x%08x Will use default configuration", ns, calculated_crc32, received_crc32);
 
         heap_caps_free(buf);
@@ -107,11 +118,18 @@ esp_err_t load_config(const char *ns, void *cfg, const void *default_cfg, size_t
         return save_config(ns, cfg, size);
     }
     else {
-        ESP_LOGI(TAG, "NS: %s, Configuration read successfully", ns);
-
-        // copy content from data buffer
-        memcpy(cfg, buf, size);
+        // copy content from data buffer; what an older, shorter structure lacks takes the defaults (saved with the
+        // next save)
+        memcpy(cfg, default_cfg, size);
+        memcpy(cfg, buf, stored_size);
         heap_caps_free(buf);
+        if (stored_size < size) {
+            ESP_LOGI(TAG, "NS: %s, Configuration read from an older %u-byte version, the rest default", ns,
+                     (unsigned) stored_size);
+        }
+        else {
+            ESP_LOGI(TAG, "NS: %s, Configuration read successfully", ns);
+        }
     }
 
     return ESP_OK;

@@ -10,6 +10,7 @@
 #include "digital_level_view.h"
 #include "display_shape.h"
 #include "main_tileview.h"
+#include "value_editor.h"
 
 #include <string.h>
 
@@ -17,16 +18,12 @@
 #define TAG "CountdownTimerConfigView"
 #define NVS_NAMESPACE "CT"
 
-// Layout of the tile and the editor (ADR-006): an 8 px margin, 20 px between targets, corners concentric with
-// the panel's
+// Layout of the tile (ADR-006): an 8 px margin, 20 px between targets, corners concentric with the panel's
 #define TIMER_TILE_GAP_PX 20
-#define TIMER_EDITOR_TIME_ROW_PX 96     // portrait: the row that shows the time
 
 #define TIMER_PRESET_MAX_S (10 * 60)
 
-// Holding minus or plus repeats one step every long-press repeat (100 ms); after this many repeats, each repeat
-// moves this many steps
-#define TIMER_EDITOR_FAST_AFTER_REPEATS 10
+// Holding minus or plus: after a second, each repeat moves this many steps
 #define TIMER_EDITOR_FAST_STEPS 3
 
 
@@ -53,16 +50,7 @@ static lv_obj_t * parent_container = NULL;
 static timer_preset_widget_t preset_widgets[TIMER_PRESET_COUNT];
 static int selected_preset = -1;    // the preset the timer is armed with; -1: none, the timer is hidden
 
-static lv_obj_t * editor = NULL;
-static lv_obj_t * editor_time_label = NULL;
-static lv_obj_t * editor_minus_button = NULL;
-static lv_obj_t * editor_plus_button = NULL;
-static lv_obj_t * editor_done_button = NULL;
-static lv_obj_t * editor_minus_label = NULL;
-static lv_obj_t * editor_plus_label = NULL;
-static int editor_preset = -1;      // the preset being edited; -1: the editor is closed
-static uint16_t editor_value_s = 0;
-static uint32_t editor_repeats = 0;
+static value_editor_t * editor = NULL;
 
 static lv_obj_t * timer_config_page = NULL;
 
@@ -165,158 +153,55 @@ static void preset_long_pressed_cb(lv_event_t * e) {
 }
 
 
-static lv_obj_t * create_timer_button(lv_obj_t * parent, lv_palette_t checked_palette) {
-    lv_obj_t * button = lv_button_create(parent);
-    lv_obj_set_style_radius(button, display_concentric_radius(DISPLAY_MARGIN_PX), LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(button, 0, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(button, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(button, lv_palette_main(checked_palette), LV_PART_MAIN | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(button, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN | LV_STATE_PRESSED);
-    return button;
-}
-
-
-static lv_obj_t * create_timer_label(lv_obj_t * parent, const lv_font_t * font) {
-    lv_obj_t * label = lv_label_create(parent);
-    lv_obj_set_style_text_color(label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
-    lv_obj_center(label);
-    return label;
-}
-
-
 /*
 ----------------------------------------------------
-The editor: minus and plus one step, and Done
+The editor (value_editor): minus and plus one step, and Done
 ----------------------------------------------------
 */
 
-static void editor_show_value() {
-    char text[8];
-    format_time(text, sizeof(text), editor_value_s);
-    lv_label_set_text(editor_time_label, text);
+static void format_editor_time(char * buf, size_t size, int32_t value) {
+    format_time(buf, size, (uint16_t) value);
 }
 
 
-static void editor_show_step() {
-    lv_label_set_text_fmt(editor_minus_label, "-%u s", (unsigned) countdown_timer_config.step_s);
-    lv_label_set_text_fmt(editor_plus_label, "+%u s", (unsigned) countdown_timer_config.step_s);
+static void format_editor_step(char * buf, size_t size, int direction, int32_t step) {
+    snprintf(buf, size, "%c%u s", direction < 0 ? '-' : '+', (unsigned) step);
 }
 
 
-// One step up or down; a time off the step snaps to it first (1:37 with 10 s: plus 1:40, minus 1:30)
-static void editor_step(int direction, int steps) {
-    uint32_t step = countdown_timer_config.step_s;
-    int32_t value = editor_value_s;
+// Done, and leaving the tile, keep the edit. Saves only when the time changed
+static void editor_closed(int32_t value, void * ctx) {
+    int preset = (int) (intptr_t) ctx;
 
-    for (int i = 0; i < steps; i++) {
-        if (direction > 0) {
-            value = (value / step + 1) * step;
-        }
-        else {
-            value = ((value + step - 1) / step - 1) * step;
-        }
-    }
-
-    if (value < (int32_t) step) {
-        value = step;
-    }
-    if (value > TIMER_PRESET_MAX_S) {
-        value = TIMER_PRESET_MAX_S;
-    }
-
-    editor_value_s = (uint16_t) value;
-    editor_show_value();
-}
-
-
-static void editor_step_event_cb(lv_event_t * e) {
-    int direction = (int) (intptr_t) lv_event_get_user_data(e);
-    lv_event_code_t code = lv_event_get_code(e);
-
-    if (code == LV_EVENT_PRESSED) {
-        editor_repeats = 0;
-        editor_step(direction, 1);
-    }
-    else if (code == LV_EVENT_LONG_PRESSED_REPEAT) {
-        editor_repeats++;
-        editor_step(direction, editor_repeats > TIMER_EDITOR_FAST_AFTER_REPEATS ? TIMER_EDITOR_FAST_STEPS : 1);
-    }
-}
-
-
-// Close the editor, keeping the edit: Done, and leaving the tile. Saves only when the time changed
-static void close_editor() {
-    if (editor_preset < 0) {
+    if (value == countdown_timer_config.preset_s[preset]) {
         return;
     }
 
-    int preset = editor_preset;
-    editor_preset = -1;
-    lv_obj_add_flag(editor, LV_OBJ_FLAG_HIDDEN);
-
-    if (editor_value_s == countdown_timer_config.preset_s[preset]) {
-        return;
-    }
-
-    countdown_timer_config.preset_s[preset] = editor_value_s;
+    countdown_timer_config.preset_s[preset] = (uint16_t) value;
     ESP_ERROR_CHECK_WITHOUT_ABORT(save_countdown_timer_config());
 
     // An armed timer takes the new time, unless it is running
     if (preset == selected_preset && get_countdown_timer_state(&countdown_timer) != COUNTDOWN_TIMER_RUN) {
-        countdown_timer_update_time(&countdown_timer, editor_value_s * 1000);
+        countdown_timer_update_time(&countdown_timer, value * 1000);
     }
     refresh_preset_widgets();
 }
 
 
-static void editor_done_cb(lv_event_t * e) {
-    close_editor();
-}
-
-
 static void open_editor(int preset) {
-    editor_preset = preset;
-    editor_value_s = countdown_timer_config.preset_s[preset];
-    editor_show_value();
-    editor_show_step();
-    lv_obj_remove_flag(editor, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(editor);
-}
-
-
-static void create_editor(lv_obj_t * parent) {
-    editor = lv_obj_create(parent);
-    lv_obj_remove_style_all(editor);
-    lv_obj_set_size(editor, lv_pct(100), lv_pct(100));
-    lv_obj_set_style_bg_color(editor, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(editor, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(editor, DISPLAY_MARGIN_PX, LV_PART_MAIN);
-    lv_obj_set_style_pad_row(editor, TIMER_TILE_GAP_PX, LV_PART_MAIN);
-    lv_obj_set_style_pad_column(editor, TIMER_TILE_GAP_PX, LV_PART_MAIN);
-    lv_obj_remove_flag(editor, LV_OBJ_FLAG_SCROLLABLE);
-    // A drag on the editor's buttons must not swipe the tile away
-    lv_obj_remove_flag(editor, LV_OBJ_FLAG_SCROLL_CHAIN_HOR | LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-    lv_obj_add_flag(editor, LV_OBJ_FLAG_CLICKABLE);  // taps between the buttons stay in the editor
-    lv_obj_add_flag(editor, LV_OBJ_FLAG_HIDDEN);
-
-    editor_time_label = create_timer_label(editor, &lv_font_montserrat_48);
-
-    editor_minus_button = create_timer_button(editor, LV_PALETTE_ORANGE);
-    editor_minus_label = create_timer_label(editor_minus_button, &lv_font_montserrat_32);
-    lv_obj_add_event_cb(editor_minus_button, editor_step_event_cb, LV_EVENT_PRESSED, (void *) (intptr_t) -1);
-    lv_obj_add_event_cb(editor_minus_button, editor_step_event_cb, LV_EVENT_LONG_PRESSED_REPEAT, (void *) (intptr_t) -1);
-
-    editor_plus_button = create_timer_button(editor, LV_PALETTE_ORANGE);
-    editor_plus_label = create_timer_label(editor_plus_button, &lv_font_montserrat_32);
-    lv_obj_add_event_cb(editor_plus_button, editor_step_event_cb, LV_EVENT_PRESSED, (void *) (intptr_t) 1);
-    lv_obj_add_event_cb(editor_plus_button, editor_step_event_cb, LV_EVENT_LONG_PRESSED_REPEAT, (void *) (intptr_t) 1);
-
-    editor_done_button = create_timer_button(editor, LV_PALETTE_ORANGE);
-    lv_obj_set_style_bg_color(editor_done_button, lv_palette_darken(LV_PALETTE_LIGHT_BLUE, 2), LV_PART_MAIN);
-    lv_obj_t * done_label = create_timer_label(editor_done_button, &lv_font_montserrat_32);
-    lv_label_set_text(done_label, "Done");
-    lv_obj_add_event_cb(editor_done_button, editor_done_cb, LV_EVENT_SHORT_CLICKED, NULL);
+    const value_editor_params_t params = {
+        .title = NULL,
+        .value = countdown_timer_config.preset_s[preset],
+        .min = countdown_timer_config.step_s,
+        .max = TIMER_PRESET_MAX_S,
+        .step = countdown_timer_config.step_s,
+        .fast_steps = TIMER_EDITOR_FAST_STEPS,
+        .format_value = format_editor_time,
+        .format_step = format_editor_step,
+        .closed = editor_closed,
+        .ctx = (void *) (intptr_t) preset,
+    };
+    value_editor_open(editor, &params);
 }
 
 
@@ -332,27 +217,7 @@ void set_rotation_countdown_timer_config_view(lv_display_rotation_t display_rota
     // The presets fill the tile in one line: stacked in portrait, side by side in landscape
     lv_obj_set_flex_flow(parent_container, portrait ? LV_FLEX_FLOW_COLUMN : LV_FLEX_FLOW_ROW);
 
-    // The editor: portrait, the time across the top, minus and plus side by side, Done across the bottom;
-    // landscape, the time over Done on the left, plus over minus on the right
-    static const int32_t portrait_cols[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static const int32_t portrait_rows[] = {TIMER_EDITOR_TIME_ROW_PX, LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static const int32_t landscape_cols[] = {LV_GRID_FR(2), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static const int32_t landscape_rows[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-
-    if (portrait) {
-        lv_obj_set_grid_dsc_array(editor, portrait_cols, portrait_rows);
-        lv_obj_set_grid_cell(editor_time_label, LV_GRID_ALIGN_CENTER, 0, 2, LV_GRID_ALIGN_CENTER, 0, 1);
-        lv_obj_set_grid_cell(editor_minus_button, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
-        lv_obj_set_grid_cell(editor_plus_button, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
-        lv_obj_set_grid_cell(editor_done_button, LV_GRID_ALIGN_STRETCH, 0, 2, LV_GRID_ALIGN_STRETCH, 2, 1);
-    }
-    else {
-        lv_obj_set_grid_dsc_array(editor, landscape_cols, landscape_rows);
-        lv_obj_set_grid_cell(editor_time_label, LV_GRID_ALIGN_CENTER, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
-        lv_obj_set_grid_cell(editor_done_button, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
-        lv_obj_set_grid_cell(editor_plus_button, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
-        lv_obj_set_grid_cell(editor_minus_button, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
-    }
+    value_editor_set_rotation(editor, display_rotation);
 }
 
 
@@ -377,7 +242,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_COLUMN);
 
     for (int i = 0; i < TIMER_PRESET_COUNT; i++) {
-        lv_obj_t * button = create_timer_button(parent_container, LV_PALETTE_ORANGE);
+        lv_obj_t * button = value_editor_create_button(parent_container, LV_PALETTE_ORANGE);
         // Each preset takes an equal share of what the margins and gaps leave, in either direction
         lv_obj_set_flex_grow(button, 1);
         lv_obj_set_size(button, lv_pct(100), lv_pct(100));
@@ -385,10 +250,11 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
         lv_obj_add_event_cb(button, preset_long_pressed_cb, LV_EVENT_LONG_PRESSED, (void *) (intptr_t) i);
 
         preset_widgets[i].button = button;
-        preset_widgets[i].label = create_timer_label(button, &lv_font_montserrat_40);
+        preset_widgets[i].label = value_editor_create_label(button, &lv_font_montserrat_40);
     }
 
-    create_editor(parent);
+    editor = value_editor_create(parent);
+    ESP_ERROR_CHECK(editor == NULL ? ESP_ERR_NO_MEM : ESP_OK);
 
     refresh_preset_widgets();
     set_rotation_countdown_timer_config_view(system_config.rotation);
@@ -398,7 +264,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
 void enable_countdown_timer_config_view(bool enable) {
     if (!enable) {
         // Leaving the tile keeps an edit in progress, as Done does; nothing else is saved here (ADR-006)
-        close_editor();
+        value_editor_close(editor);
     }
 }
 

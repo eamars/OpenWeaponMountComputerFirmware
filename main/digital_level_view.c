@@ -17,6 +17,8 @@
 #include "countdown_timer.h"
 #include "config_view.h"
 #include "dope_config_view.h"
+#include "level_band.h"
+#include "display_shape.h"
 #include "common.h"
 #include "system_config.h"
 #include "digital_level_view_controller.h"
@@ -39,7 +41,6 @@ const digital_level_view_config_t digital_level_view_config_default = {
     .colour_right_tilt_indicator = LV_PALETTE_AMBER,
     .colour_horizontal_level_indicator = LV_PALETTE_LIGHT_GREEN,
     .colour_foreground = LV_PALETTE_BLACK,
-    .auto_move_dope_card_on_recoil = true,
     .level_style = DIGITAL_LEVEL_VIEW_TYPE_1,
 };
 
@@ -60,11 +61,67 @@ esp_err_t load_digital_level_view_config();
 esp_err_t save_digital_level_view_config();
 
 
-void tilt_angle_button_short_press_cb(lv_event_t * e) {
-    // Take a snapshot of current roll and use that as offset (take account of the screen rotation)
-    digital_level_view_config.user_roll_rad_offset = -1 * (sensor_roll_thread_unsafe - system_config.rotation * M_PI_2);
+// A short message over the level ("Hold to set zero"), gone after a moment
+#define HINT_SHOW_MS 1500
+static lv_obj_t * hint_label = NULL;
+static lv_timer_t * hint_timer = NULL;
 
+static void hint_timeout_cb(lv_timer_t * timer) {
+    lv_obj_add_flag(hint_label, LV_OBJ_FLAG_HIDDEN);
+    lv_timer_pause(timer);
+}
+
+static void show_hint(const char * text) {
+    lv_label_set_text(hint_label, text);
+    lv_obj_remove_flag(hint_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(hint_label);
+    lv_timer_reset(hint_timer);
+    lv_timer_resume(hint_timer);
+}
+
+static void create_hint(lv_obj_t * parent) {
+    hint_label = lv_label_create(parent);
+    lv_obj_set_style_text_font(hint_label, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_color(hint_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(hint_label, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(hint_label, LV_OPA_80, LV_PART_MAIN);
+    lv_obj_set_style_pad_hor(hint_label, 16, LV_PART_MAIN);
+    lv_obj_set_style_pad_ver(hint_label, 10, LV_PART_MAIN);
+    lv_obj_set_style_radius(hint_label, 12, LV_PART_MAIN);
+    lv_obj_align(hint_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_flag(hint_label, LV_OBJ_FLAG_HIDDEN);
+
+    hint_timer = lv_timer_create(hint_timeout_cb, HINT_SHOW_MS, NULL);
+    lv_timer_set_auto_delete(hint_timer, false);
+    lv_timer_set_repeat_count(hint_timer, -1);
+    lv_timer_pause(hint_timer);
+}
+
+
+// The tilt box (ADR-007): a tap says how to zero; holding it sets the zero. A touch on the clock cannot move it
+void tilt_angle_button_event_cb(lv_event_t * e) {
+    if (lv_event_get_code(e) == LV_EVENT_SHORT_CLICKED) {
+        show_hint("Hold to set zero");
+        return;
+    }
+
+    // Take a snapshot of current roll and use that as offset (take account of the screen rotation). The zero is a
+    // calibration, so it is saved, as after a tare
+    digital_level_view_config.user_roll_rad_offset = -1 * (sensor_roll_thread_unsafe - system_config.rotation * M_PI_2);
     ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
+
+    esp_err_t ret = save_digital_level_view_config();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save the level zero: %s", esp_err_to_name(ret));
+    }
+    show_hint(ret == ESP_OK ? "Zero set" : "Zero set, not saved");
+}
+
+
+static void overlay_clicked_cb(lv_event_t * e) {
+    if (get_countdown_timer_widget_enabled() && get_countdown_timer_state(&countdown_timer) == COUNTDOWN_TIMER_PAUSE) {
+        countdown_timer_continue(&countdown_timer);
+    }
 }
 
 void digital_level_view_zero_after_tare() {
@@ -84,24 +141,25 @@ void digital_level_view_zero_after_tare() {
 
 // Degrees the label shows; INT_MIN when the label is new and still shows "--"
 static int tilt_angle_label_deg = INT_MIN;
+static lv_obj_t * tilt_sign_label = NULL;
 
 void update_roll_deg_indicator(float roll_rad) {
-    // Setting the text redraws the label, so set it only when the shown number changes
+    // Setting the text redraws the label, so set it only when the shown number changes. The digits stay centred
+    // and the minus sign hangs to their left, so the number does not jump when it turns negative (ADR-007)
     const int deg = (int) roundf(RAD_TO_DEG(roll_rad));
     if (deg != tilt_angle_label_deg) {
-        lv_label_set_text_fmt(tilt_angle_label, "%d", deg);
+        lv_label_set_text_fmt(tilt_angle_label, "%d", deg < 0 ? -deg : deg);
+        lv_label_set_text(tilt_sign_label, deg < 0 ? "-" : "");
+        lv_obj_update_layout(tilt_angle_label);
+        lv_obj_align_to(tilt_sign_label, tilt_angle_label, LV_ALIGN_OUT_LEFT_MID, -2, 0);
         tilt_angle_label_deg = deg;
     }
 }
 
 
 void set_rotation_roll_deg_indicator(lv_display_rotation_t display_rotation){
-    if (display_rotation == LV_DISPLAY_ROTATION_0 || display_rotation == LV_DISPLAY_ROTATION_180) {
-        lv_obj_align(tilt_angle_button, LV_ALIGN_TOP_MID, 0, 20);
-    }
-    else {
-        lv_obj_align(tilt_angle_button, LV_ALIGN_RIGHT_MID, -20, -20);
-    }
+    // Centred at the top in both rotations (ADR-007)
+    lv_obj_align(tilt_angle_button, LV_ALIGN_TOP_MID, 0, DISPLAY_MARGIN_PX);
 }
 
 void update_digital_level_view(float roll_rad, float pitch_rad)
@@ -128,7 +186,8 @@ void create_roll_deg_indicator(lv_obj_t * parent) {
     tilt_angle_button = lv_btn_create(parent);
     lv_obj_add_style(tilt_angle_button, &btn_style, LV_PART_MAIN);
     lv_obj_set_width(tilt_angle_button, 80);
-    lv_obj_add_event_cb(tilt_angle_button, tilt_angle_button_short_press_cb, LV_EVENT_SINGLE_CLICKED, NULL);
+    lv_obj_add_event_cb(tilt_angle_button, tilt_angle_button_event_cb, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(tilt_angle_button, tilt_angle_button_event_cb, LV_EVENT_LONG_PRESSED, NULL);
 
     set_rotation_roll_deg_indicator(system_config.rotation);
 
@@ -139,6 +198,11 @@ void create_roll_deg_indicator(lv_obj_t * parent) {
     lv_obj_set_style_text_color(tilt_angle_label, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_text_font(tilt_angle_label, &lv_font_montserrat_32, LV_PART_MAIN);
     lv_obj_align(tilt_angle_label, LV_ALIGN_CENTER, 0, 0);
+
+    tilt_sign_label = lv_label_create(tilt_angle_button);
+    lv_label_set_text(tilt_sign_label, "");
+    lv_obj_set_style_text_color(tilt_sign_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(tilt_sign_label, &lv_font_montserrat_32, LV_PART_MAIN);
 }
 
 
@@ -152,8 +216,13 @@ void create_digital_level_overlay(lv_obj_t *parent)
     lv_obj_center(overlay_container);
 
     create_roll_deg_indicator(overlay_container);
-    create_countdown_timer_widget(overlay_container, &countdown_timer);
-    create_dope_card_list_widget(overlay_container);
+    countdown_timer_setup(&countdown_timer);
+    level_band_create(overlay_container, &countdown_timer);
+    create_hint(overlay_container);
+
+    // While the timer is armed or paused, a tap anywhere on the level (not the band or the tilt box) starts it:
+    // the largest target on the screen for the moment of the beep (ADR-007)
+    lv_obj_add_event_cb(overlay_container, overlay_clicked_cb, LV_EVENT_SHORT_CLICKED, NULL);
 }
 
 
@@ -265,7 +334,7 @@ static void on_reset_button_pressed(lv_event_t * e) {
 
 void digital_level_view_rotation_event_callback(lv_event_t * e) {
     set_rotation_roll_deg_indicator(system_config.rotation);
-    set_rotation_countdown_timer_widget(system_config.rotation);
+    level_band_set_rotation(system_config.rotation);
 }
 
 
@@ -299,10 +368,6 @@ static void fill_digital_level_config_page(lv_obj_t * sub_page_config_view) {
     // delta level threshold
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Level Threshold (deg)");
     config_item = create_spin_box(container, 5, 20, 1, 2, 1, (int32_t) (digital_level_view_config.delta_level_threshold * 10), update_float_item_gain_10, &digital_level_view_config.delta_level_threshold);
-
-    // auto_move_dope_card_on_recoil
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Auto Move Dope Card on Recoil");
-    config_item = create_switch(container, &digital_level_view_config.auto_move_dope_card_on_recoil, NULL);
 
     // Left tilt indicator colour
     container = create_menu_container_with_text(sub_page_config_view, LV_SYMBOL_EYE_OPEN, "Left Tilt Colour");

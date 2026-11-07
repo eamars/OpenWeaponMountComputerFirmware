@@ -667,8 +667,15 @@ void create_ota_mode_view(lv_obj_t * parent) {
     mem_diag_log_checkpoint("ota_updater_create end");
 }
 
+static volatile bool ota_mode_active = false;
+
+bool ota_mode_is_active(void) {
+    return ota_mode_active;
+}
+
 void enter_ota_mode(bool enable) {
     ESP_LOGI(TAG, "OTA Mode %s", enable ? "enabled" : "disabled");
+    ota_mode_active = enable;
 
     if (enable) {
         prevent_idle_mode_enter(true);

@@ -88,3 +88,17 @@ CONFIG_LV_USE_ASSERT_MALLOC=y
 CONFIG_LV_USE_ASSERT_NULL=y
 CONFIG_LV_ASSERT_HANDLER_INCLUDE="assert.h"
 CONFIG_LV_BUILD_EXAMPLES=n
+
+# Bluetooth LE for the Kestrel pull (ADR-007): NimBLE, peripheral (the unit as the Kestrel's HUD) and central
+# with scanning (phone mode: the unit connects to the Kestrel), one connection, host memory in PSRAM; Wi-Fi and BLE
+# share the radio by software coexistence. The stack runs only during a pull
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
+CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="HUD"
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+# The BLE controller runs from flash (here, from PSRAM: XiP), not internal RAM: 19 KB more internal RAM, pulls
+# no slower (ADR-007)
+CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY=y

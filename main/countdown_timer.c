@@ -15,13 +15,9 @@
 #include "buzzer.h"
 #include "app_cfg.h"
 #include "lvgl_display.h"
+#include "level_band.h"
 
 #define TAG "CountdownTimer"
-
-
-lv_obj_t * countdown_timer_arc = NULL;
-lv_obj_t * countdown_timer_label = NULL;
-lv_obj_t * countdown_timer_button = NULL;
 
 
 countdown_timer_state_t get_countdown_timer_state(countdown_timer_t * ctx) {
@@ -130,24 +126,28 @@ esp_err_t countdown_timer_init(countdown_timer_t *ctx) {
     return ESP_OK;
 }
 
-void countdown_timer_start(countdown_timer_t *ctx) {
-    set_countdown_timer_state(ctx, COUNTDOWN_TIMER_READY);
-    xTaskNotifyGive(ctx->countdown_timer_task_handle);
+// The time left as last shown, so a state change redraws the bar's colour without waiting for the task
+static int shown_time_left_ms = 0;
 
+
+static void show_state(countdown_timer_t *ctx) {
     if (lvgl_port_lock(0)) {
-        lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_GREY), LV_PART_INDICATOR);
+        level_band_update_timer(shown_time_left_ms);
         lvgl_port_unlock();
     }
 }
 
 
+void countdown_timer_start(countdown_timer_t *ctx) {
+    set_countdown_timer_state(ctx, COUNTDOWN_TIMER_READY);
+    xTaskNotifyGive(ctx->countdown_timer_task_handle);
+    // The task refills the time and shows it
+}
+
+
 void countdown_timer_pause(countdown_timer_t *ctx) {
     set_countdown_timer_state(ctx, COUNTDOWN_TIMER_PAUSE);
-
-    if (lvgl_port_lock(0)) {
-        lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_GREY), LV_PART_INDICATOR);
-        lvgl_port_unlock();
-    }
+    show_state(ctx);
 }
 
 
@@ -160,10 +160,7 @@ void countdown_timer_continue(countdown_timer_t *ctx) {
     buzzer_run(100, 50, 2, false);
 #endif  // USE_BUZZER
 
-    if (lvgl_port_lock(0)) {
-        lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
-        lvgl_port_unlock();
-    }
+    show_state(ctx);
 }
 
 /*------------------------------------
@@ -282,15 +279,10 @@ void update_timer_cb(void *p, int time_left_ms) {
 #endif  // USE_BUZZER
 
 
-    int time_left_sec = (int) ceilf(time_left_ms / 1000.0);
-    int percentage = (int) ceilf(time_left_ms * 100.0 / countdown_timer->countdown_time_ms);
-    int minute = time_left_sec / 60;
-    int second = time_left_sec % 60;
-
-    // Calculate the percentage 
+    // The band shows the time and the bar
+    shown_time_left_ms = time_left_ms;
     if (lvgl_port_lock(0)) {
-        lv_label_set_text_fmt(countdown_timer_label, "%d:%02d", minute, second);
-        lv_arc_set_value(countdown_timer_arc, percentage);
+        level_band_update_timer(time_left_ms);
         lvgl_port_unlock();
     }
 }
@@ -305,15 +297,7 @@ void countdown_timer_update_time(countdown_timer_t *ctx, int new_time_ms) {
 void enable_countdown_timer_widget(bool enable) {
     ESP_LOGI(TAG, "Setting countdown timer visibility to %d", enable);
     if (lvgl_port_lock(0)) {
-        if (enable) {
-            lv_obj_clear_flag(countdown_timer_button, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(countdown_timer_arc, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(countdown_timer_label, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(countdown_timer_button, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(countdown_timer_arc, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(countdown_timer_label, LV_OBJ_FLAG_HIDDEN);
-        }
+        level_band_show_timer(enable);
         lvgl_port_unlock();
     }
 }
@@ -322,69 +306,17 @@ void enable_countdown_timer_widget(bool enable) {
 bool get_countdown_timer_widget_enabled(void) {
     bool enabled = false;
     if (lvgl_port_lock(0)) {
-        enabled = !lv_obj_has_flag(countdown_timer_button, LV_OBJ_FLAG_HIDDEN);
+        enabled = level_band_timer_shown();
         lvgl_port_unlock();
     }
 
     return enabled;
 }
 
-void set_rotation_countdown_timer_widget(lv_display_rotation_t rotation) {
-    if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
-        lv_obj_align(countdown_timer_button, LV_ALIGN_CENTER, 0, 0);
-    }
-    else {
-        lv_obj_align(countdown_timer_button, LV_ALIGN_LEFT_MID, 20, 0);
-    }
-}
 
-
-lv_obj_t * create_countdown_timer_widget(lv_obj_t * parent, countdown_timer_t * countdown_timer) {
+// The timer's task and its link to the band, which shows it (ADR-007); hidden until a preset arms it
+void countdown_timer_setup(countdown_timer_t * countdown_timer) {
     countdown_timer->timer_update_cb = update_timer_cb;
     countdown_timer->timer_update_cb_args = countdown_timer;
-    countdown_timer_init(countdown_timer);
-
-    /* 
-    For arc, the main is the background, indicator is the foreground
-    */
-    countdown_timer_button = lv_btn_create(parent);
-    lv_obj_set_style_radius(countdown_timer_button, LV_RADIUS_CIRCLE, LV_PART_MAIN); // Make it fully round
-    lv_obj_set_style_bg_opa(countdown_timer_button, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(countdown_timer_button, 0, LV_PART_MAIN);
-    lv_obj_set_style_border_color(countdown_timer_button, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(countdown_timer_button, 0, LV_PART_MAIN);
-    lv_obj_set_size(countdown_timer_button, 200, 200);
-
-    lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_press_event_cb, LV_EVENT_SHORT_CLICKED, (void *) countdown_timer);
-    lv_obj_add_event_cb(countdown_timer_button, countdown_timer_button_press_event_cb, LV_EVENT_LONG_PRESSED, (void *) countdown_timer);
-    lv_group_add_obj(button_input_group, countdown_timer_button);  // Bind key button to the timer object
-
-    countdown_timer_arc = lv_arc_create(countdown_timer_button);
-    lv_obj_set_style_arc_color(countdown_timer_arc, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR);
-    // lv_obj_set_style_arc_color(countdown_timer, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(countdown_timer_arc, LV_OPA_TRANSP, LV_PART_MAIN);
-    // lv_obj_set_style_arc_width(countdown_timer_arc, 5, 0);
-    
-    lv_arc_set_rotation(countdown_timer_arc, 270);
-    lv_arc_set_bg_angles(countdown_timer_arc, 0, 360);
-    lv_obj_remove_style(countdown_timer_arc, NULL, LV_PART_KNOB);   /*Be sure the knob is not displayed*/
-    lv_obj_remove_flag(countdown_timer_arc, LV_OBJ_FLAG_CLICKABLE);  /*To not allow adjusting by click*/
-    lv_arc_set_range(countdown_timer_arc, 0, 100);  // 100 divisions for the full arc
-    lv_obj_align(countdown_timer_arc, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_size(countdown_timer_arc, LV_PCT(100), LV_PCT(100));
-
-    countdown_timer_label = lv_label_create(countdown_timer_button);
-
-    lv_label_set_text(countdown_timer_label, "0:00");
-    lv_obj_set_style_text_color(countdown_timer_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(countdown_timer_label, &lv_font_montserrat_48, LV_PART_MAIN);
-    lv_obj_align(countdown_timer_label, LV_ALIGN_CENTER, 0, 0);
-
-    // Set layout based on the rotation
-    set_rotation_countdown_timer_widget(system_config.rotation);
-
-    // By default don't show the timer
-    enable_countdown_timer_widget(false);
-
-    return countdown_timer_button;
+    ESP_ERROR_CHECK(countdown_timer_init(countdown_timer));
 }

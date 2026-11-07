@@ -33,6 +33,8 @@
 #include "app.h"
 #include "main_tileview.h"
 #include "display_shape.h"
+#include "kestrel_service.h"
+#include "dope_config_view.h"
 
 #define TAG "RemoteControl"
 #define NVS_NAMESPACE "RC"
@@ -55,7 +57,7 @@
 #define RC_MAX_ARGS 4
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats bt pmic snap outline tap swipe tile rot wifi save idle wake reboot hang bnoreset"
+#define RC_HELP_COMMANDS "help state stats bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset"
 
 
 typedef struct {
@@ -495,6 +497,60 @@ static bool rc_cmd_rot(int argc, char **argv, char *reply, size_t reply_size) {
 }
 
 
+// kestrel: the pull's status in one line; kestrel pull: start a pull (ADR-007). The pull logs every phase and
+// target; this command only starts it and reports
+static bool rc_cmd_kestrel(int argc, char **argv, char *reply, size_t reply_size) {
+#if USE_BNO085
+    if ((argc == 2 || argc == 3) && strcmp(argv[1], "pull") == 0) {
+        // kestrel pull [count]: the count the dope tile last used when left out
+        int count = argc == 3 ? atoi(argv[2]) : dope_settings.pull_count;
+        esp_err_t ret = kestrel_request_pull(count);
+        if (ret != ESP_OK) {
+            kestrel_status_t s = kestrel_get_status();
+            return rc_reply(reply, reply_size, false, "@err kestrel %s", s.message);
+        }
+        return rc_reply(reply, reply_size, true, "@ok kestrel pull");
+    }
+    if (argc == 2 && strcmp(argv[1], "find") == 0) {
+        // Phone mode: search for Kestrels; `kestrel` then lists them (found=)
+        esp_err_t ret = kestrel_request_search();
+        return rc_reply(reply, reply_size, ret == ESP_OK, ret == ESP_OK ? "@ok kestrel find" : "@err kestrel busy");
+    }
+    if (argc == 3 && strcmp(argv[1], "mode") == 0) {
+        // kestrel mode 0|1|2: Off, HUD, Phone, in memory only (as the page's dropdown before Save)
+        int mode = atoi(argv[2]);
+        if (mode < KESTREL_MODE_OFF || mode > KESTREL_MODE_PHONE) {
+            return rc_reply(reply, reply_size, false, "@err kestrel mode 0-2");
+        }
+        kestrel_settings.mode = (uint8_t) mode;
+        kestrel_settings_changed();
+        return rc_reply(reply, reply_size, true, "@ok kestrel mode=%d", mode);
+    }
+    if (argc == 3 && strcmp(argv[1], "pick") == 0) {
+        esp_err_t ret = kestrel_choose(atoi(argv[2]));
+        return rc_reply(reply, reply_size, ret == ESP_OK, ret == ESP_OK ? "@ok kestrel pick %s" : "@err kestrel pick %s",
+                        kestrel_settings.peer_name);
+    }
+    if (argc != 1) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    kestrel_status_t s = kestrel_get_status();
+    if (s.found_count > 0) {
+        return rc_reply(reply, reply_size, true,
+                        "@ok kestrel state=%d seq=%lu total_ms=%lu result=%lu n=%d found=%d first=%s,%d msg=%s",
+                        (int) s.state, (unsigned long) s.sequence, (unsigned long) s.total_ms,
+                        (unsigned long) (s.have_result ? s.result_id : 0), s.target_count, s.found_count,
+                        s.found[0].name, s.found[0].rssi, s.message);
+    }
+    return rc_reply(reply, reply_size, true, "@ok kestrel state=%d seq=%lu total_ms=%lu result=%lu n=%d msg=%s",
+                    (int) s.state, (unsigned long) s.sequence, (unsigned long) s.total_ms,
+                    (unsigned long) (s.have_result ? s.result_id : 0), s.target_count, s.message);
+#else
+    return rc_reply(reply, reply_size, false, "@err unsupported");
+#endif
+}
+
+
 static bool rc_cmd_wifi(int argc, char **argv, char *reply, size_t reply_size) {
     bool enable;
     if (argc == 2 && strcmp(argv[1], "on") == 0) {
@@ -835,7 +891,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "tap") == 0 || strcmp(cmd, "swipe") == 0 || strcmp(cmd, "tile") == 0 ||
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
                     strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
-                    strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0;
+                    strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -933,6 +989,9 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     }
     if (strcmp(cmd, "wifi") == 0) {
         return rc_cmd_wifi(argc, argv, reply, reply_size);
+    }
+    if (strcmp(cmd, "kestrel") == 0) {
+        return rc_cmd_kestrel(argc, argv, reply, reply_size);
     }
     return rc_cmd_save(argc, argv, reply, reply_size);
 }
