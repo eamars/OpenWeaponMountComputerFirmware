@@ -16,6 +16,7 @@
 
 #include "app.h"
 #include "digital_level_view.h"
+#include "countdown_timer_config_view.h"
 #include "main_tileview.h"
 #include "app_cfg.h"
 #include "bno085.h"
@@ -156,6 +157,9 @@ void app_main(void)
     // Read before the UI is created: the level view and the level's settings page both show these, so neither
     // has to be created first (ADR-005 step 3)
     ESP_ERROR_CHECK(load_digital_level_view_config());
+
+    // The timer tile and the Timer settings page both show these (ADR-006)
+    ESP_ERROR_CHECK(load_countdown_timer_config());
 #endif  // USE_BNO085
 
     // Set buzzer

@@ -16,6 +16,7 @@
 #include "ota_mode.h"
 #include "pmic_axp2101.h"
 #include "pmic_config.h"
+#include "countdown_timer_config_view.h"
 
 #define TAG "ConfigView"
 
@@ -504,6 +505,9 @@ void create_config_view(lv_obj_t *parent) {
     lv_obj_set_scroll_dir(main_page, LV_DIR_VER);  // only horizontal scroll
 
     // All top level menu items
+#if USE_BNO085
+    create_countdown_timer_view_config(config_menu, main_page);
+#endif  // USE_BNO085
     create_system_config_view_config(config_menu, main_page);
 #if USE_BNO085
     create_digital_level_view_config(config_menu, main_page);

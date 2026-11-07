@@ -39,7 +39,6 @@ const digital_level_view_config_t digital_level_view_config_default = {
     .colour_right_tilt_indicator = LV_PALETTE_AMBER,
     .colour_horizontal_level_indicator = LV_PALETTE_LIGHT_GREEN,
     .colour_foreground = LV_PALETTE_BLACK,
-    .auto_start_countdown_timer_on_recoil = true,
     .auto_move_dope_card_on_recoil = true,
     .level_style = DIGITAL_LEVEL_VIEW_TYPE_1,
 };
@@ -300,10 +299,6 @@ static void fill_digital_level_config_page(lv_obj_t * sub_page_config_view) {
     // delta level threshold
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Level Threshold (deg)");
     config_item = create_spin_box(container, 5, 20, 1, 2, 1, (int32_t) (digital_level_view_config.delta_level_threshold * 10), update_float_item_gain_10, &digital_level_view_config.delta_level_threshold);
-
-    // auto_start_countdown_timer_on_recoil
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Auto Start Countdown Timer on Recoil");
-    config_item = create_switch(container, &digital_level_view_config.auto_start_countdown_timer_on_recoil, NULL);
 
     // auto_move_dope_card_on_recoil
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Auto Move Dope Card on Recoil");
