@@ -14,7 +14,8 @@ A countdown timer tile that is quick and sure to use at a precision rifle match,
 4. The timer settings layout: propose a better one; usability comes first on a small touch screen. Each button must be physically large enough, and the design must follow how a timer is used in a PRS match (research it).
 5. Saving on swipe-away is a design issue: avoid unnecessary NVS writes.
 6. Every proposal shows portrait and landscape.
-7. The level view stays as it is in this ADR: its timer widget and the dope strip (which overlap in landscape) are to be designed together, as one system, later.
+7. The editor's step is a setting: 5, 10 or 15 s (owner, 2026-11-07: "15 s step seems huge").
+8. The level view stays as it is in this ADR: its timer widget and the dope strip (which overlap in landscape) are to be designed together, as one system, later.
 
 ## What we know
 
@@ -73,7 +74,8 @@ Drawn in portrait (280 x 456) and landscape (456 x 280) in the proposal pictures
 
 - **Three presets, as the whole tile.** Portrait: three full-width buttons stacked, 264 x 133 px (20.6 x 10.4 mm). Landscape: three side by side, 133 x 264 px. Each shows its time large. Defaults 1:30, 2:00 and 1:00 (the two common par times and the walk-through); the owner's current two values are kept as the first two.
 - **Tap a preset: the timer starts and the view goes back to the level.** At "Stand by" the shooter has the tile up; at the beep, one tap on a 10 x 20 mm target starts the timer and shows the level with the time running. Tapping the running preset again stops and hides the timer, as today. The recoil start stays as it is.
-- **Long press a preset to edit it.** The editor shows the time large and has three buttons: **minus 15 s, plus 15 s** (holding repeats, faster after a second), and **Done**. Portrait: the time on top (96 px), minus and plus side by side below (122 x 148 px each, 9.5 x 11.5 mm), Done across the bottom (264 x 156 px). Landscape: the time and Done on the left, plus above minus on the right (140 x 122 px each, 11 x 9.5 mm). Range 0:15 to 10:00. Why 15 s steps and no minute buttons: par times are multiples of 15 s, and the common ones are a few steps apart (1:30 to 2:00 is two taps), so two large buttons beat four smaller ones or a roller. Rollers need a short, precise fling; fixed targets do not.
+- **Long press a preset to edit it.** The editor shows the time large and has three buttons: **minus and plus one step** (holding repeats, faster after a second), and **Done**. The step is a setting (below), 5 s by default. Portrait: the time on top (96 px), minus and plus side by side below (122 x 148 px each, 9.5 x 11.5 mm), Done across the bottom (264 x 156 px). Landscape: the time and Done on the left, plus above minus on the right (140 x 122 px each, 11 x 9.5 mm). Range one step to 10:00. Why two step buttons and no minute buttons: par times sit a few steps apart (1:30 to 2:00 is six taps at 5 s, two at 15 s, and holding repeats), so two large buttons beat four smaller ones or a roller. Rollers need a short, precise fling; fixed targets do not.
+- **The step setting**: 5, 10 or 15 s, on a new Countdown Timer page in the settings menu (the same page pattern as the others: Save, Reload, Reset). A time that is not on the step (1:37 with a 10 s step) snaps on the first press: plus gives 1:40, minus 1:30. The step has its own NVS entry: adding it to the presets' saved block would change that block's size, which the loader takes as missing settings and replaces with the defaults, losing the owner's presets.
 - Editing happens between stages, so a long press (not reachable by a stray tap) and a separate editor are acceptable; starting happens at the beep, so it is the largest and simplest action on the tile.
 - The tile and editor are laid out with flex grow, so they fill the screen exactly in every rotation, and the rotation handler only switches the flow (column in portrait, row in landscape).
 
@@ -95,6 +97,6 @@ The level view: the timer widget (200 px round, `LEFT_MID` in landscape) and the
 
 1. ~~The panel's corner radius~~: 30 px, from the panel datasheet (2026-11-07; CO5300 is SH8601-compatible).
 2. **Starting a preset returns to the level view** (recommended), or stays on the tile.
-3. **Editing in 15 s steps** with two large buttons (recommended), or finer steps.
+3. ~~Editing step~~: a setting, 5, 10 or 15 s, default 5 s (owner, 2026-11-07).
 4. **Three presets** (recommended: 1:30, 2:00, 1:00), or two.
 5. **The order**: capture first (recommended), then corners, tile, saving.
