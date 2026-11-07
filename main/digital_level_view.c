@@ -161,7 +161,7 @@ void create_digital_level_overlay(lv_obj_t *parent)
 digital_level_view_t * select_digital_level_view(digital_level_view_type_t level_style) {
     digital_level_view_t * selected = NULL;
     // Load digital level view widget
-    switch(digital_level_view_config.level_style) {
+    switch(level_style) {
         case DIGITAL_LEVEL_VIEW_TYPE_1:
             selected = &digital_level_view_type_1_context;
             break;
@@ -220,23 +220,44 @@ static void update_roll_offset(lv_event_t *e) {
 }
 
 
+static lv_obj_t * digital_level_config_page = NULL;
+
+
+// Show the style the settings ask for (the style dropdown, Reload, Reset); the level reads its other settings live
+static void apply_digital_level_view_style() {
+    digital_level_view_t * wanted = select_digital_level_view(digital_level_view_config.level_style);
+    if (wanted == NULL || wanted == current_digital_level_view) {
+        return;
+    }
+
+    // LVGL task (an LVGL event), so the swap needs no lock
+    current_digital_level_view->destructor(current_digital_level_view->container);
+    current_digital_level_view = wanted;
+    current_digital_level_view->constructor(parent_container);
+
+    // Important! Move overlay to foreground
+    lv_obj_move_foreground(overlay_container);
+}
+
 static void on_save_button_pressed(lv_event_t * e) {
     update_info_msg_box_result(msg_box, save_digital_level_view_config(), "Configuration Saved", "Save failed");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    update_info_msg_box_result(msg_box, load_digital_level_view_config(), "Previous Configuration Reloaded", "Reload failed");
+    esp_err_t ret = load_digital_level_view_config();
+    apply_digital_level_view_style();
+    config_page_rebuild(digital_level_config_page);
 
-    // TODO: Update current displayed values
+    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
 }
 
 static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
+    apply_digital_level_view_style();
+    config_page_rebuild(digital_level_config_page);
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-
-    // TODO: Update current display values
 }
 
 
@@ -248,39 +269,17 @@ void digital_level_view_rotation_event_callback(lv_event_t * e) {
 
 static void update_level_style(lv_event_t *e) {
     lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
+    digital_level_view_config.level_style = (digital_level_view_type_t) lv_dropdown_get_selected(dropdown);
+    ESP_LOGI(TAG, "Level style set to %d", digital_level_view_config.level_style);
 
-    if (selected != digital_level_view_config.level_style) {
-        digital_level_view_config.level_style = (digital_level_view_type_t) selected;
-        ESP_LOGI(TAG, "Level style updated to %d", digital_level_view_config.level_style);
-
-        // Deinitialize the previous style
-        // TODO: Add lock
-        current_digital_level_view->destructor(current_digital_level_view->container);
-        current_digital_level_view = NULL;
-
-        // Load digital level view widget
-        current_digital_level_view = select_digital_level_view(digital_level_view_config.level_style);
-
-        // Create widget
-        current_digital_level_view->constructor(parent_container);
-
-        // Important! Move overlay to foreground
-         lv_obj_move_foreground(overlay_container);
-        
-    }
-    else {
-        ESP_LOGI(TAG, "Level style unchanged");
-    }
+    apply_digital_level_view_style();
 }
 
 
-lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
+// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
+static void fill_digital_level_config_page(lv_obj_t * sub_page_config_view) {
     lv_obj_t * container;
     lv_obj_t * config_item;
-
-    // Create a sub page for digital_level_view
-    lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
     // Type
     const char level_style_options[] = "Level\nBlock";
@@ -326,6 +325,12 @@ lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
     config_item = create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
+}
+
+
+lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
+    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_digital_level_config_page);
+    digital_level_config_page = sub_page_config_view;
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);

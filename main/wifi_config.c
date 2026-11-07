@@ -154,18 +154,20 @@ static void on_save_button_pressed(lv_event_t * e) {
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    update_info_msg_box_result(msg_box, load_wifi_user_config(), "Previous Configuration Reloaded", "Reload failed");
+    esp_err_t ret = load_wifi_user_config();
 
-    // TODO: Update current displayed values
+    // The switch follows the service (UI bridge), so asking the service is all the page needs
+    wifi_request_enable(wifi_user_config.wifi_enable);
+
+    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
 }
 
 static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
+    wifi_request_enable(wifi_user_config.wifi_enable);
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-
-    // TODO: Update current display values
 }
 
 

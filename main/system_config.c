@@ -27,6 +27,7 @@ const system_config_t system_config_default = {
 
 static lv_obj_t * rotation_dropdown = NULL;
 static lv_obj_t * remote_control_switch = NULL;
+static lv_obj_t * system_config_page = NULL;
 
 const char rotation_options[] = "0°\n90°\n180°\n270°";
 const char screen_brightness_pct_options[] = "50%\n60%\n70%\n80%\n90%\n100%";
@@ -104,6 +105,22 @@ static void toggle_remote_control_serial(lv_event_t *e) {
     apply_remote_control_config();
 }
 
+// Apply the settings to the running unit, as the page's controls do one by one (Reload, Reset)
+static void apply_system_config() {
+    lv_display_t * display = lv_display_get_default();
+    if (lv_display_get_rotation(display) != system_config.rotation) {
+        lv_display_set_rotation(display, system_config.rotation);
+    }
+
+    esp_log_level_set("*", system_config.global_log_level);
+
+    if (!is_idle_mode_activated() && !is_sleep_mode_activated()) {
+        set_display_brightness(&io_handle, system_config.screen_brightness_normal_pct);
+    }
+
+    apply_remote_control_config();
+}
+
 static void on_save_button_pressed(lv_event_t * e) {
     // Both are tried; the first failure is shown
     esp_err_t ret = save_system_config();
@@ -115,22 +132,20 @@ static void on_save_button_pressed(lv_event_t * e) {
 static void on_reload_button_pressed(lv_event_t * e) {
     esp_err_t ret = load_system_config();
     esp_err_t rc_ret = load_remote_control_config();
-    apply_remote_control_config();
+    apply_system_config();
+    config_page_rebuild(system_config_page);
 
     update_info_msg_box_result(msg_box, ret != ESP_OK ? ret : rc_ret, "Previous Configuration Reloaded", "Reload failed");
-
-    // TODO: Update current displayed values
 }
 
 static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&system_config, &system_config_default, sizeof(system_config));
     memcpy(&remote_control_config, &remote_control_config_default, sizeof(remote_control_config));
-    apply_remote_control_config();
+    apply_system_config();
+    config_page_rebuild(system_config_page);
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-
-    // TODO: Update current display values
 }
 
 
@@ -157,11 +172,10 @@ void update_global_log_level(lv_event_t * e) {
     ESP_LOGE(TAG, "Global log level updated to %d", system_config.global_log_level);
 }
 
-lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
+// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
+static void fill_system_config_page(lv_obj_t * sub_page_config_view) {
     lv_obj_t * container;
     lv_obj_t * config_item;
-
-    lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
     // Rotation
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Screen Rotation");
@@ -182,7 +196,13 @@ lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
     create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
-    
+}
+
+
+lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
+    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_system_config_page);
+    system_config_page = sub_page_config_view;
+
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
     lv_obj_t * img = lv_image_create(cont);

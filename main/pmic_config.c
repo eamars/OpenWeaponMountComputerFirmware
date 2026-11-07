@@ -131,6 +131,9 @@ static void update_battery_charge_voltage_event_cb(lv_event_t *e) {
 }
 
 
+static lv_obj_t * power_management_config_page = NULL;
+
+
 static void on_save_button_pressed(lv_event_t * e) {
     esp_err_t ret = save_pmic_config();
 
@@ -143,18 +146,19 @@ static void on_save_button_pressed(lv_event_t * e) {
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    update_info_msg_box_result(msg_box, load_pmic_config(), "Previous Configuration Reloaded", "Reload failed");
+    // Nothing to apply: the timeouts are read live, the charge settings reach the chip on Save (ADR-005 B15)
+    esp_err_t ret = load_pmic_config();
+    config_page_rebuild(power_management_config_page);
 
-    // TODO: Update current displayed values
+    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
 }
 
 static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&power_management_config, &default_power_management_config, sizeof(power_management_config));
+    config_page_rebuild(power_management_config_page);
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-
-    // TODO: Update current display values
 }
 
 
@@ -245,11 +249,10 @@ void power_menu_make_visible() {
 }
 
 
-lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
+// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
+static void fill_power_management_config_page(lv_obj_t * sub_page_config_view) {
     lv_obj_t * container;
     lv_obj_t * config_item;
-
-    lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
     // Battery status labels; the observer sets their text now and on every new reading
     power_management_status_label_1 = create_config_label_static(sub_page_config_view, status_str_l1);
@@ -281,7 +284,13 @@ lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * pare
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
     create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
-    
+}
+
+
+lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
+    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_power_management_config_page);
+    power_management_config_page = sub_page_config_view;
+
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
     lv_obj_t * img = lv_image_create(cont);

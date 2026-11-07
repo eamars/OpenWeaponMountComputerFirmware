@@ -372,6 +372,36 @@ void update_info_msg_box_result(lv_obj_t * msg_box, esp_err_t ret, const char * 
     update_info_msg_box(msg_box, text);
 }
 
+lv_obj_t * create_config_page(lv_obj_t * menu, config_page_fill_func_t fill) {
+    lv_obj_t * page = lv_menu_page_create(menu, NULL);
+    lv_obj_set_user_data(page, (void *) fill);
+    fill(page);
+
+    return page;
+}
+
+
+// LVGL task (lv_async_call), after the Reload or Reset event has returned
+static void config_page_rebuild_async(void * p) {
+    lv_obj_t * page = (lv_obj_t *) p;
+    config_page_fill_func_t fill = (config_page_fill_func_t) lv_obj_get_user_data(page);
+    int32_t scroll_y = lv_obj_get_scroll_y(page);
+
+    lv_obj_clean(page);  // observers bound to the old widgets go with them
+    fill(page);
+
+    lv_obj_update_layout(page);
+    lv_obj_scroll_to_y(page, scroll_y, LV_ANIM_OFF);
+}
+
+
+void config_page_rebuild(lv_obj_t * page) {
+    if (page) {
+        lv_async_call(config_page_rebuild_async, page);
+    }
+}
+
+
 void set_rotation_config_view(lv_display_rotation_t rotation) {
     if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
         // Parent container layout

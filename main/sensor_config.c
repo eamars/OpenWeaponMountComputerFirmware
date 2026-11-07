@@ -41,23 +41,42 @@ esp_err_t load_sensor_config() {
 }
 
 
+static lv_obj_t * sensor_config_page = NULL;
+
+
+// Apply the settings to the running unit, as the page's switches do (Reload, Reset): a report switched off is
+// stopped; a report switched on starts when the view that uses it is enabled
+static void apply_sensor_config() {
+    if (!sensor_config.enable_game_rotation_vector_report) {
+        bno085_enable_game_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver
+    }
+    if (!sensor_config.enable_linear_acceleration_report) {
+        bno085_enable_linear_acceleration_report(bno085_dev, 0);
+    }
+    if (!sensor_config.enable_rotation_vector_report) {
+        bno085_enable_rotation_vector_report(bno085_dev, 0);
+    }
+}
+
 static void on_save_button_pressed(lv_event_t * e) {
     update_info_msg_box_result(msg_box, save_sensor_config(), "Configuration Saved", "Save failed");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    update_info_msg_box_result(msg_box, load_sensor_config(), "Previous Configuration Reloaded", "Reload failed");
+    esp_err_t ret = load_sensor_config();
+    apply_sensor_config();
+    config_page_rebuild(sensor_config_page);
 
-    // TODO: Update current displayed values
+    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
 }
 
 static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&sensor_config, &sensor_config_default, sizeof(sensor_config));
+    apply_sensor_config();
+    config_page_rebuild(sensor_config_page);
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-
-    // TODO: Update current display values
 }
 
 
@@ -117,11 +136,10 @@ static void on_sensor_calibration_button_pressed(lv_event_t * e) {
 }
 
 
-lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
+// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
+static void fill_sensor_config_page(lv_obj_t * sub_page_config_view) {
     lv_obj_t * container;
     lv_obj_t * config_item;
-
-    lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
     // Recoil acceleration trigger level
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Recoil Trigger Level (m/s^2)");
@@ -150,6 +168,12 @@ lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent
     // Sensor calibration
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Sensor Calibration");
     sensor_calibration_button = create_single_button(container, LV_SYMBOL_WARNING, on_sensor_calibration_button_pressed);
+}
+
+
+lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
+    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_sensor_config_page);
+    sensor_config_page = sub_page_config_view;
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
