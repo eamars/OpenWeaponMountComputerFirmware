@@ -40,6 +40,9 @@ void value_editor_open(value_editor_t * editor, const value_editor_params_t * pa
 /** @brief Close the editor, keeping the edit: `closed` is called. Nothing happens when it is not open. */
 void value_editor_close(value_editor_t * editor);
 
+/** @brief Close the editor and drop the edit: `closed` is not called */
+void value_editor_cancel(value_editor_t * editor);
+
 bool value_editor_is_open(const value_editor_t * editor);
 
 void value_editor_set_rotation(value_editor_t * editor, lv_display_rotation_t rotation);

@@ -44,6 +44,12 @@ int compare_version(version_t * self, version_t * other);
 #endif  // NVS_CFG_KEY
 esp_err_t load_config(const char *ns, void *cfg, const void *default_cfg, size_t size);
 
+/**
+ * @brief As load_config, for a structure that grows only by appending: a saved older version of min_size bytes or
+ * more loads into its first bytes and the rest takes the defaults
+ */
+esp_err_t load_config_grown(const char *ns, void *cfg, const void *default_cfg, size_t size, size_t min_size);
+
 
 /**
  * @brief Save configuration to NVS. 

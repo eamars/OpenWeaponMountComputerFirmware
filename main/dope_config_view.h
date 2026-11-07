@@ -8,10 +8,12 @@
 #include <lvgl.h>
 #include "esp_err.h"
 
-// The dope card (ADR-007): 10 targets, A to J, as the Kestrel's Target Card. Holds are in mil x 10, signed:
-// elevation + up / - down, wind + right / - left. Filled by hand on the dope tile, or (later) pulled from a Kestrel.
+// The dope card (ADR-007): 10, 12 or 15 targets (the Card Size setting), named A, B, C... or 1, 2, 3... as the
+// Kestrel's Target Card. Holds are in mil x 10, signed: elevation + up / - down, wind + right / - left. Filled by
+// hand on the dope tile, or pulled from a Kestrel, whose Target Card holds 10: a pull fills only the first 10.
 
-#define DOPE_TARGET_COUNT 10
+#define DOPE_TARGET_MAX 15                  // the card always stores this many; the setting says how many are used
+#define DOPE_TARGET_COUNT_OLD 10            // the card as saved before the Card Size setting
 #define DOPE_HOLD_NONE INT16_MIN            // a hold that is not known (the gust, until a Kestrel gives one)
 
 #define DOPE_TARGET_SET (1 << 0)            // the target has an elevation; an empty target is not shown on the level
@@ -27,7 +29,7 @@ typedef struct {
 } dope_target_t;
 
 typedef struct {
-    dope_target_t target[DOPE_TARGET_COUNT];
+    dope_target_t target[DOPE_TARGET_MAX];  // appended to as it grew, so an older saved card still loads
 } dope_card_t;
 
 extern dope_card_t dope_card;
@@ -37,15 +39,17 @@ esp_err_t save_dope_config();
 
 // How targets are named, as the Kestrel's Target Card offers (same values as its designator setting)
 typedef enum {
-    DOPE_TARGET_NAMES_LETTERS = 0,  // A to J
-    DOPE_TARGET_NAMES_NUMBERS = 1,  // 1 to 10
+    DOPE_TARGET_NAMES_LETTERS = 0,  // A, B, C...
+    DOPE_TARGET_NAMES_NUMBERS = 1,  // 1, 2, 3...
 } dope_target_names_t;
 
-// The Dope settings page
+// The Dope settings page. Fields are only appended, so older saved settings still load
 typedef struct {
     uint8_t target_names;           // dope_target_names_t
     bool next_target_on_recoil;     // the level shows the next target after a shot (off: unreliable with .22LR and
                                     // heavy rifles, owner 2026-11-07)
+    uint8_t pull_count;             // how many Kestrel targets the last Pull took; the next starts from it
+    uint8_t target_count;           // the card's size: 10, 12 (default: PRS stages, owner 2026-11-07) or 15
 } dope_settings_t;
 
 extern dope_settings_t dope_settings;
@@ -54,6 +58,11 @@ esp_err_t load_dope_settings();
 esp_err_t save_dope_settings();
 
 #define DOPE_TARGET_NAME_SIZE 12
+
+/** @brief How many targets the card uses (the Card Size setting); targets past it are kept but not shown */
+static inline int dope_target_count(void) {
+    return dope_settings.target_count;
+}
 
 /** @brief "A" or "1" for target 0, as the Target Names setting says */
 void dope_target_name(char * buf, size_t size, int index);
@@ -69,6 +78,8 @@ static inline bool dope_target_is_set(const dope_target_t * target) {
 void dope_format_elevation(char * buf, size_t size, int32_t elevation_x10);
 /** @brief "R0.4", "L0.4", "0.0" */
 void dope_format_wind(char * buf, size_t size, int32_t wind_x10);
+/** @brief The gust after its wind: "0.7" on the wind's side, "R0.7" when the sides differ */
+void dope_format_gust(char * buf, size_t size, int32_t wind_x10, int32_t gust_x10);
 
 void create_dope_config_view(lv_obj_t * parent);
 void enable_dope_config_view(bool enable);

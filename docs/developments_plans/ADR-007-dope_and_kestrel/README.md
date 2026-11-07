@@ -1,6 +1,6 @@
 # ADR-007: the dope card with windage, its place on the level view, and the Kestrel link
 
-Status: **Open** 2026-11-07. Approved by the owner ("Approve, start"). Steps 1 and 2 built and checked on the unit ([progress](progress.md)); steps 3 to 5 left.
+Status: **Open** 2026-11-07. Approved by the owner ("Approve, start"). Steps 1 to 5 built and checked on the unit, steps 3 to 5 with the owner's Kestrel ([progress](progress.md)). Left: the owner's hands-on check of phone mode; the 34 KB of internal RAM the Bluetooth stack holds while off, and the smaller largest free block after a pull, to look into.
 
 ## What we want
 
@@ -53,7 +53,7 @@ A dope card that a PRS shooter can fill in during stage prep and read at a glanc
 
 ### The dope data (one model for hand entry and the Kestrel)
 
-10 targets, A to J, matching the Kestrel's Target Card. Each target: elevation (mil, 0.1 steps, signed: U/D), wind hold (mil, signed: L/R), gust hold (optional, the bracket's high end, Wnd2), range (optional, shown when known), and where it came from (hand or Kestrel). A target with no elevation is empty and not shown on the level. The saved block changes size, so `DOPE` starts empty once (resets accepted for features under review).
+10, 12 (default) or 15 targets, the **Card Size** setting on the Dope page (owner, 2026-11-07: PRS stages run to 12). The Kestrel's Target Card holds 10, so a pull fills only the first 10; targets past 10 are entered by hand. Each target: elevation (mil, 0.1 steps, signed: U/D), wind hold (mil, signed: L/R), gust hold (optional, the bracket's high end, Wnd2), range (optional, shown when known), and where it came from (hand or Kestrel). A target with no elevation is empty and not shown on the level. The saved block changes size, so `DOPE` starts empty once (resets accepted for features under review).
 
 The current target on the level is RAM only: stepping through targets on every shot must not write NVS.
 
@@ -61,11 +61,11 @@ Mil only, as the Kestrel sends; MOA is out of scope.
 
 ### The dope tile (setup, between stages)
 
-- A list of the 10 targets, dark like the timer tile. Each row: the letter and range, an **Elevation** cell and a **Wind** cell, each a tap target of at least 122 x 122 px. Empty targets show "–".
+- A list of the card's targets (10, 12 or 15), dark like the timer tile. Each row: the letter and range, an **Elevation** cell and a **Wind** cell, each a tap target of at least 122 x 122 px. Empty targets show "–".
 - Tap a cell: the **value editor**, the timer editor's layout and rules reused (value, minus, plus, Done; press steps 0.1, hold repeats and speeds up). Wind steps through zero from L to R, so there is no separate direction control. Done saves only after a change (ADR-006 rule). Editing the wind by hand clears the gust (the bracket was the Kestrel's).
 - Long press a row: clear that target. A "Clear all" row at the end for the next stage, which asks once.
-- Targets are named A to J or 1 to 10, a setting on a **Dope** page in the settings menu, as the Kestrel's Target Card offers (owner, 2026-11-07).
-- When the Kestrel is set up, a Kestrel row at the top with **Pull targets**, which replaces the card with the Kestrel's targets and saves once. Pull is a deliberate action, never automatic, so a hand edit is never overwritten behind the shooter's back.
+- Targets are named A, B, C... or 1, 2, 3..., a setting on a **Dope** page in the settings menu, as the Kestrel's Target Card offers (owner, 2026-11-07).
+- When the Kestrel is set up, a Kestrel row at the top with **Pull targets**, which replaces the card's first 10 targets with the Kestrel's and saves once; targets past 10 stay. Pull is a deliberate action, never automatic, so a hand edit is never overwritten behind the shooter's back.
 
 ### The level view: dope and timer as one system
 

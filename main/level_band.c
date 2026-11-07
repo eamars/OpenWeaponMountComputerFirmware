@@ -45,7 +45,7 @@ static int current_target = -1;         // the target shown; RAM only, so steppi
 
 
 static int find_set_target(int from, int direction) {
-    for (int i = from; i >= 0 && i < DOPE_TARGET_COUNT; i += direction) {
+    for (int i = from; i >= 0 && i < dope_target_count(); i += direction) {
         if (dope_target_is_set(&dope_card.target[i])) {
             return i;
         }
@@ -123,10 +123,8 @@ static void show_target() {
     dope_format_wind(text, sizeof(text), target->wind_x10);
     lv_label_set_text(wind_label, text);
     if (target->gust_x10 != DOPE_HOLD_NONE) {
-        bool same_side = (target->gust_x10 >= 0) == (target->wind_x10 >= 0);
         char gust[12];
-        dope_format_wind(gust, sizeof(gust), same_side ? (target->gust_x10 < 0 ? -target->gust_x10 : target->gust_x10)
-                                                       : target->gust_x10);
+        dope_format_gust(gust, sizeof(gust), target->wind_x10, target->gust_x10);
         lv_label_set_text_fmt(gust_label, "/ %s", gust);
     }
     else {
@@ -139,7 +137,9 @@ static void show_target() {
 
 
 void level_band_refresh_dope(void) {
-    if (current_target < 0 || !dope_target_is_set(&dope_card.target[current_target])) {
+    // A target gone, or past a smaller card size: the first set target
+    if (current_target < 0 || current_target >= dope_target_count() ||
+        !dope_target_is_set(&dope_card.target[current_target])) {
         current_target = find_set_target(0, 1);
     }
     show_target();

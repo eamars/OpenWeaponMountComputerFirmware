@@ -206,6 +206,15 @@ void value_editor_close(value_editor_t * editor) {
 }
 
 
+void value_editor_cancel(value_editor_t * editor) {
+    if (editor == NULL || !editor->open) {
+        return;
+    }
+    editor->open = false;
+    lv_obj_add_flag(editor->screen, LV_OBJ_FLAG_HIDDEN);
+}
+
+
 bool value_editor_is_open(const value_editor_t * editor) {
     return editor != NULL && editor->open;
 }

@@ -13,6 +13,10 @@
 #include "value_editor.h"
 #include "config_view.h"
 #include "level_band.h"
+#include "kestrel_service.h"
+
+#include <math.h>
+#include <stddef.h>
 
 #define TAG "DopeConfigView"
 #define NVS_NAMESPACE "DOPE"
@@ -27,7 +31,7 @@
 
 // The editor's ranges, mil x 10
 #define DOPE_ELEVATION_MIN_X10 (-50)
-#define DOPE_ELEVATION_MAX_X10 400
+#define DOPE_ELEVATION_MAX_X10 999      // 99.9 mil: a .22LR at 700 m already needs 62 (owner's Kestrel)
 #define DOPE_WIND_MAX_X10 100
 #define DOPE_EDITOR_FAST_STEPS 5        // holding: 0.5 mil per repeat after a second
 
@@ -39,8 +43,12 @@ HEAPS_CAPS_ATTR dope_settings_t dope_settings;
 static const dope_settings_t dope_settings_default = {
     .target_names = DOPE_TARGET_NAMES_LETTERS,
     .next_target_on_recoil = false,
+    .pull_count = 5,
+    .target_count = 12,
 };
 static const char * target_names_options = "A, B, C\n1, 2, 3";
+static const uint8_t target_count_values[] = {10, 12, 15};
+static const char * target_count_options = "10\n12\n15";
 
 
 typedef enum {
@@ -59,7 +67,7 @@ typedef struct {
 
 } dope_target_widgets_t;
 
-static dope_target_widgets_t target_widgets[DOPE_TARGET_COUNT];
+static dope_target_widgets_t target_widgets[DOPE_TARGET_MAX];
 static lv_obj_t * target_list = NULL;
 static lv_obj_t * clear_all_button = NULL;
 static value_editor_t * editor = NULL;
@@ -72,6 +80,16 @@ static lv_obj_t * confirm_clear_button = NULL;
 static lv_obj_t * confirm_cancel_button = NULL;
 static int confirm_target = -1;
 
+// The Kestrel row at the top of the tile (ADR-007 step 4)
+#define DOPE_KESTREL_REFRESH_MS 300
+#define DOPE_PULL_BUTTON_LANDSCAPE_PX 150
+static lv_obj_t * kestrel_row = NULL;
+static lv_obj_t * kestrel_label = NULL;
+static lv_obj_t * pull_button = NULL;
+static bool pull_editor_open = false;       // the editor asks how many targets to pull
+static uint32_t kestrel_shown_sequence = UINT32_MAX;
+static uint32_t applied_result_id = 0;      // the last pull result put on the card
+
 
 
 /*
@@ -81,7 +99,9 @@ The data
 */
 
 esp_err_t load_dope_config() {
-    return load_config(NVS_NAMESPACE, &dope_card, &dope_card_default, sizeof(dope_card));
+    // A card saved with 10 targets loads into the first 10
+    return load_config_grown(NVS_NAMESPACE, &dope_card, &dope_card_default, sizeof(dope_card),
+                             DOPE_TARGET_COUNT_OLD * sizeof(dope_target_t));
 }
 
 
@@ -101,10 +121,29 @@ void dope_format_wind(char * buf, size_t size, int32_t wind_x10) {
 }
 
 
+void dope_format_gust(char * buf, size_t size, int32_t wind_x10, int32_t gust_x10) {
+    bool same_side = (gust_x10 >= 0) == (wind_x10 >= 0) || wind_x10 == 0;
+    if (same_side) {
+        snprintf(buf, size, "%ld.%ld", labs(gust_x10) / 10, labs(gust_x10) % 10);
+    }
+    else {
+        dope_format_wind(buf, size, gust_x10);
+    }
+}
+
+
 esp_err_t load_dope_settings() {
-    esp_err_t ret = load_config(NVS_NAMESPACE_SETTINGS, &dope_settings, &dope_settings_default, sizeof(dope_settings));
+    // Settings saved before the Card Size setting load with the default size
+    esp_err_t ret = load_config_grown(NVS_NAMESPACE_SETTINGS, &dope_settings, &dope_settings_default,
+                                      sizeof(dope_settings), offsetof(dope_settings_t, target_count));
     if (dope_settings.target_names > DOPE_TARGET_NAMES_NUMBERS) {
         dope_settings.target_names = dope_settings_default.target_names;
+    }
+    if (dope_settings.pull_count < 1 || dope_settings.pull_count > KL_TARGET_COUNT) {
+        dope_settings.pull_count = dope_settings_default.pull_count;
+    }
+    if (memchr(target_count_values, dope_settings.target_count, sizeof(target_count_values)) == NULL) {
+        dope_settings.target_count = dope_settings_default.target_count;
     }
     return ret;
 }
@@ -141,6 +180,12 @@ static void refresh_target(int index) {
     dope_target_name(name, sizeof(name), index);
 
     if (w->row != NULL) {
+        if (index < dope_target_count()) {
+            lv_obj_remove_flag(w->row, LV_OBJ_FLAG_HIDDEN);
+        }
+        else {
+            lv_obj_add_flag(w->row, LV_OBJ_FLAG_HIDDEN);
+        }
         lv_label_set_text(w->letter_label, name);
         if (set && target->range_m > 0) {
             lv_label_set_text_fmt(w->range_label, "%u m", (unsigned) target->range_m);
@@ -165,8 +210,8 @@ static void refresh_target(int index) {
         }
 
         if (set && target->gust_x10 != DOPE_HOLD_NONE) {
-            dope_format_wind(text, sizeof(text), target->gust_x10);
-            lv_label_set_text_fmt(w->cell_caption[DOPE_FIELD_WIND], "Wind, gust %s", text);
+            dope_format_gust(text, sizeof(text), target->wind_x10, target->gust_x10);
+            lv_label_set_text_fmt(w->cell_caption[DOPE_FIELD_WIND], "Wind / %s", text);
         }
         else {
             lv_label_set_text(w->cell_caption[DOPE_FIELD_WIND], "Wind");
@@ -175,9 +220,9 @@ static void refresh_target(int index) {
 }
 
 
-// The tile and the level's band, after the card or the names changed
+// The tile and the level's band, after the card, the names or the size changed
 static void refresh_card() {
-    for (int i = 0; i < DOPE_TARGET_COUNT; i++) {
+    for (int i = 0; i < DOPE_TARGET_MAX; i++) {
         refresh_target(i);
     }
     level_band_refresh_dope();
@@ -340,8 +385,9 @@ static void close_confirm() {
 static void confirm_clear_cb(lv_event_t * e) {
     close_confirm();
 
+    // Clear all clears every stored target, shown or not, so a larger card size later shows none of them
     bool changed = false;
-    for (int i = 0; i < DOPE_TARGET_COUNT; i++) {
+    for (int i = 0; i < DOPE_TARGET_MAX; i++) {
         if ((confirm_target < 0 || confirm_target == i) && dope_target_is_set(&dope_card.target[i])) {
             memset(&dope_card.target[i], 0, sizeof(dope_target_t));
             changed = true;
@@ -406,6 +452,178 @@ static void create_confirm(lv_obj_t * parent) {
     confirm_cancel_button = value_editor_create_button(confirm_screen, LV_PALETTE_GREY);
     lv_label_set_text(value_editor_create_label(confirm_cancel_button, &lv_font_montserrat_32), "Cancel");
     lv_obj_add_event_cb(confirm_cancel_button, confirm_cancel_cb, LV_EVENT_SHORT_CLICKED, NULL);
+}
+
+
+/*
+----------------------------------------------------
+The Kestrel row: Pull asks how many targets, then the Kestrel's targets replace the card
+----------------------------------------------------
+*/
+
+static int16_t hold_x10(float mil) {
+    if (!isfinite(mil)) {
+        return 0;
+    }
+    long x10 = lroundf(mil * 10.0f);
+    return (int16_t) (x10 > INT16_MAX ? INT16_MAX : x10 < -INT16_MAX ? -INT16_MAX : x10);
+}
+
+
+// A complete pull replaces the card's first 10 targets, the Kestrel's Target Card: the pulled ones from the Kestrel
+// (the Kestrel's signs are negative up and negative right, the card's positive), the rest of the 10 empty. Targets
+// past 10 are entered by hand and stay (owner, 2026-11-07). The names follow the Kestrel's, which can differ
+// between Target Cards (owner, 2026-11-07). Saved once each
+static void apply_pull(const kestrel_status_t * s) {
+    for (int i = 0; i < KL_TARGET_COUNT; i++) {
+        dope_target_t * target = &dope_card.target[i];
+        memset(target, 0, sizeof(*target));
+        if (i < s->target_count) {
+            const kl_target_t * k = &s->targets[i];
+            target->elevation_x10 = hold_x10(-k->elevation_mil);
+            target->wind_x10 = hold_x10(-k->wind1_mil);
+            target->gust_x10 = hold_x10(-k->wind2_mil);
+            uint32_t range_m = (k->range_cm + 50) / 100;
+            target->range_m = (uint16_t) (range_m > UINT16_MAX ? UINT16_MAX : range_m);
+            target->flags = DOPE_TARGET_SET | DOPE_TARGET_FROM_KESTREL;
+        }
+        else {
+            target->gust_x10 = DOPE_HOLD_NONE;
+        }
+    }
+    save_card();
+
+    uint8_t names = s->numbered ? DOPE_TARGET_NAMES_NUMBERS : DOPE_TARGET_NAMES_LETTERS;
+    if (names != dope_settings.target_names) {
+        dope_settings.target_names = names;
+        ESP_ERROR_CHECK_WITHOUT_ABORT(save_dope_settings());
+        ESP_LOGI(TAG, "target names now %s, as the Kestrel's", s->numbered ? "1, 2, 3" : "A, B, C");
+    }
+    refresh_card();
+    ESP_LOGI(TAG, "first %d targets replaced by %d from the Kestrel", KL_TARGET_COUNT, s->target_count);
+}
+
+
+// Shows the Kestrel row while Kestrel is on, its status, and puts each new complete pull on the card, whichever
+// tile is showing
+static void kestrel_timer_cb(lv_timer_t * timer) {
+    if (kestrel_row == NULL) {
+        return;
+    }
+    if (kestrel_settings.mode == KESTREL_MODE_OFF) {
+        lv_obj_add_flag(kestrel_row, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_remove_flag(kestrel_row, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    kestrel_status_t s = kestrel_get_status();
+    if (s.state == KESTREL_PULL_DONE && s.have_result && s.result_id != applied_result_id) {
+        applied_result_id = s.result_id;
+        apply_pull(&s);
+    }
+    if (s.sequence != kestrel_shown_sequence) {
+        kestrel_shown_sequence = s.sequence;
+        lv_label_set_text(kestrel_label, s.message);
+    }
+}
+
+
+static void format_pull_count(char * buf, size_t size, int32_t value) {
+    char last[DOPE_TARGET_NAME_SIZE];
+    dope_target_name(last, sizeof(last), (int) value - 1);
+    if (value == 1) {
+        snprintf(buf, size, "1 target");
+    }
+    else {
+        char first[DOPE_TARGET_NAME_SIZE];
+        dope_target_name(first, sizeof(first), 0);
+        snprintf(buf, size, "%s to %s", first, last);
+    }
+}
+
+
+static void format_pull_count_step(char * buf, size_t size, int direction, int32_t step) {
+    snprintf(buf, size, "%c%ld", direction < 0 ? '-' : '+', step);
+}
+
+
+// Done: remember the count (the next Pull starts from it) and pull
+static void pull_editor_closed(int32_t value, void * ctx) {
+    pull_editor_open = false;
+    if (value != dope_settings.pull_count) {
+        dope_settings.pull_count = (uint8_t) value;
+        ESP_ERROR_CHECK_WITHOUT_ABORT(save_dope_settings());
+    }
+    kestrel_request_pull((int) value);  // the row shows the outcome
+}
+
+
+static void pull_clicked_cb(lv_event_t * e) {
+    if (kestrel_get_status().state == KESTREL_PULL_RUNNING) {
+        return;
+    }
+    // The Kestrel fills unused targets with defaults, so the card cannot tell which are set up: the shooter says
+    // how many, from the first (owner, 2026-11-07). At most its 10, or fewer on a smaller card
+    int max = dope_target_count() < KL_TARGET_COUNT ? dope_target_count() : KL_TARGET_COUNT;
+    const value_editor_params_t params = {
+        .title = "Targets to pull",
+        .value = dope_settings.pull_count > max ? max : dope_settings.pull_count,
+        .min = 1,
+        .max = max,
+        .step = 1,
+        .fast_steps = 1,
+        .format_value = format_pull_count,
+        .format_step = format_pull_count_step,
+        .closed = pull_editor_closed,
+    };
+    pull_editor_open = true;
+    value_editor_open(editor, &params);
+}
+
+
+static void create_kestrel_row(lv_obj_t * parent) {
+    kestrel_row = lv_obj_create(parent);
+    lv_obj_remove_style_all(kestrel_row);
+    lv_obj_set_size(kestrel_row, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_row(kestrel_row, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(kestrel_row, DOPE_TILE_GAP_PX, LV_PART_MAIN);
+    lv_obj_remove_flag(kestrel_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(kestrel_row, LV_OBJ_FLAG_HIDDEN);
+
+    kestrel_label = value_editor_create_label(kestrel_row, &lv_font_montserrat_20);
+    lv_obj_set_style_text_color(kestrel_label, lv_palette_lighten(LV_PALETTE_GREY, 1), LV_PART_MAIN);
+    lv_label_set_long_mode(kestrel_label, LV_LABEL_LONG_MODE_WRAP);
+    lv_label_set_text(kestrel_label, "Kestrel");
+
+    pull_button = value_editor_create_button(kestrel_row, LV_PALETTE_ORANGE);
+    lv_obj_set_style_bg_color(pull_button, lv_palette_darken(LV_PALETTE_ORANGE, 2), LV_PART_MAIN);
+    lv_label_set_text(value_editor_create_label(pull_button, &lv_font_montserrat_32), "Pull");
+    lv_obj_add_event_cb(pull_button, pull_clicked_cb, LV_EVENT_SHORT_CLICKED, NULL);
+
+    lv_timer_create(kestrel_timer_cb, DOPE_KESTREL_REFRESH_MS, NULL);
+}
+
+
+static void set_rotation_kestrel_row(bool portrait) {
+    // Portrait: the status over a full-width Pull; landscape: the status on the left, Pull on the right
+    static const int32_t portrait_cols[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static const int32_t portrait_rows[] = {LV_GRID_CONTENT, DOPE_CELL_PX, LV_GRID_TEMPLATE_LAST};
+    static const int32_t landscape_cols[] = {LV_GRID_FR(1), DOPE_PULL_BUTTON_LANDSCAPE_PX, LV_GRID_TEMPLATE_LAST};
+    static const int32_t landscape_rows[] = {DOPE_CELL_PX, LV_GRID_TEMPLATE_LAST};
+
+    if (portrait) {
+        lv_obj_set_grid_dsc_array(kestrel_row, portrait_cols, portrait_rows);
+        lv_obj_set_grid_cell(kestrel_label, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
+        lv_obj_set_grid_cell(pull_button, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
+        lv_obj_set_style_pad_left(kestrel_label, DOPE_HEADER_INSET_PX, LV_PART_MAIN);
+    }
+    else {
+        lv_obj_set_grid_dsc_array(kestrel_row, landscape_cols, landscape_rows);
+        lv_obj_set_grid_cell(kestrel_label, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
+        lv_obj_set_grid_cell(pull_button, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
+        lv_obj_set_style_pad_left(kestrel_label, DOPE_HEADER_INSET_PX, LV_PART_MAIN);
+    }
 }
 
 
@@ -476,7 +694,7 @@ void set_rotation_dope_card_config_view(lv_display_rotation_t rotation) {
     static const int32_t landscape_cols[] = {DOPE_HEADER_LANDSCAPE_PX, LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
     static const int32_t landscape_rows[] = {DOPE_CELL_PX, LV_GRID_TEMPLATE_LAST};
 
-    for (int i = 0; i < DOPE_TARGET_COUNT; i++) {
+    for (int i = 0; i < DOPE_TARGET_MAX; i++) {
         dope_target_widgets_t * w = &target_widgets[i];
         if (portrait) {
             lv_obj_set_grid_dsc_array(w->row, portrait_cols, portrait_rows);
@@ -519,6 +737,7 @@ void set_rotation_dope_card_config_view(lv_display_rotation_t rotation) {
         lv_obj_set_grid_cell(confirm_clear_button, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
     }
 
+    set_rotation_kestrel_row(portrait);
     value_editor_set_rotation(editor, rotation);
 }
 
@@ -529,7 +748,8 @@ void create_dope_config_view(lv_obj_t * parent) {
     lv_obj_set_flex_flow(target_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scroll_dir(target_list, LV_DIR_VER);
 
-    for (int i = 0; i < DOPE_TARGET_COUNT; i++) {
+    create_kestrel_row(target_list);
+    for (int i = 0; i < DOPE_TARGET_MAX; i++) {
         create_target_row(target_list, i);
     }
 
@@ -556,8 +776,15 @@ void dope_config_view_rotation_event_callback(lv_event_t * e) {
 void enable_dope_config_view(bool enable) {
     if (!enable) {
         // Leaving the tile keeps an edit in progress, as Done does, and drops an unanswered confirmation. Nothing
-        // else is saved here: every change saves when it is made (ADR-007)
-        value_editor_close(editor);
+        // else is saved here: every change saves when it is made (ADR-007). The pull count is a question, not an
+        // edit: leaving drops it and pulls nothing
+        if (pull_editor_open) {
+            pull_editor_open = false;
+            value_editor_cancel(editor);
+        }
+        else {
+            value_editor_close(editor);
+        }
         close_confirm();
     }
 }
@@ -577,6 +804,16 @@ static void target_names_changed_cb(lv_event_t * e) {
     uint32_t selected = lv_dropdown_get_selected(lv_event_get_target_obj(e));
     if (selected <= DOPE_TARGET_NAMES_NUMBERS) {
         dope_settings.target_names = (uint8_t) selected;
+        refresh_card();
+    }
+}
+
+
+// The size shows at once on the tile and the level; Save keeps it. Targets past a smaller size are kept, hidden
+static void target_count_changed_cb(lv_event_t * e) {
+    uint32_t selected = lv_dropdown_get_selected(lv_event_get_target_obj(e));
+    if (selected < sizeof(target_count_values)) {
+        dope_settings.target_count = target_count_values[selected];
         refresh_card();
     }
 }
@@ -611,6 +848,15 @@ static void fill_dope_config_page(lv_obj_t * sub_page_config_view) {
 
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Target Names");
     create_dropdown_list(container, target_names_options, dope_settings.target_names, target_names_changed_cb, NULL);
+
+    uint32_t size_index = 0;
+    for (uint32_t i = 0; i < sizeof(target_count_values); i++) {
+        if (target_count_values[i] == dope_settings.target_count) {
+            size_index = i;
+        }
+    }
+    container = create_menu_container_with_text(sub_page_config_view, NULL, "Card Size");
+    create_dropdown_list(container, target_count_options, size_index, target_count_changed_cb, NULL);
 
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Next Target on Recoil");
     create_switch(container, &dope_settings.next_target_on_recoil, NULL);

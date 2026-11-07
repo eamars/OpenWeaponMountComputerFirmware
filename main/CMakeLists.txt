@@ -48,6 +48,10 @@ set(ALL_DEPS
     XPowersLib
     esp_pm
 
+    # Kestrel pull over BLE (ADR-007)
+    bt
+    kestrel_link
+
 )
 
 

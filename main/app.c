@@ -18,6 +18,7 @@
 #include "digital_level_view.h"
 #include "countdown_timer_config_view.h"
 #include "dope_config_view.h"
+#include "kestrel_service.h"
 #include "main_tileview.h"
 #include "app_cfg.h"
 #include "bno085.h"
@@ -165,6 +166,9 @@ void app_main(void)
     // The dope tile and the level's dope strip both show the card and name its targets (ADR-007)
     ESP_ERROR_CHECK(load_dope_config());
     ESP_ERROR_CHECK(load_dope_settings());
+
+    // The Kestrel page and the pull (ADR-007)
+    ESP_ERROR_CHECK(load_kestrel_settings());
 #endif  // USE_BNO085
 
     // Set buzzer
@@ -203,6 +207,11 @@ void app_main(void)
     // Initialize WiFi before the display: the Wi-Fi service needs no UI; the UI reads its state through the
     // UI bridge whenever it is created (ADR-005 step 3)
     ESP_ERROR_CHECK(wifi_init());
+
+#if USE_BNO085
+    // The Kestrel pull's task; Bluetooth stays off until a pull (ADR-007)
+    ESP_ERROR_CHECK(kestrel_service_init());
+#endif  // USE_BNO085
 
     // Initialize Display
     ESP_ERROR_CHECK(lvgl_display_init(i2c0_bus_handle));
