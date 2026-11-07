@@ -47,6 +47,9 @@
     #define DISP_H_RES_PIXEL (280)
     #define DISP_V_RES_PIXEL (456)
 
+    // The pixel area's corners are rounded: R2.30 mm at 0.078 mm a pixel (DO0164FMST05 datasheet, page 6; ADR-006)
+    #define DISP_CORNER_RADIUS_PX (30)
+
     #define DISP_PANEL_H_GAP (20) // Horizontal gap for display panel
     #define DISP_PANEL_V_GAP (0)  // Vertical gap for display panel
 

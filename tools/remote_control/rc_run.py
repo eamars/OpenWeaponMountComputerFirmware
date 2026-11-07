@@ -59,6 +59,7 @@ REPLY_PREFIXES = {
     "bt": "@ok bt",
     "pmic": "@ok pmic",
     "snap": "@ok snap",
+    "outline": "@ok outline",
     "tap": "@ok tap",
     "swipe": "@ok swipe",
     "tile": "@ok tile=",

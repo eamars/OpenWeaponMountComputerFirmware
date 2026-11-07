@@ -32,6 +32,7 @@
 #include "wifi_config.h"
 #include "app.h"
 #include "main_tileview.h"
+#include "display_shape.h"
 
 #define TAG "RemoteControl"
 #define NVS_NAMESPACE "RC"
@@ -54,7 +55,7 @@
 #define RC_MAX_ARGS 4
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats bt pmic snap tap swipe tile rot wifi save idle wake reboot hang bnoreset"
+#define RC_HELP_COMMANDS "help state stats bt pmic snap outline tap swipe tile rot wifi save idle wake reboot hang bnoreset"
 
 
 typedef struct {
@@ -764,6 +765,21 @@ static bool rc_cmd_snap(char *reply, size_t reply_size) {
 }
 
 
+// Debug: draw the panel's rounded outline on top of everything (ADR-006)
+static bool rc_cmd_outline(int argc, char **argv, char *reply, size_t reply_size) {
+    if (argc != 2 || (strcmp(argv[1], "on") != 0 && strcmp(argv[1], "off") != 0)) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
+        return rc_reply(reply, reply_size, false, "@err busy");
+    }
+    display_shape_show_outline(strcmp(argv[1], "on") == 0);
+    lvgl_port_unlock();
+
+    return rc_reply(reply, reply_size, true, "@ok outline %s", argv[1]);
+}
+
+
 // Debug: print every task's backtrace to the console (ROM printing). Needs no LVGL lock, so it
 // still works when the LVGL task is stuck; decode the addresses with the matching ELF.
 static bool rc_cmd_bt(char *reply, size_t reply_size) {
@@ -819,7 +835,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "tap") == 0 || strcmp(cmd, "swipe") == 0 || strcmp(cmd, "tile") == 0 ||
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
                     strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
-                    strcmp(cmd, "bnoreset") == 0;
+                    strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -857,6 +873,9 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
             return rc_reply(reply, reply_size, false, "@err args");
         }
         return rc_cmd_bt(reply, reply_size);
+    }
+    if (strcmp(cmd, "outline") == 0) {
+        return rc_cmd_outline(argc, argv, reply, reply_size);
     }
     if (strcmp(cmd, "snap") == 0) {
         if (argc != 1) {
