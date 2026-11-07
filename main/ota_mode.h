@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "lvgl.h"
+#include "settings_ui.h"
 
 typedef enum {
     OTA_IMPORTANCE_NORMAL = 0,
@@ -52,7 +53,8 @@ void enter_ota_mode(bool enable);
 /** @brief True while the OTA tile is shown (an update may be downloading); any task */
 bool ota_mode_is_active(void);
 void update_ota_mode_progress(int progress);
-lv_obj_t * create_menu_ota_upgrade_button(lv_obj_t * parent);
+/** @brief The hub's "Update available" row, hidden until a newer firmware is found (ADR-008) */
+lv_obj_t * create_settings_update_row(settings_page_t * hub);
 
 
 #ifdef __cplusplus

@@ -24,15 +24,9 @@
 #define TAG "ConfigView"
 
 
-lv_obj_t * config_menu;
+// The old settings' shared message box: no settings page uses it since ADR-008 (it stays NULL; the UI bridge
+// checks); the helpers below go in ADR-008 step 3, once the power button's menu is rebuilt
 lv_obj_t * msg_box;
-static lv_obj_t * parent_container;
-static lv_obj_t * status_bar;
-static lv_obj_t * status_bar_wireless_state;
-static lv_obj_t * status_bar_battery_state;
-
-static void status_bar_wifi_observer_cb(lv_observer_t * observer, lv_subject_t * subject);
-static void status_bar_battery_observer_cb(lv_observer_t * observer, lv_subject_t * subject);
 
 
 
@@ -308,17 +302,6 @@ static void on_msg_box_ok_button_clicked(lv_event_t *e) {
     lv_obj_add_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void create_msg_label(lv_obj_t * parent) {
-    lv_obj_t * msg_box_label = lv_label_create(parent);
-    lv_obj_set_style_text_font(msg_box_label, &lv_font_montserrat_28, 0);
-    lv_obj_set_size(msg_box_label, LV_PCT(100), LV_PCT(100));
-    lv_label_set_long_mode(msg_box_label, LV_LABEL_LONG_MODE_WRAP);
-
-    // Add msgbox into the user data of the msgbox
-    lv_obj_set_user_data(parent, msg_box_label);
-}
-
-
 lv_obj_t * create_info_msg_box(lv_obj_t *parent, lvgl_additional_init_func callback_f) {
     // Create a message box to be called by its content
     lv_obj_t * msg_box = lv_obj_create(parent);
@@ -406,196 +389,69 @@ void config_page_rebuild(lv_obj_t * page) {
 }
 
 
-void set_rotation_config_view(lv_display_rotation_t rotation) {
-    if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
-        // Parent container layout
-        lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_COLUMN);
+/*
+----------------------------------------------------
+The settings tile (ADR-008): the hub, a page a row, each row saying what its page holds
+----------------------------------------------------
+*/
 
-        // Set order of status bar and menu
-        lv_obj_move_to_index(status_bar, 0);
-
-        // Set size
-        lv_obj_set_width(status_bar, lv_pct(100));
-        lv_obj_set_height(status_bar, LV_SIZE_CONTENT);
-
-        // Status bar layout
-        lv_obj_set_flex_flow(status_bar, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(status_bar,
-            LV_FLEX_ALIGN_END,  // main axis (row) center
-            LV_FLEX_ALIGN_CENTER,  // cross axis center
-            LV_FLEX_ALIGN_CENTER); // track cross axis center
-
-        // Put back button to the bottom of the menu
-        lv_menu_set_mode_header(config_menu, LV_MENU_HEADER_BOTTOM_FIXED);
-
-    } else {
-        lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_ROW);
-
-        lv_obj_move_to_index(config_menu, 0);
-
-        lv_obj_set_height(status_bar, lv_pct(100));
-        lv_obj_set_width(status_bar, LV_SIZE_CONTENT);
-
-        lv_obj_set_flex_flow(status_bar, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(status_bar,
-            LV_FLEX_ALIGN_START,  // main axis (row) center
-            LV_FLEX_ALIGN_CENTER,  // cross axis center
-            LV_FLEX_ALIGN_CENTER); // track cross axis center
-
-        // Put back button to the top of the menu
-        lv_menu_set_mode_header(config_menu, LV_MENU_HEADER_TOP_FIXED);
-    }
+static void advanced_summary(char * buf, size_t size, void * ctx) {
+    snprintf(buf, size, "Log, sensor, charging");
 }
 
 
-void config_view_rotation_event_callback(lv_event_t * e) {
-    set_rotation_config_view(system_config.rotation);
-}
-
-// The settings before ADR-008, reached from the hub's "More settings" until their pages move (step 2)
-static void create_old_settings_menu(lv_obj_t *parent) {
-    // Create a parent container
-    parent_container = lv_obj_create(parent);
-    lv_obj_set_size(parent_container, lv_pct(100), lv_pct(100));
-    lv_obj_set_style_pad_all(parent_container, 0, 0);
-    lv_obj_set_style_bg_opa(parent_container, LV_OPA_TRANSP, 0);
-    lv_obj_set_scroll_dir(parent_container, LV_DIR_NONE);  // no scroll
-
-    // Create status bar
-    status_bar = lv_obj_create(parent_container);
-    lv_obj_set_style_pad_all(status_bar, 5, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(status_bar, lv_color_darken(lv_color_white(), 20), LV_PART_MAIN);
-    lv_obj_set_style_border_width(status_bar, 0, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(status_bar, 0, LV_PART_MAIN);
-
-    // Set container attribute for status bar
-    lv_obj_set_scroll_dir(status_bar, LV_DIR_NONE);  // no scroll
-
-    // WiFi icon
-    status_bar_wireless_state = lv_label_create(status_bar);
-    lv_subject_add_observer_obj(&ui_wifi_state, status_bar_wifi_observer_cb, status_bar_wireless_state, NULL);
-
-    // Battery icon
-    status_bar_battery_state = lv_label_create(status_bar);
-    lv_subject_add_observer_obj(&ui_battery_level, status_bar_battery_observer_cb, status_bar_battery_state, NULL);
-
-    // Create menu item
-    config_menu = lv_menu_create(parent_container);
-    lv_obj_set_style_pad_all(config_menu, 0, 0);
-    lv_obj_set_flex_grow(config_menu, 1);
-    lv_obj_set_size(config_menu, lv_pct(100), lv_pct(100));
-    lv_obj_center(config_menu);
-    lv_obj_set_style_bg_color(config_menu, lv_color_darken(lv_color_white(), 20), 0);
-
-    lv_obj_t * back_button = lv_menu_get_main_header_back_button(config_menu);
-    // Set back button background colour to blue
-    lv_obj_set_style_bg_color(back_button, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
-    // set no transparency for back button
-    lv_obj_set_style_bg_opa(back_button, LV_OPA_COVER, LV_PART_MAIN);
-
-    lv_obj_t * back_button_label = lv_label_create(back_button);
-    lv_label_set_text(back_button_label, "  Back  ");
-    lv_obj_set_style_text_font(back_button_label, &lv_font_montserrat_28, 0);
-    lv_obj_center(back_button_label);
-
-    // Set overall layout based on rotation
-    set_rotation_config_view(system_config.rotation);
-
-    // Create a messagebox for displaying information
-    msg_box = create_info_msg_box(parent, create_msg_label);
-
-    /*Create a main page*/
-    lv_obj_t * main_page = lv_menu_page_create(config_menu, NULL);
-    lv_obj_set_scroll_dir(main_page, LV_DIR_VER);  // only horizontal scroll
-
-    // All top level menu items
+// Advanced: what a shooter does not change at a match. Its rows come from the modules that own the settings
+static void reset_advanced(void * ctx) {
+    system_settings_reset_advanced();
 #if USE_BNO085
-    create_kestrel_view_config(config_menu, main_page);
+    sensor_settings_reset_advanced();
 #endif  // USE_BNO085
-    create_system_config_view_config(config_menu, main_page);
-#if USE_BNO085
-    create_digital_level_view_config(config_menu, main_page);
-    create_sensor_config_view_config(config_menu, main_page);
-#endif  // USE_BNO085
-    create_wifi_config_view_config(config_menu, main_page);
 #if USE_PMIC
-    create_power_management_view_config(config_menu, main_page);
-#endif // USE_PMIC
-    create_about_config_view_config(config_menu, main_page);
-    create_menu_ota_upgrade_button(main_page);
-
-    // House keeping
-    lv_menu_set_page(config_menu, main_page);
-
-    // Setup event callback handlers
-    lv_obj_add_event_cb(parent, config_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
+    pmic_settings_reset_advanced();
+#endif  // USE_PMIC
 }
 
 
-static void more_settings_summary(char * buf, size_t size, void * ctx) {
-    snprintf(buf, size, "Kestrel, level, Wi-Fi, power, about");
+static settings_page_t * create_advanced_settings_page(void) {
+    settings_page_t * page = settings_page_create("Advanced");
+    system_settings_add_advanced_rows(page);
+#if USE_BNO085
+    sensor_settings_add_advanced_rows(page);
+#endif  // USE_BNO085
+#if USE_PMIC
+    pmic_settings_add_advanced_rows(page);
+#endif  // USE_PMIC
+    settings_row_reset(page, "Reset Advanced", "Reset the Advanced settings? Remote control turns back on.",
+                       reset_advanced, NULL);
+    return page;
 }
 
 
-// The settings tile (ADR-008): the hub, a page a row, each row saying what its page holds
 void create_config_view(lv_obj_t * tile) {
     settings_page_t * hub = settings_ui_create(tile);
 
+    create_settings_update_row(hub);    // hidden until a newer firmware is found
 #if USE_BNO085
     settings_row_link(hub, LV_SYMBOL_BELL, "Timer", countdown_timer_settings_summary, NULL,
                       create_countdown_timer_settings_page());
     settings_row_link(hub, LV_SYMBOL_LIST, "Dope", dope_settings_summary, NULL, create_dope_settings_page());
+    settings_row_link(hub, LV_SYMBOL_BLUETOOTH, "Kestrel", kestrel_settings_summary, NULL,
+                      create_kestrel_settings_page());
+    settings_row_link(hub, LV_SYMBOL_GPS, "Level", digital_level_settings_summary, NULL,
+                      create_digital_level_settings_page());
 #endif  // USE_BNO085
+    settings_row_link(hub, LV_SYMBOL_IMAGE, "Display", system_display_settings_summary, NULL,
+                      create_display_settings_page());
+    settings_row_link(hub, LV_SYMBOL_WIFI, "Wi-Fi", wifi_settings_summary, NULL, create_wifi_settings_page());
+#if USE_PMIC
+    settings_row_link(hub, LV_SYMBOL_BATTERY_FULL, "Power", pmic_settings_summary, NULL, create_power_settings_page());
+#endif  // USE_PMIC
+    settings_row_link(hub, LV_SYMBOL_SETTINGS, "Advanced", advanced_summary, NULL, create_advanced_settings_page());
+    settings_row_link(hub, LV_SYMBOL_FILE, "About", about_settings_summary, NULL, create_about_settings_page());
 
-    settings_page_t * more = settings_page_create("More settings");
-    create_old_settings_menu(settings_page_body(more));
-    settings_row_link(hub, LV_SYMBOL_SETTINGS, "More settings", more_settings_summary, NULL, more);
+#if USE_PMIC
+    create_power_menu_overlay();
+#endif  // USE_PMIC
 
     settings_ui_start();
-}
-
-
-// The Wi-Fi icon follows the Wi-Fi service through the UI bridge, in LVGL context. It used to be written into a
-// static buffer from the system event task with no lock and no redraw (ADR-005 B2)
-static const char * status_bar_wifi_symbol(wireless_state_e state) {
-    switch (state) {
-        case WIRELESS_STATE_PROVISIONING:           return LV_SYMBOL_SHUFFLE;
-        case WIRELESS_STATE_PROVISION_FAILED:       return LV_SYMBOL_WARNING;
-        case WIRELESS_STATE_PROVISION_EXPIRE:       return LV_SYMBOL_CLOSE;
-        case WIRELESS_STATE_CONNECTED:              return LV_SYMBOL_WIFI;
-        case WIRELESS_STATE_NOT_CONNECTED_EXPIRE:   return LV_SYMBOL_CLOSE;
-        case WIRELESS_STATE_NOT_PROVISIONED:
-        case WIRELESS_STATE_NOT_CONNECTED:
-        case WIRELESS_STATE_CONNECTING:
-        case WIRELESS_STATE_DISCONNECTED:
-        default:                                    return LV_SYMBOL_LOOP;
-    }
-}
-
-static void status_bar_wifi_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
-    lv_label_set_text(lv_observer_get_target_obj(observer),
-                      status_bar_wifi_symbol((wireless_state_e) lv_subject_get_int(subject)));
-}
-
-// The battery icon follows the PMIC service the same way (the battery half of B2)
-static const char * status_bar_battery_symbol(int32_t level) {
-    if (level < 0) {
-        return LV_SYMBOL_WARNING;  // unknown
-    } else if (level < 10) {
-        return LV_SYMBOL_BATTERY_EMPTY;
-    } else if (level < 40) {
-        return LV_SYMBOL_BATTERY_1;
-    } else if (level < 70) {
-        return LV_SYMBOL_BATTERY_2;
-    } else if (level < 90) {
-        return LV_SYMBOL_BATTERY_3;
-    } else if (level <= 100) {
-        return LV_SYMBOL_BATTERY_FULL;
-    } else {
-        return LV_SYMBOL_USB;
-    }
-}
-
-static void status_bar_battery_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
-    lv_label_set_text(lv_observer_get_target_obj(observer), status_bar_battery_symbol(lv_subject_get_int(subject)));
 }

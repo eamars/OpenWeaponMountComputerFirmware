@@ -1,6 +1,6 @@
 # ADR-008: the settings pages, in the design language of the other views
 
-Status: **Open** 2026-11-07. The owner: "Let's build first and I will see if my finger will like larger or smaller items." Step 1 built ([progress](progress.md)); the owner chose 3 rows of 96 px in portrait by hand. Left: steps 2 and 3.
+Status: **Open** 2026-11-07. The owner: "Let's build first and I will see if my finger will like larger or smaller items." Steps 1 and 2 built ([progress](progress.md)); the owner chose 3 rows of 96 px in portrait by hand. Left: the owner's check of every page by hand, step 3 (removing the old helpers, the power button's menu).
 
 ## What we want
 

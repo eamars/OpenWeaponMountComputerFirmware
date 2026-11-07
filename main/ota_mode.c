@@ -5,6 +5,7 @@
 #include "app_cfg.h"
 #include "common.h"
 #include "mem_diag.h"
+#include "settings_ui.h"
 
 #include "esp_lvgl_port.h"
 #include "esp_log.h"
@@ -46,6 +47,7 @@ static lv_obj_t * ota_prompt_view;
 static lv_obj_t * ota_title_label;
 static lv_obj_t * reboot_button;
 static lv_obj_t * menu_ota_upgrade_button;
+static bool update_found = false;               // a newer firmware was found; set and read with the LVGL lock held
 
 HEAPS_CAPS_ATTR ota_manifest_t ota_manifest;
 
@@ -324,8 +326,8 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
             ota_manifest.note
         );
 
-        // Make OTA upgrade button visible
-        lv_obj_remove_flag(menu_ota_upgrade_button, LV_OBJ_FLAG_HIDDEN);
+        // The hub's "Update available" row shows from its next refresh, the hub laid out again with it
+        update_found = true;
 
         // If important, then also prompt directly to the user
         if (ota_manifest.importance > OTA_IMPORTANCE_NORMAL) {
@@ -582,11 +584,6 @@ void on_reboot_button_pressed(lv_event_t * e) {
     esp_restart();
 }
 
-static void on_menu_ota_upgrade_button_pressed(lv_event_t *e) {
-    set_ota_prompt_view_visibility(true);
-}
-
-
 void create_ota_mode_view(lv_obj_t * parent) {
     create_ota_prompt_view(lv_screen_active());
 
@@ -728,18 +725,26 @@ void create_ota_prompt_view(lv_obj_t * parent) {
 }
 
 
-lv_obj_t * create_menu_ota_upgrade_button(lv_obj_t * parent) {
-    menu_ota_upgrade_button = lv_button_create(parent);
-    lv_obj_add_event_cb(menu_ota_upgrade_button, on_menu_ota_upgrade_button_pressed, LV_EVENT_SINGLE_CLICKED, NULL);
-    // lv_obj_set_width(menu_ota_upgrade_button, lv_pct(80));
-    // Set invisible by default
-    lv_obj_add_flag(menu_ota_upgrade_button, LV_OBJ_FLAG_HIDDEN);
+static void update_row_text(char * buf, size_t size, void * ctx) {
+    snprintf(buf, size, "Firmware %s", ota_manifest.version);
+}
 
-    lv_obj_t * menu_ota_upgrade_button_label = lv_label_create(menu_ota_upgrade_button);
-    // lv_label_set_long_mode(menu_ota_upgrade_button_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_label_set_text(menu_ota_upgrade_button_label, "Update Available");
-    lv_obj_center(menu_ota_upgrade_button_label);
-    // lv_obj_set_style_text_font(menu_ota_upgrade_button_label, &lv_font_montserrat_20, LV_PART_MAIN);
 
+static void open_update_prompt(void * ctx) {
+    set_ota_prompt_view_visibility(true);
+}
+
+
+static bool update_row_shown(void) {
+    return update_found;
+}
+
+
+// "Update available" at the top of the settings hub, in orange, shown once a newer firmware is found (ADR-008)
+lv_obj_t * create_settings_update_row(settings_page_t * hub) {
+    menu_ota_upgrade_button = settings_row_action(hub, LV_SYMBOL_DOWNLOAD, "Update available", update_row_text, NULL,
+                                                  open_update_prompt, NULL, NULL, false);
+    lv_obj_set_style_bg_color(menu_ota_upgrade_button, lv_palette_darken(LV_PALETTE_ORANGE, 2), LV_PART_MAIN);
+    settings_row_shown_when(hub, update_row_shown);
     return menu_ota_upgrade_button;
 }

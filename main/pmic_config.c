@@ -1,5 +1,8 @@
 #include "pmic_axp2101.h"
 #include "pmic_config.h"
+
+#include <stdio.h>
+
 #include "ui_bridge.h"
 #include "esp_crc.h"
 #include "esp_log.h"
@@ -8,6 +11,7 @@
 #include "common.h"
 #include "app_cfg.h"
 #include "config_view.h"
+#include "settings_ui.h"
 #include "ota_mode.h"
 
 #include "lvgl.h"
@@ -17,14 +21,6 @@
 #define NVS_NAMESPACE "PMG"
 
 static lv_obj_t * power_menu = NULL;
-static lv_obj_t * power_management_status_label_1 = NULL;
-static lv_obj_t * power_management_status_label_2 = NULL;
-
-const char vbus_current_limit_options[] = "100mA\n500mA\n900mA\n1000mA\n1500mA\n2000mA";
-const char battery_charge_current_options[] = "100mA\n200mA\n300mA\n400mA\n500mA\n600mA\n700mA\n800mA\n900mA\n1000mA";
-const char battery_charge_voltage_options[] = "4.0V\n4.1V\n4.2V\n4.35V\n4.4V";
-const char idle_timeout_options[] = "Never\n1 min\n5 min\n10 min\n10 sec";
-const char sleep_timeout_options[] = "Never\n1 hrs\n2 hrs\n5 hrs\n 1 min";
 
 
 HEAPS_CAPS_ATTR power_management_config_t power_management_config;
@@ -36,10 +32,6 @@ const power_management_config_t default_power_management_config = {
     .sleep_timeout = SLEEP_TIMEOUT_1_HRS,
 };
 
-// from app.c
-
-HEAPS_CAPS_ATTR static char status_str_l1[64] = {0};
-HEAPS_CAPS_ATTR static char status_str_l2[64] = {0};
 
 
 esp_err_t save_pmic_config() {
@@ -89,98 +81,6 @@ uint32_t sleep_timeout_to_secs(sleep_timeout_t timeout) {
     return 0;
 }
 
-static void update_vbus_current_limit_event_cb(lv_event_t *e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-
-    if (selected != power_management_config.vbus_current_limit) {
-        power_management_config.vbus_current_limit = (pmic_vbus_current_limit_e) selected;
-        ESP_LOGI(TAG, "VBUS Current Limit updated to %d", power_management_config.vbus_current_limit);
-    }
-    else {
-        ESP_LOGI(TAG, "VBUS Current Limit not changed");
-    }
-}
-
-
-static void update_battery_charge_current_event_cb(lv_event_t *e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-
-    if (selected != power_management_config.battery_charge_current) {
-        power_management_config.battery_charge_current = (pmic_battery_charge_current_e) selected;
-        ESP_LOGI(TAG, "Battery Charge Current updated to %d", power_management_config.battery_charge_current);
-    }
-    else {
-        ESP_LOGI(TAG, "Battery Charge Current not changed");
-    }
-}
-
-
-static void update_battery_charge_voltage_event_cb(lv_event_t *e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-
-    if (selected != power_management_config.battery_charge_voltage) {
-        power_management_config.battery_charge_voltage = (pmic_battery_charge_voltage_e) selected;
-        ESP_LOGI(TAG, "Battery Charge Voltage updated to %d", power_management_config.battery_charge_voltage);
-    }
-    else {
-        ESP_LOGI(TAG, "Battery Charge Voltage not changed");
-    }
-}
-
-
-static lv_obj_t * power_management_config_page = NULL;
-
-
-static void on_save_button_pressed(lv_event_t * e) {
-    esp_err_t ret = save_pmic_config();
-
-    // The charge settings take effect now, not at the next boot (ADR-005 B15); a failed save applies nothing
-    if (ret == ESP_OK) {
-        axp2101_request_apply_charge_settings(axp2101_dev);
-    }
-
-    update_info_msg_box_result(msg_box, ret, "Configuration Saved", "Save failed");
-}
-
-static void on_reload_button_pressed(lv_event_t * e) {
-    // Nothing to apply: the timeouts are read live, the charge settings reach the chip on Save (ADR-005 B15)
-    esp_err_t ret = load_pmic_config();
-    config_page_rebuild(power_management_config_page);
-
-    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
-}
-
-static void on_reset_button_pressed(lv_event_t * e) {
-    // Initialize with default values
-    memcpy(&power_management_config, &default_power_management_config, sizeof(power_management_config));
-    config_page_rebuild(power_management_config_page);
-
-    update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-}
-
-
-void update_idle_timeout_event_cb(lv_event_t *e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-
-    power_management_config.idle_timeout = (idle_timeout_t) selected;
-    ESP_LOGI(TAG, "Idle timeout updated to %d", power_management_config.idle_timeout);
-}
-
-
-void update_sleep_timeout_event_cb(lv_event_t *e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-
-    power_management_config.sleep_timeout = (sleep_timeout_t) selected;
-    ESP_LOGI(TAG, "Sleep timeout updated to %d", power_management_config.sleep_timeout);
-}
-
-
-
 // FIXME: Make it generic (this is imported from ota_mode.c)
 void on_reboot_button_pressed(lv_event_t * e);
 
@@ -189,20 +89,6 @@ void on_power_off_button_pressed(lv_event_t * e) {
 
     // The PMIC service's task does the shutdown; it is the only code that talks to the chip (ADR-005 step 3)
     ESP_ERROR_CHECK_WITHOUT_ABORT(pmic_request_power_off());
-}
-
-
-// Bound to the UI bridge's PMIC status subject (LVGL context). Both labels change together, so one observer
-// on the first label sets both
-static void power_management_status_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
-    const axp2101_status_t * status = (const axp2101_status_t *) lv_subject_get_pointer(subject);
-
-    snprintf(status_str_l1, sizeof(status_str_l1), "SoC:%d,VBAT:%dmV", status->battery_percentage, status->vbatt_voltage_mv);
-    snprintf(status_str_l2, sizeof(status_str_l2), "VBUS:%dmV,VSYS:%dmV", status->vbus_voltage_mv, status->vsys_voltage_mv);
-
-    // Setting the same static buffer again still marks the label for re-measuring and redrawing
-    lv_label_set_text_static(power_management_status_label_1, status_str_l1);
-    lv_label_set_text_static(power_management_status_label_2, status_str_l2);
 }
 
 
@@ -249,64 +135,142 @@ void power_menu_make_visible() {
 }
 
 
-// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
-static void fill_power_management_config_page(lv_obj_t * sub_page_config_view) {
-    lv_obj_t * container;
-    lv_obj_t * config_item;
+/*
+----------------------------------------------------
+Settings: the Power page and the charging rows of Advanced (ADR-008: each change stored when made)
+----------------------------------------------------
+*/
 
-    // Battery status labels; the observer sets their text now and on every new reading
-    power_management_status_label_1 = create_config_label_static(sub_page_config_view, status_str_l1);
-    power_management_status_label_2 = create_config_label_static(sub_page_config_view, status_str_l2);
-    lv_subject_add_observer_obj(&ui_pmic_status, power_management_status_observer_cb,
-                                power_management_status_label_1, NULL);
-
-    // Idle timeout
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Idle Timeout");
-    config_item = create_dropdown_list(container, idle_timeout_options, power_management_config.idle_timeout, update_idle_timeout_event_cb, NULL);
-
-    // Sleep timeout
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Sleep Timeout");
-    config_item = create_dropdown_list(container, sleep_timeout_options, power_management_config.sleep_timeout, update_sleep_timeout_event_cb, NULL);
+static const char * const idle_timeout_names[] = {"Never", "1 min", "5 min", "10 min", "10 s"};
+static const char * const sleep_timeout_names[] = {"Never", "1 h", "2 h", "5 h", "1 min"};
+static const char * const vbus_current_limit_names[] = {"100 mA", "500 mA", "900 mA", "1000 mA", "1500 mA", "2000 mA"};
+static const char * const battery_charge_current_names[] = {"100 mA", "200 mA", "300 mA", "400 mA", "500 mA",
+                                                            "600 mA", "700 mA", "800 mA", "900 mA", "1000 mA"};
+static const char * const battery_charge_voltage_names[] = {"4.0 V", "4.1 V", "4.2 V", "4.35 V", "4.4 V"};
 
 
-    // VBUS current limit
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "VBUS Current Limit");
-    config_item = create_dropdown_list(container, vbus_current_limit_options, (int32_t) power_management_config.vbus_current_limit, update_vbus_current_limit_event_cb, NULL);
-
-    // Battery charge current
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Battery Charge Current");
-    config_item = create_dropdown_list(container, battery_charge_current_options, (int32_t) power_management_config.battery_charge_current, update_battery_charge_current_event_cb, NULL);
-
-    // Battery charge voltage
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Battery Charge Voltage");
-    config_item = create_dropdown_list(container, battery_charge_voltage_options, (int32_t) power_management_config.battery_charge_voltage, update_battery_charge_voltage_event_cb, NULL);
-
-    // Save Reload
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
-    create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
+static void save_power(void) {
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_pmic_config());
 }
 
 
-lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
-    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_power_management_config_page);
-    power_management_config_page = sub_page_config_view;
-
-    // Add to the menu
-    lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
-    lv_obj_t * img = lv_image_create(cont);
-    lv_obj_t * label = lv_label_create(cont);
-
-    lv_image_set_src(img, LV_SYMBOL_SETTINGS);
-    lv_label_set_text(label, "Power Management");
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-    lv_obj_set_flex_grow(label, 1);
-
-    lv_menu_set_load_page_event(parent, cont, sub_page_config_view);
+// The charge settings reach the chip at once, as Save did (ADR-005 B15)
+static void save_charging(void) {
+    esp_err_t ret = save_pmic_config();
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ret);
+    if (ret == ESP_OK) {
+        axp2101_request_apply_charge_settings(axp2101_dev);
+    }
+}
 
 
-    // Create an view that is binded to power button.
+static int get_idle_timeout(void * ctx) {
+    return power_management_config.idle_timeout;
+}
+
+
+static void set_idle_timeout(int index, void * ctx) {
+    power_management_config.idle_timeout = (idle_timeout_t) index;
+    save_power();
+}
+
+
+static int get_sleep_timeout(void * ctx) {
+    return power_management_config.sleep_timeout;
+}
+
+
+static void set_sleep_timeout(int index, void * ctx) {
+    power_management_config.sleep_timeout = (sleep_timeout_t) index;
+    save_power();
+}
+
+
+static void power_status_text(char * buf, size_t size, void * ctx) {
+    const axp2101_status_t * status = (const axp2101_status_t *) lv_subject_get_pointer(&ui_pmic_status);
+    if (status == NULL) {
+        snprintf(buf, size, "Battery: no reading yet");
+        return;
+    }
+    snprintf(buf, size, "Battery %d%%, %d mV\nUSB %d mV, system %d mV", status->battery_percentage,
+             status->vbatt_voltage_mv, status->vbus_voltage_mv, status->vsys_voltage_mv);
+}
+
+
+static void reset_power(void * ctx) {
+    power_management_config.idle_timeout = default_power_management_config.idle_timeout;
+    power_management_config.sleep_timeout = default_power_management_config.sleep_timeout;
+    save_power();
+}
+
+
+void pmic_settings_summary(char * buf, size_t size, void * ctx) {
+    snprintf(buf, size, "Idle %s, sleep %s", idle_timeout_names[power_management_config.idle_timeout % 5],
+             sleep_timeout_names[power_management_config.sleep_timeout % 5]);
+}
+
+
+settings_page_t * create_power_settings_page(void) {
+    settings_page_t * page = settings_page_create("Power");
+    settings_row_status(page, power_status_text, NULL);
+    settings_row_choice(page, "Idle timeout", idle_timeout_names, 5, get_idle_timeout, set_idle_timeout, NULL);
+    settings_row_choice(page, "Sleep timeout", sleep_timeout_names, 5, get_sleep_timeout, set_sleep_timeout, NULL);
+    settings_row_reset(page, "Reset Power", "Reset the idle and sleep timeouts?", reset_power, NULL);
+    return page;
+}
+
+
+static int get_vbus_limit(void * ctx) {
+    return power_management_config.vbus_current_limit;
+}
+
+
+static void set_vbus_limit(int index, void * ctx) {
+    power_management_config.vbus_current_limit = (pmic_vbus_current_limit_e) index;
+    save_charging();
+}
+
+
+static int get_charge_current(void * ctx) {
+    return power_management_config.battery_charge_current;
+}
+
+
+static void set_charge_current(int index, void * ctx) {
+    power_management_config.battery_charge_current = (pmic_battery_charge_current_e) index;
+    save_charging();
+}
+
+
+static int get_charge_voltage(void * ctx) {
+    return power_management_config.battery_charge_voltage;
+}
+
+
+static void set_charge_voltage(int index, void * ctx) {
+    power_management_config.battery_charge_voltage = (pmic_battery_charge_voltage_e) index;
+    save_charging();
+}
+
+
+void pmic_settings_add_advanced_rows(settings_page_t * page) {
+    settings_row_choice(page, "USB current limit", vbus_current_limit_names, 6, get_vbus_limit, set_vbus_limit, NULL);
+    settings_row_choice(page, "Charge current", battery_charge_current_names, 10, get_charge_current,
+                        set_charge_current, NULL);
+    settings_row_choice(page, "Charge voltage", battery_charge_voltage_names, 5, get_charge_voltage,
+                        set_charge_voltage, NULL);
+}
+
+
+void pmic_settings_reset_advanced(void) {
+    power_management_config.vbus_current_limit = default_power_management_config.vbus_current_limit;
+    power_management_config.battery_charge_current = default_power_management_config.battery_charge_current;
+    power_management_config.battery_charge_voltage = default_power_management_config.battery_charge_voltage;
+    save_charging();
+}
+
+
+// The power button's menu (Reboot, Power off), on the screen over every view
+void create_power_menu_overlay(void) {
     power_menu = create_info_msg_box(lv_screen_active(), create_power_menu);
-    // lv_obj_clear_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
-
-    return sub_page_config_view;
 }

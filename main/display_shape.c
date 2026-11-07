@@ -42,6 +42,24 @@ int32_t display_locked_row_height(int32_t viewport, int32_t min_row, int32_t gap
 }
 
 
+void display_locked_list_snap(lv_obj_t * list, int32_t rows_per_screen) {
+    int32_t tail = rows_per_screen - 1;   // shown rows from the end that are no snap points
+    for (int32_t i = (int32_t) lv_obj_get_child_count(list) - 1; i >= 0; i--) {
+        lv_obj_t * child = lv_obj_get_child(list, i);
+        if (lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
+            continue;
+        }
+        if (tail > 0) {
+            lv_obj_remove_flag(child, LV_OBJ_FLAG_SNAPPABLE);
+            tail--;
+        }
+        else {
+            lv_obj_add_flag(child, LV_OBJ_FLAG_SNAPPABLE);
+        }
+    }
+}
+
+
 void display_shape_show_outline(bool show) {
     if (!show) {
         if (display_outline) {

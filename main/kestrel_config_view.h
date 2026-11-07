@@ -2,8 +2,10 @@
 #define KESTREL_CONFIG_VIEW_H_
 
 #include <lvgl.h>
+#include "settings_ui.h"
 
-/** @brief The Kestrel page in the settings menu (ADR-007): the mode, the HUD name, a Pull and its status */
-lv_obj_t * create_kestrel_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page);
+/** @brief The Kestrel page of the settings, and its line on the hub (ADR-008) */
+settings_page_t * create_kestrel_settings_page(void);
+void kestrel_settings_summary(char * buf, size_t size, void * ctx);
 
 #endif  // KESTREL_CONFIG_VIEW_H_

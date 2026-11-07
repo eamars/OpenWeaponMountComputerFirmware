@@ -1,5 +1,8 @@
 #include "about_config.h"
 
+#include <stdio.h>
+#include <string.h>
+
 #include "esp_err.h"
 #include "esp_log.h"
 
@@ -8,92 +11,47 @@
 #include "esp_partition.h"
 
 #include "app_cfg.h"
-#include "pmic_axp2101.h"
 
 #define TAG "AboutConfig"
 
+// The About page (ADR-008): what runs, and what the other app slot holds
 
 
-lv_obj_t * create_about_config_line_item(lv_obj_t * parent, const char * name, const char * value) {
-    lv_obj_t * container = lv_menu_cont_create(parent);
-
-    lv_obj_t * label = lv_label_create(container);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-    lv_obj_set_flex_grow(label, 1);
-    lv_label_set_text_fmt(label, "%s: %s", name, value);
-
-    // Set colour
-    lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, LV_PART_MAIN);
-    // lv_obj_set_style_bg_color(container, lv_color_white(), 0);
-    // lv_obj_set_style_bg_color(container, lv_palette_main(LV_PALETTE_YELLOW), 0);
-
-    // Other styling
-    lv_obj_set_width(container, lv_pct(100));  // extend to full width
-    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(container,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-    
-    return label;
+static void version_text(char * buf, size_t size, void * ctx) {
+    snprintf(buf, size, "Version %s", esp_app_get_description()->version);
 }
 
-lv_obj_t * create_about_config_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
-    lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
-    // Get current app version information
-    const esp_app_desc_t * app_desc = esp_app_get_description();
+static void build_text(char * buf, size_t size, void * ctx) {
+    const esp_app_desc_t * app = esp_app_get_description();
+    snprintf(buf, size, "Built %s\nESP-IDF %s", app->date, app->idf_ver);
+}
+
+
+// The running slot, and the other: its app's version, or that it holds none (it showed garbage, read from an empty
+// slot without checking the read)
+static void slots_text(char * buf, size_t size, void * ctx) {
     const esp_partition_t * running = esp_ota_get_running_partition();
-
-    // Current Firmware Information
-    create_about_config_line_item(sub_page_config_view, "Partition", running->label);
-    create_about_config_line_item(sub_page_config_view, "Version", app_desc->version);
-    create_about_config_line_item(sub_page_config_view, "ESP-IDF", app_desc->idf_ver);
-    create_about_config_line_item(sub_page_config_view, "Build", app_desc->date);
-
-    lv_menu_separator_create(sub_page_config_view);
-
-    // OTA information
-    esp_partition_iterator_t it;
-    const esp_partition_t* part;
-    esp_app_desc_t ota_app_desc;
-
-    // OTA0
-    it = esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
-    if (it) {
-        part = esp_partition_get(it);
-        esp_ota_get_partition_description(part, &ota_app_desc);
-        create_about_config_line_item(sub_page_config_view, "OTA0 Ver", ota_app_desc.version);
-        esp_partition_iterator_release(it);
+    const esp_partition_t * other = esp_ota_get_next_update_partition(NULL);
+    esp_app_desc_t other_app;
+    const char * other_version = "empty";
+    if (other != NULL && esp_ota_get_partition_description(other, &other_app) == ESP_OK) {
+        other_version = other_app.version;
     }
-    else {
-        create_about_config_line_item(sub_page_config_view, "Partition0", "Not Found");
-    }
-
-    // OTA1
-    it = esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL);
-    if (it) {
-        part = esp_partition_get(it);
-        esp_ota_get_partition_description(part, &ota_app_desc);
-        create_about_config_line_item(sub_page_config_view, "OTA1 Ver", ota_app_desc.version);
-        esp_partition_iterator_release(it);
-    }
-    else {
-        create_about_config_line_item(sub_page_config_view, "Partition1", "Not Found");
-    }
+    snprintf(buf, size, "Running %s\n%s: %s", running != NULL ? running->label : "?",
+             other != NULL ? other->label : "Other slot", other_version);
+}
 
 
-    // Add to the menu
-    lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
-    lv_obj_t * img = lv_image_create(cont);
-    lv_obj_t * label = lv_label_create(cont);
+void about_settings_summary(char * buf, size_t size, void * ctx) {
+    snprintf(buf, size, "%s", esp_app_get_description()->version);
+}
 
-    lv_image_set_src(img, LV_SYMBOL_SETTINGS);
-    lv_label_set_text(label, "About");
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-    lv_obj_set_flex_grow(label, 1);
 
-    lv_menu_set_load_page_event(parent, cont, sub_page_config_view);
-
-    return sub_page_config_view;
+settings_page_t * create_about_settings_page(void) {
+    settings_page_t * page = settings_page_create("About");
+    settings_row_status(page, version_text, NULL);
+    settings_row_status(page, build_text, NULL);
+    settings_row_status(page, slots_text, NULL);
+    return page;
 }

@@ -1,8 +1,11 @@
 #include "system_config.h"
+
+#include <stdio.h>
+#include <string.h>
+
 #include "esp_check.h"
 #include "esp_log.h"
 #include "nvs.h"
-#include "config_view.h"
 #include "app_cfg.h"
 #include "pmic_axp2101.h"
 #include "low_power_mode.h"
@@ -12,6 +15,7 @@
 #include "remote_control.h"
 #include "rc_serial.h"
 #include "lvgl_display.h"
+#include "settings_ui.h"
 
 #define TAG "SystemConfig"
 #define NVS_NAMESPACE "SC"
@@ -24,24 +28,6 @@ const system_config_t system_config_default = {
     .global_log_level = ESP_LOG_INFO,
 };
 
-
-static lv_obj_t * rotation_dropdown = NULL;
-static lv_obj_t * remote_control_switch = NULL;
-static lv_obj_t * system_config_page = NULL;
-
-const char rotation_options[] = "0°\n90°\n180°\n270°";
-const char screen_brightness_pct_options[] = "50%\n60%\n70%\n80%\n90%\n100%";
-const char log_level_options[] = "None\nError\nWarn\nInfo\nDebug\nVerbose";
-
-
-screen_brightness_pct_t screen_brightness_pct_option_to_pct(int32_t selected) {
-    return (selected + 5) * 10;
-}
-
-
-int32_t pct_to_screen_brightness_pct_option(screen_brightness_pct_t pct) {
-     return pct / 10;
-}
 
 esp_err_t load_system_config() {
     return load_config(NVS_NAMESPACE, &system_config, &system_config_default, sizeof(system_config));
@@ -62,23 +48,10 @@ void system_config_set_rotation(lv_display_rotation_t rotation) {
     else {
         ESP_LOGI(TAG, "Rotation not changed");
     }
-
-    // Keep the dropdown in step when the change does not come from the dropdown itself
-    if (rotation_dropdown) {
-        lv_dropdown_set_selected(rotation_dropdown, rotation);
-    }
 }
 
 
-void update_rotation_event_cb(lv_event_t *e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-
-    system_config_set_rotation((lv_display_rotation_t) selected);
-}
-
-
-// Start or stop the serial remote control to match the flag, and show it on the switch
+// Start or stop the serial remote control to match the flag
 static void apply_remote_control_config() {
     if (remote_control_config.serial_enable) {
         rc_serial_start();
@@ -86,134 +59,115 @@ static void apply_remote_control_config() {
     else {
         rc_serial_stop();
     }
-
-    if (remote_control_switch) {
-        if (remote_control_config.serial_enable) {
-            lv_obj_add_state(remote_control_switch, LV_STATE_CHECKED);
-        }
-        else {
-            lv_obj_remove_state(remote_control_switch, LV_STATE_CHECKED);
-        }
-    }
 }
 
 
-static void toggle_remote_control_serial(lv_event_t *e) {
-    lv_obj_t * sw = lv_event_get_target_obj(e);
-    remote_control_config.serial_enable = lv_obj_has_state(sw, LV_STATE_CHECKED);
-
-    apply_remote_control_config();
-}
-
-// Apply the settings to the running unit, as the page's controls do one by one (Reload, Reset)
-static void apply_system_config() {
-    lv_display_t * display = lv_display_get_default();
-    if (lv_display_get_rotation(display) != system_config.rotation) {
-        lv_display_set_rotation(display, system_config.rotation);
-    }
-
-    esp_log_level_set("*", system_config.global_log_level);
-
+static void apply_brightness(void) {
     if (!is_idle_mode_activated() && !is_sleep_mode_activated()) {
         set_display_brightness(&io_handle, system_config.screen_brightness_normal_pct);
     }
+}
 
+
+/*
+----------------------------------------------------
+Settings: the Display page and the system rows of Advanced (ADR-008: each change stored when made)
+----------------------------------------------------
+*/
+
+static const char * const rotation_names[] = {"0\xC2\xB0", "90\xC2\xB0", "180\xC2\xB0", "270\xC2\xB0"};
+static const char * const brightness_names[] = {"50%", "60%", "70%", "80%", "90%", "100%"};
+static const char * const log_level_names[] = {"None", "Error", "Warn", "Info", "Debug", "Verbose"};
+
+#define BRIGHTNESS_MIN_PCT 50
+
+
+static void save_system(void) {
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_system_config());
+}
+
+
+static int get_rotation(void * ctx) {
+    return system_config.rotation;
+}
+
+
+static void set_rotation(int index, void * ctx) {
+    system_config_set_rotation((lv_display_rotation_t) index);
+    save_system();
+}
+
+
+static int get_brightness(void * ctx) {
+    return (system_config.screen_brightness_normal_pct - BRIGHTNESS_MIN_PCT) / 10;
+}
+
+
+static void set_brightness(int index, void * ctx) {
+    system_config.screen_brightness_normal_pct = (screen_brightness_pct_t) (BRIGHTNESS_MIN_PCT + 10 * index);
+    apply_brightness();
+    save_system();
+}
+
+
+static void reset_display(void * ctx) {
+    system_config_set_rotation(system_config_default.rotation);
+    system_config.screen_brightness_normal_pct = system_config_default.screen_brightness_normal_pct;
+    apply_brightness();
+    save_system();
+}
+
+
+void system_display_settings_summary(char * buf, size_t size, void * ctx) {
+    snprintf(buf, size, "Rotation %s, brightness %d%%", rotation_names[system_config.rotation & 3],
+             (int) system_config.screen_brightness_normal_pct);
+}
+
+
+settings_page_t * create_display_settings_page(void) {
+    settings_page_t * page = settings_page_create("Display");
+    settings_row_choice(page, "Screen rotation", rotation_names, 4, get_rotation, set_rotation, NULL);
+    settings_row_choice(page, "Screen brightness", brightness_names, 6, get_brightness, set_brightness, NULL);
+    settings_row_reset(page, "Reset Display", "Reset the rotation and brightness?", reset_display, NULL);
+    return page;
+}
+
+
+static int get_log_level(void * ctx) {
+    return system_config.global_log_level;
+}
+
+
+static void set_log_level(int index, void * ctx) {
+    system_config.global_log_level = (esp_log_level_t) index;
+    esp_log_level_set("*", system_config.global_log_level);
+    save_system();
+}
+
+
+static bool get_remote_control(void * ctx) {
+    return remote_control_config.serial_enable;
+}
+
+
+static void set_remote_control(bool on, void * ctx) {
+    remote_control_config.serial_enable = on;
     apply_remote_control_config();
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_remote_control_config());
 }
 
-static void on_save_button_pressed(lv_event_t * e) {
-    // Both are tried; the first failure is shown
-    esp_err_t ret = save_system_config();
-    esp_err_t rc_ret = save_remote_control_config();
 
-    update_info_msg_box_result(msg_box, ret != ESP_OK ? ret : rc_ret, "Configuration Saved", "Save failed");
+void system_settings_add_advanced_rows(settings_page_t * page) {
+    settings_row_choice(page, "Log level", log_level_names, 6, get_log_level, set_log_level, NULL);
+    settings_row_toggle(page, "Remote control", get_remote_control, set_remote_control, NULL);
 }
 
-static void on_reload_button_pressed(lv_event_t * e) {
-    esp_err_t ret = load_system_config();
-    esp_err_t rc_ret = load_remote_control_config();
-    apply_system_config();
-    config_page_rebuild(system_config_page);
 
-    update_info_msg_box_result(msg_box, ret != ESP_OK ? ret : rc_ret, "Previous Configuration Reloaded", "Reload failed");
-}
-
-static void on_reset_button_pressed(lv_event_t * e) {
-    // Initialize with default values
-    memcpy(&system_config, &system_config_default, sizeof(system_config));
+void system_settings_reset_advanced(void) {
+    system_config.global_log_level = system_config_default.global_log_level;
+    esp_log_level_set("*", system_config.global_log_level);
+    save_system();
     memcpy(&remote_control_config, &remote_control_config_default, sizeof(remote_control_config));
-    apply_system_config();
-    config_page_rebuild(system_config_page);
-
-    update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-}
-
-
-void update_normal_screen_brightness(lv_event_t * e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-
-    system_config.screen_brightness_normal_pct = screen_brightness_pct_option_to_pct(selected);
-
-    // Apply the changes directly
-    if (!is_idle_mode_activated() && !is_sleep_mode_activated()) {
-        set_display_brightness(&io_handle, system_config.screen_brightness_normal_pct);
-    }
-}
-
-
-void update_global_log_level(lv_event_t * e) {
-    lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
-
-    system_config.global_log_level = (esp_log_level_t) selected;
-
-    esp_log_level_set("*", system_config.global_log_level);
-    ESP_LOGE(TAG, "Global log level updated to %d", system_config.global_log_level);
-}
-
-// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
-static void fill_system_config_page(lv_obj_t * sub_page_config_view) {
-    lv_obj_t * container;
-    lv_obj_t * config_item;
-
-    // Rotation
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Screen Rotation");
-    rotation_dropdown = create_dropdown_list(container, rotation_options, system_config.rotation, update_rotation_event_cb, NULL);
-
-    // Global log level
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Global Log Level");
-    config_item = create_dropdown_list(container, log_level_options, system_config.global_log_level, update_global_log_level, NULL);
-
-    // Remote control over the serial console
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Remote control");
-    remote_control_switch = create_switch(container, &remote_control_config.serial_enable, toggle_remote_control_serial);
-
-    // Screene brightness (normal)
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Screen Brightness");
-    config_item = create_dropdown_list(container, screen_brightness_pct_options, pct_to_screen_brightness_pct_option(system_config.screen_brightness_normal_pct), update_normal_screen_brightness, NULL);
-
-    // Save Reload
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
-    create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
-}
-
-
-lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
-    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_system_config_page);
-    system_config_page = sub_page_config_view;
-
-    // Add to the menu
-    lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
-    lv_obj_t * img = lv_image_create(cont);
-    lv_obj_t * label = lv_label_create(cont);
-
-    lv_image_set_src(img, LV_SYMBOL_SETTINGS);
-    lv_label_set_text(label, "System Config");
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-    lv_obj_set_flex_grow(label, 1);
-
-    lv_menu_set_load_page_event(parent, cont, sub_page_config_view);
-
-    return sub_page_config_view;
+    apply_remote_control_config();
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_remote_control_config());
 }

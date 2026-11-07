@@ -240,9 +240,15 @@ static void refresh_target(int index) {
 
 
 // The tile and the level's band, after the card, the names or the size changed
+static int32_t locked_rows_per_screen = 2;     // set by lock_rows_to_list()
+
 static void refresh_card() {
     for (int i = 0; i < DOPE_TARGET_MAX; i++) {
         refresh_target(i);
+    }
+    // The card size shows or hides rows: the last screen's rows move
+    if (target_list != NULL) {
+        display_locked_list_snap(target_list, locked_rows_per_screen);
     }
     level_band_refresh_dope();
 }
@@ -797,6 +803,8 @@ static void lock_rows_to_list(void) {
     for (int i = 0; i < DOPE_TARGET_MAX; i++) {
         lv_obj_set_height(target_widgets[i].row, row_height);
     }
+    locked_rows_per_screen = (height + DOPE_TILE_GAP_PX) / (row_height + DOPE_TILE_GAP_PX);
+    display_locked_list_snap(target_list, locked_rows_per_screen);
     // Inside a layout pass (the size-change event) a layout update is ignored: realign once it has finished
     lv_async_call(realign_list_async, NULL);
 }

@@ -6,6 +6,7 @@
 #include "esp_log.h"
 
 #include "lvgl.h"
+#include "settings_ui.h"
 
 
 typedef enum {
@@ -29,11 +30,17 @@ esp_err_t load_system_config();
 esp_err_t save_system_config();
 
 /**
- * @brief Rotate the display as the Screen Rotation dropdown does, and update the dropdown. Call with the LVGL lock held.
+ * @brief Rotate the display (in memory; the Display page stores it). Call with the LVGL lock held.
  */
 void system_config_set_rotation(lv_display_rotation_t rotation);
 
-lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page);
+/** @brief The Display page of the settings, and its line on the hub (ADR-008) */
+settings_page_t * create_display_settings_page(void);
+void system_display_settings_summary(char * buf, size_t size, void * ctx);
+
+/** @brief Advanced: log level and remote control; their part of Advanced's Reset */
+void system_settings_add_advanced_rows(settings_page_t * page);
+void system_settings_reset_advanced(void);
 
 // Shared state, defined in system_config.c
 extern system_config_t system_config;
