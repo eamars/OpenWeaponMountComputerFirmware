@@ -1,12 +1,3 @@
-/* FreeRTOS Real Time Stats Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
@@ -23,6 +14,8 @@
 
 #include "nvs_flash.h"
 
+#include "app.h"
+#include "digital_level_view.h"
 #include "main_tileview.h"
 #include "app_cfg.h"
 #include "bno085.h"
@@ -47,10 +40,6 @@
 
 bno085_ctx_t * bno085_dev;
 axp2101_ctx_t * axp2101_dev;
-extern system_config_t system_config;
-extern remote_control_config_t remote_control_config;
-extern sensor_config_t sensor_config;
-extern uint32_t wakeup_cause;
 
 
 void mem_monitor_task(void *pvParameters) {
@@ -66,7 +55,7 @@ void mem_monitor_task(void *pvParameters) {
         ESP_LOGI(TAG, "Free internal heap: %u kbytes",
                 (unsigned)esp_get_free_internal_heap_size() / 1024);
 
-        ESP_LOGI(TAG, "Wakeup cause: %d", wakeup_cause);
+        ESP_LOGI(TAG, "Wakeup cause: %" PRIu32, wakeup_cause);
 
 
         ESP_LOGI(TAG, "---------------------------");
@@ -143,6 +132,9 @@ void app_main(void)
     // Start event loop
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
+    // Low-power state first: the PMIC's power key and the remote control ask whether the unit is idle
+    ESP_ERROR_CHECK(low_power_mode_init());
+
     // Install interrupt service (so each module don't need to run again)
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
 
@@ -160,14 +152,18 @@ void app_main(void)
 
     ESP_ERROR_CHECK(load_sensor_config());
 
+#if USE_BNO085
+    // Read before the UI is created: the level view and the level's settings page both show these, so neither
+    // has to be created first (ADR-005 step 3)
+    ESP_ERROR_CHECK(load_digital_level_view_config());
+#endif  // USE_BNO085
+
     // Set buzzer
     ESP_ERROR_CHECK(buzzer_init());
 
     // Initialize I2C
     i2c_master_bus_handle_t i2c0_bus_handle;
     i2c_master_bus_handle_t i2c1_bus_handle;
-
-    // Initialize USB
 
     // Initialize shared I2C bus
     i2c0_bus_handle = i2c0_master_init();
@@ -195,14 +191,18 @@ void app_main(void)
     bno085_dev = (bno085_ctx_t *) bno085_i2c_dev;
 #endif  // USE_BNO085
 
+    // Initialize WiFi before the display: the Wi-Fi service needs no UI; the UI reads its state through the
+    // UI bridge whenever it is created (ADR-005 step 3)
+    ESP_ERROR_CHECK(wifi_init());
+
     // Initialize Display
     ESP_ERROR_CHECK(lvgl_display_init(i2c0_bus_handle));
 
+    // Idle and sleep timeouts, once the display they blank and the touch that wakes it exist
+    ESP_ERROR_CHECK(low_power_mode_start());
+
     // Remote control driver (virtual pointer for scripted taps and swipes)
     ESP_ERROR_CHECK(remote_control_init());
-
-    // Initialize WiFi and related calls
-    ESP_ERROR_CHECK(wifi_init());
 
     // Serial remote control on the console, when enabled in System settings
     if (remote_control_config.serial_enable) {
@@ -248,12 +248,7 @@ void *lv_realloc_core(void *p, size_t new_size) {
     return heap_caps_realloc(p, new_size, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
 }
 
-void lv_free_core(void *p)
-{
-	heap_caps_free(p);
+void lv_free_core(void *p) {
+    heap_caps_free(p);
 }
 
-// void esp_task_wdt_isr_user_handler(void) {
-//     // Reboot
-//     esp_restart();
-// }

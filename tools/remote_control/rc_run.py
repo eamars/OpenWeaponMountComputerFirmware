@@ -15,6 +15,7 @@ boot, `rst:` lines are expected, and one abort right after "Failed to detect BNO
 import argparse
 import datetime
 import pathlib
+import re
 import sys
 import time
 
@@ -23,7 +24,8 @@ import serial
 DEFAULT_PORT = "COM11"
 BAUD_RATE = 115200
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-DEFAULT_LOG_DIR = REPO_ROOT / "build" / "rc_logs"
+# Outside build/: idf.py fullclean and set-target delete build/, and with it the evidence (ADR-005 B22)
+DEFAULT_LOG_DIR = REPO_ROOT / "logs" / "rc"
 
 COMMAND_TIMEOUT_S = 5.0
 READY_TIMEOUT_S = 60.0
@@ -48,6 +50,7 @@ REPLY_PREFIXES = {
     "state": "@ok tile=",
     "stats": "@ok free_int=",
     "bt": "@ok bt",
+    "pmic": "@ok pmic",
     "tap": "@ok tap",
     "swipe": "@ok swipe",
     "tile": "@ok tile=",
@@ -58,6 +61,7 @@ REPLY_PREFIXES = {
     "wake": "@ok wake",
     "reboot": "@ok reboot",
     "hang": "@ok hang",
+    "bnoreset": "@ok bnoreset",
 }
 FAILURE_MARKERS = (
     RESET_MARKER,
@@ -78,6 +82,7 @@ TILE_DWELL_S = 3.0
 IDLE_CYCLES = 3
 IDLE_DURATION_S = 20.0
 AFTER_WAKE_S = 10.0
+WATCHDOG_AFTER_WAKE_S = 2.0  # watchdog scenario: LVGL resumed and feeding before `hang`
 AFTER_ROTATION_S = 5.0
 WIFI_OFF_S = 10.0
 ROTATION_DWELL_S = 120.0
@@ -385,7 +390,11 @@ def scenario_state_change(session: Session):
         session.command("wake")
         session.dwell(AFTER_WAKE_S)
 
-    for rotation in (1, 2):
+    # Turn to another rotation and back to the unit's own, so the saved setting ends as it was found (it used to end
+    # on a fixed 2 and overwrote the owner's)
+    match = re.search(r"rot=(\d)", session.command("state"))
+    own_rotation = int(match.group(1)) if match else 2
+    for rotation in ((own_rotation + 1) % 4, own_rotation):
         session.command(f"rot {rotation}")
         session.command("save system")
         session.dwell(AFTER_ROTATION_S)
@@ -457,6 +466,12 @@ def scenario_watchdog(session: Session):
     task watchdog names the `lvgl` user, the device boots again, reports the watchdog reset and
     has a core dump stored. The crash's own markers (panic, reset) are expected and not counted.
     """
+    # The LVGL watchdog is paused while idle by design, so `hang` in idle only locks the unit
+    # until the next wake (ADR-005 B23). Wake first, and leave time for LVGL to resume.
+    if not session.command("wake").startswith("@ok"):
+        return
+    session.dwell(WATCHDOG_AFTER_WAKE_S)
+
     if not session.command("hang").startswith("@ok"):
         return
 
@@ -516,7 +531,7 @@ def parse_args(argv):
     options.add_argument("--watch-s", type=float, default=600.0,
                          help="watch scenario: seconds to keep checking after state_change")
     options.add_argument("--log-dir", type=pathlib.Path, default=DEFAULT_LOG_DIR,
-                         help="directory for session logs (default build/rc_logs)")
+                         help="directory for session logs (default logs/rc)")
 
     parser = argparse.ArgumentParser(description="Serial remote control runner")
     commands = parser.add_subparsers(dest="action", required=True)

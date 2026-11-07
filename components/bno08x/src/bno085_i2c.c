@@ -52,11 +52,16 @@ int bno085_hal_i2c_open(sh2_Hal_t *self) {
     // Cast self back to the context object
     bno085_i2c_ctx_t * ctx = (bno085_i2c_ctx_t *) self;
 
-    // Send softreset packet
-    int ret = i2c_soft_reset(ctx);
-    if (ret != 0) {
-        ESP_LOGE(TAG, "Failed to send soft reset");
-        return ret;
+    // Reset the sensor once. With a reset line, _bno085_ctx_init has just reset it by hardware and waited for
+    // it to be ready; a soft reset on top of that (about 120 ms into its start-up, its advertisement still
+    // unread) left the sensor answering requests but never acting on a report configuration, so no reports
+    // came until the next reset. Without a reset line, the soft reset is the only one (ADR-005 B7 regression)
+    if (ctx->parent.reset_pin == GPIO_NUM_NC) {
+        int ret = i2c_soft_reset(ctx);
+        if (ret != 0) {
+            ESP_LOGE(TAG, "Failed to send soft reset");
+            return ret;
+        }
     }
 
     ESP_LOGI(TAG, "i2c_open() complete");

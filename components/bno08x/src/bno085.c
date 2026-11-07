@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <math.h>
 
 #include "esp_log.h"
@@ -13,10 +14,22 @@
 
 #define TAG "BNO085"
 
+// Reset pulse width, and how long to wait for the sensor's ready signal after it (H_INTN low)
+#define BNO085_RESET_PULSE_MS 10
+#define BNO085_RESET_READY_TIMEOUT_MS 500
+
 // Forward declaration
 float q_to_roll_sf(float dqw, float dqx, float dqy, float dqz);
 float q_to_pitch_sf(float dqw, float dqx, float dqy, float dqz);
 float q_to_yaw_sf(float dqw, float dqx, float dqy, float dqz);
+
+static inline void sh2_lock(bno085_ctx_t *ctx) {
+    xSemaphoreTakeRecursive(ctx->sh2_lock, portMAX_DELAY);
+}
+
+static inline void sh2_unlock(bno085_ctx_t *ctx) {
+    xSemaphoreGiveRecursive(ctx->sh2_lock);
+}
 
 static inline esp_err_t create_sensor_event_group(bno085_ctx_t *ctx) {
     // If not created, then create the event group. This function may be called before the `bno085_init()`. 
@@ -72,7 +85,7 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     // Decode event into the value
     sh2_SensorValue_t sensor_value;
     if (sh2_decodeSensorEvent(&sensor_value, event) == SH2_ERR) {
-        ESP_LOGI(TAG, "sh2_decodeSensorEventd failed");
+        ESP_LOGW(TAG, "sh2_decodeSensorEvent failed");
         return;
     }
 
@@ -112,16 +125,21 @@ void sensor_poller_task(void *self) {
     while (1) {
         // Wait until the interrupt happens
         if (_bno085_wait_for_interrupt(ctx) == ESP_OK) {
+            sh2_lock(ctx);
             sh2_service();
+            sh2_unlock(ctx);
         }
     }
 }
 
 
-esp_err_t sh2_enable_report(sh2_SensorId_t sensor_id, sh2_SensorConfig_t *config) {
+static esp_err_t sh2_enable_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, sh2_SensorConfig_t *config) {
+    sh2_lock(ctx);
     int status = sh2_setSensorConfig(sensor_id, config);
+    sh2_unlock(ctx);
 
     if (status != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to configure report for sensor ID %d (interval %" PRIu32 " us): %d", sensor_id, config->reportInterval_us, status);
         return ESP_FAIL;
     }
 
@@ -135,14 +153,14 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
     // If we see a reset, set a flag so that sensors will be reconfigured.
     switch (pEvent->eventId) {
         case SH2_RESET: {
-            ESP_LOGW(TAG, "BNO085 Reset Unexpectly");
+            ESP_LOGW(TAG, "BNO085 Reset Unexpectedly");
         
             // Go over saved configurations
-            for (uint8_t i = 0; i < SH2_MAX_SENSOR_EVENT_LEN; i += 1) {
+            for (uint8_t i = 0; i < BNO085_REPORT_TABLE_LEN; i += 1) {
                 // Re-enable reports
                 if (ctx->enabled_sensor_report_list[i].config.reportInterval_us != 0) {
-                    ESP_LOGI(TAG, "Re-enabling report for sensor ID %d with interval %d us", i, ctx->enabled_sensor_report_list[i].config.reportInterval_us);
-                    sh2_enable_report(i, &ctx->enabled_sensor_report_list[i].config);
+                    ESP_LOGI(TAG, "Re-enabling report for sensor ID %d with interval %" PRIu32 " us", i, ctx->enabled_sensor_report_list[i].config.reportInterval_us);
+                    sh2_enable_report(ctx, i, &ctx->enabled_sensor_report_list[i].config);
                 }
             }
             break;
@@ -180,6 +198,12 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
     // Create sensor event group if not created before
     ESP_ERROR_CHECK(create_sensor_event_group(ctx));
 
+    ctx->sh2_lock = xSemaphoreCreateRecursiveMutex();
+    if (ctx->sh2_lock == NULL) {
+        ESP_LOGE(TAG, "Failed to create sh2_lock");
+        return ESP_ERR_NO_MEM;
+    }
+
     // Configure interrupt
     if (ctx->interrupt_pin != GPIO_NUM_NC) {
         gpio_config_t io_conf = {
@@ -197,24 +221,8 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
         ESP_LOGI(TAG, "Configured interrupt on pin %d", ctx->interrupt_pin);
     }
 
-    // Configure reset pin
-    if (ctx->reset_pin != GPIO_NUM_NC) {
-        gpio_config_t io_conf = {
-            .intr_type = GPIO_INTR_DISABLE,
-            .mode = GPIO_MODE_OUTPUT,
-            .pin_bit_mask = (1ULL << ctx->reset_pin),
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-        };
-        ESP_ERROR_CHECK(gpio_config(&io_conf));
-
-        // Set reset pin to high
-        gpio_set_level(ctx->reset_pin, 1);
-
-        ESP_LOGI(TAG, "Configured reset on pin %d", ctx->reset_pin);
-    }
-
-    // Configure boot pin
+    // Configure the boot pin before the reset: the BNO085 samples BOOTN when it leaves reset, and low
+    // starts its firmware-update bootloader instead of the sensor hub (ADR-005 B7)
     if (ctx->boot_pin != GPIO_NUM_NC) {
         gpio_config_t io_conf = {
             .intr_type = GPIO_INTR_DISABLE,
@@ -229,6 +237,43 @@ esp_err_t _bno085_ctx_init(bno085_ctx_t *ctx, gpio_num_t interrupt_pin, gpio_num
         gpio_set_level(ctx->boot_pin, 1);
 
         ESP_LOGI(TAG, "Configured boot on pin %d", ctx->boot_pin);
+    }
+
+    // Hardware reset, so the sensor starts from a known state whatever reset the ESP32 had. After a chip
+    // reset (flash, esptool) the reset line was undriven until now; after a software reset it stayed high
+    // and the sensor kept running. Without the pulse and the wait, the first boot after a chip reset probed
+    // the sensor before it was ready and aborted (ADR-005 B7).
+    if (ctx->reset_pin != GPIO_NUM_NC) {
+        gpio_config_t io_conf = {
+            .intr_type = GPIO_INTR_DISABLE,
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = (1ULL << ctx->reset_pin),
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+        };
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+
+        gpio_set_level(ctx->reset_pin, 0);
+        vTaskDelay(pdMS_TO_TICKS(BNO085_RESET_PULSE_MS));
+
+        // The sensor pulls H_INTN low once it is ready after reset; drop any edge seen while in reset
+        xEventGroupClearBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT);
+        gpio_set_level(ctx->reset_pin, 1);
+        const int64_t released_us = esp_timer_get_time();
+
+        if (ctx->interrupt_pin != GPIO_NUM_NC) {
+            EventBits_t bits = xEventGroupWaitBits(ctx->sensor_event_control, SENSOR_INTERRUPT_EVENT_BIT, pdTRUE, pdTRUE,
+                                                   pdMS_TO_TICKS(BNO085_RESET_READY_TIMEOUT_MS));
+            if (!(bits & SENSOR_INTERRUPT_EVENT_BIT)) {
+                ESP_LOGW(TAG, "No ready signal within %d ms of reset", BNO085_RESET_READY_TIMEOUT_MS);
+            }
+        }
+        else {
+            vTaskDelay(pdMS_TO_TICKS(BNO085_RESET_READY_TIMEOUT_MS));
+        }
+
+        ESP_LOGI(TAG, "Reset on pin %d done, ready after %d ms", ctx->reset_pin,
+                 (int) ((esp_timer_get_time() - released_us) / 1000));
     }
 
     // Configure ps0_wake pin
@@ -255,8 +300,10 @@ esp_err_t _bno085_sh2_init(bno085_ctx_t *ctx) {
     // Assume other HAL functions are already assigned
     // Open SH2 interface
     int status;
+    sh2_lock(ctx);
     status = sh2_open((sh2_Hal_t *) ctx, sh2_event_callback, (void *) ctx);
     if (status != SH2_OK) {
+        sh2_unlock(ctx);
         ESP_LOGE(TAG, "Failed to run sh2_open(): %d", status);
         return ESP_FAIL;
     }
@@ -265,13 +312,16 @@ esp_err_t _bno085_sh2_init(bno085_ctx_t *ctx) {
     memset(&prodIds, 0, sizeof(prodIds));
     status = sh2_getProdIds(&prodIds);
     if (status != SH2_OK) {
+        sh2_unlock(ctx);
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "ProdIds Read");
 
 
     // Register sensor callback
-    if (sh2_setSensorCallback(sh2_sensor_callback, (void *) ctx)) {
+    status = sh2_setSensorCallback(sh2_sensor_callback, (void *) ctx);
+    sh2_unlock(ctx);
+    if (status != SH2_OK) {
         return ESP_FAIL;
     }
 
@@ -312,13 +362,15 @@ esp_err_t bno085_configure_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, s
     memcpy(&target_report_config->config, config, sizeof(sh2_SensorConfig_t));
 
     // Enable report at the sensor
-    return sh2_enable_report(sensor_id, &target_report_config->config);
+    return sh2_enable_report(ctx, sensor_id, &target_report_config->config);
 }
 
 
 
 esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx) {
+    sh2_lock(ctx);
     int ret = sh2_devSleep();
+    sh2_unlock(ctx);
     if (ret != SH2_OK) {
         ESP_LOGE(TAG, "Failed to put sensor in sleep mode: %d", ret);
         return ESP_FAIL;
@@ -328,9 +380,52 @@ esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx) {
 
 
 esp_err_t bno085_wake_up(bno085_ctx_t *ctx) {
+    sh2_lock(ctx);
     int ret = sh2_devOn();
+    sh2_unlock(ctx);
     if (ret != SH2_OK) {
         ESP_LOGE(TAG, "Failed to wake up the sensor: %d", ret);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+
+esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx) {
+    if (ctx->reset_pin == GPIO_NUM_NC) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    // Under the sh2 lock, so the pulse never cuts a transfer in half
+    sh2_lock(ctx);
+    gpio_set_level(ctx->reset_pin, 0);
+    vTaskDelay(pdMS_TO_TICKS(BNO085_RESET_PULSE_MS));
+    gpio_set_level(ctx->reset_pin, 1);
+    sh2_unlock(ctx);
+
+    ESP_LOGW(TAG, "Hardware reset pulsed on pin %d", ctx->reset_pin);
+    return ESP_OK;
+}
+
+
+esp_err_t bno085_tare_now(bno085_ctx_t *ctx, uint8_t axes, sh2_TareBasis_t basis) {
+    sh2_lock(ctx);
+    int ret = sh2_setTareNow(axes, basis);
+    sh2_unlock(ctx);
+    if (ret != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to tare: %d", ret);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+
+esp_err_t bno085_persist_tare(bno085_ctx_t *ctx) {
+    sh2_lock(ctx);
+    int ret = sh2_persistTare();
+    sh2_unlock(ctx);
+    if (ret != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to persist tare: %d", ret);
         return ESP_FAIL;
     }
     return ESP_OK;

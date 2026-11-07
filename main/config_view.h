@@ -34,17 +34,33 @@ lv_obj_t * create_config_label_static(lv_obj_t * parent, char * text);
 lv_obj_t * create_single_button(lv_obj_t * container, const char * icon, lv_event_cb_t event_cb);
 lv_obj_t * create_info_msg_box(lv_obj_t *parent, lvgl_additional_init_func callback_f);
 
-// Status bar update
-void status_bar_update_wireless_state(wireless_state_e state);
-
-/** 
- * @brief Update the battery level icon in the status bar
- * @param level_percentage Battery level percentage (0-100). < 100 is powered by USB, -1 is unknown>
- */
-void status_bar_update_battery_level(int level_percentage);
-
 void update_info_msg_box(lv_obj_t * msg_box, const char * text);
 
+// Builds a settings page's widgets from its settings
+typedef void (*config_page_fill_func_t)(lv_obj_t * page);
+
+/**
+ * @brief Create a settings sub page of the menu and fill it
+ * @param fill Builds the widgets; run again by config_page_rebuild()
+ */
+lv_obj_t * create_config_page(lv_obj_t * menu, config_page_fill_func_t fill);
+
+/**
+ * @brief Redraw a settings page from its settings, after Reload or Reset
+ * Runs once the current event has finished (the pressed button is on the page) and keeps the scroll position
+ */
+void config_page_rebuild(lv_obj_t * page);
+
+/**
+ * @brief Show the outcome of a settings page's Save or Reload in its message box
+ * @param ret The action's result; the cause of a failure is logged where it happened
+ * @param done_text Shown on ESP_OK
+ * @param failed_text Shown with the error name otherwise
+ */
+void update_info_msg_box_result(lv_obj_t * msg_box, esp_err_t ret, const char * done_text, const char * failed_text);
+
+// Shared state, defined in config_view.c
+extern lv_obj_t * msg_box;  // the settings pages' shared message box
 
 #ifdef __cplusplus
 }

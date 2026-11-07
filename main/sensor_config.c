@@ -8,6 +8,9 @@
 #include "app_cfg.h"
 #include "config_view.h"
 #include "common.h"
+#include "app.h"
+#include "main_tileview.h"
+#include "sensor_calibration_view.h"
 
 #define TAG "SensorConfig"
 #define NVS_NAMESPACE "SEC"
@@ -22,16 +25,11 @@ const sensor_config_t sensor_config_default = {
 };
 
 
-extern bno085_ctx_t * bno085_dev;
 
 lv_obj_t * tare_calibration_button = NULL;
 lv_obj_t * sensor_calibration_button = NULL;
 
 
-extern lv_obj_t * tile_sensor_calibration_view;  // from main_tileview.c
-extern lv_obj_t * main_tileview;                 // from main_tileview.c
-extern lv_obj_t * last_tile_before_enter_calibration;  // from sensor_calibration_view.c
-extern lv_obj_t * msg_box;  // from config_view.c
 
 esp_err_t save_sensor_config() {
     return save_config(NVS_NAMESPACE, &sensor_config, sizeof(sensor_config));
@@ -43,27 +41,42 @@ esp_err_t load_sensor_config() {
 }
 
 
-static void on_save_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(save_sensor_config());
+static lv_obj_t * sensor_config_page = NULL;
 
-    update_info_msg_box(msg_box, "Configuration Saved");
+
+// Apply the settings to the running unit, as the page's switches do (Reload, Reset): a report switched off is
+// stopped; a report switched on starts when the view that uses it is enabled
+static void apply_sensor_config() {
+    if (!sensor_config.enable_game_rotation_vector_report) {
+        bno085_enable_game_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver
+    }
+    if (!sensor_config.enable_linear_acceleration_report) {
+        bno085_enable_linear_acceleration_report(bno085_dev, 0);
+    }
+    if (!sensor_config.enable_rotation_vector_report) {
+        bno085_enable_rotation_vector_report(bno085_dev, 0);
+    }
+}
+
+static void on_save_button_pressed(lv_event_t * e) {
+    update_info_msg_box_result(msg_box, save_sensor_config(), "Configuration Saved", "Save failed");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(load_sensor_config());
+    esp_err_t ret = load_sensor_config();
+    apply_sensor_config();
+    config_page_rebuild(sensor_config_page);
 
-    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
-
-    // TODO: Update current displayed values
+    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
 }
 
 static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&sensor_config, &sensor_config_default, sizeof(sensor_config));
+    apply_sensor_config();
+    config_page_rebuild(sensor_config_page);
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-
-    // TODO: Update current display values
 }
 
 
@@ -83,7 +96,7 @@ static void toggle_linear_acceleration_report(lv_event_t *e) {
     *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
 
     if (*state == false) {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
+        bno085_enable_linear_acceleration_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
 }
 
@@ -93,7 +106,7 @@ static void toggle_game_rotation_vector_report(lv_event_t *e) {
     *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
 
     if (*state == false) {
-        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
+        bno085_enable_game_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
 }
 
@@ -103,7 +116,7 @@ static void toggle_rotation_vector_report(lv_event_t *e) {
     *state = lv_obj_has_state(sw, LV_STATE_CHECKED);
 
     if (*state == false) {
-        ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
+        bno085_enable_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
 }
 
@@ -123,11 +136,10 @@ static void on_sensor_calibration_button_pressed(lv_event_t * e) {
 }
 
 
-lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
+// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
+static void fill_sensor_config_page(lv_obj_t * sub_page_config_view) {
     lv_obj_t * container;
     lv_obj_t * config_item;
-
-    lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
     // Recoil acceleration trigger level
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Recoil Trigger Level (m/s^2)");
@@ -156,6 +168,12 @@ lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent
     // Sensor calibration
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Sensor Calibration");
     sensor_calibration_button = create_single_button(container, LV_SYMBOL_WARNING, on_sensor_calibration_button_pressed);
+}
+
+
+lv_obj_t * create_sensor_config_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
+    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_sensor_config_page);
+    sensor_config_page = sub_page_config_view;
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);

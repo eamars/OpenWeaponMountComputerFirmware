@@ -36,9 +36,6 @@ static EventGroupHandle_t ota_event_group = NULL;
 static lv_obj_t * progress_label;
 static lv_obj_t * progress_bar;
 
-extern lv_obj_t * tile_ota_mode_view;
-extern lv_obj_t * main_tileview;
-extern lv_obj_t * default_tile;
 
 static TaskHandle_t ota_poller_task_handle;
 static TaskHandle_t ota_update_task_handle;
@@ -154,14 +151,14 @@ static esp_err_t http_client_init_cb(esp_http_client_handle_t http_client) {
 }
 
 
- void set_ota_prompt_view_visibility(bool is_visible) {
+void set_ota_prompt_view_visibility(bool is_visible) {
     if (is_visible) {
         // Shift to OTA view
         lv_obj_remove_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
     }
- }
+}
 
 esp_err_t fetch_manifest_from_source(const char * ota_source) {
     esp_err_t ret;
@@ -297,12 +294,15 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
         const esp_app_desc_t * app_desc = esp_app_get_description();
         ESP_LOGI(TAG, "Running version: %s", app_desc->version);
 
+        // A version that cannot be read is never offered
         version_t self_version;
-        parse_git_describe_version(app_desc->version, &self_version);
+        ret = parse_git_describe_version(app_desc->version, &self_version);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Cannot read the running version %s", app_desc->version);
 
         // Read the target version
         version_t other_version;
-        parse_git_describe_version(ota_manifest.version, &other_version);
+        ret = parse_git_describe_version(ota_manifest.version, &other_version);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Cannot read the manifest version %s", ota_manifest.version);
 
         // Compare
         if (compare_version(&self_version, &other_version) >= 0) {
@@ -380,16 +380,12 @@ void ota_poller_task(void *p) {
     ESP_LOGI(TAG, "Manifest downloaded, waiting for OTA update");
 
     vTaskDeleteWithCaps(NULL);   // safely remove this task
- }
+}
 
 
- void ota_update_task(void *p) {
+void ota_update_task(void *p) {
     // Create OTA event group
     ESP_ERROR_CHECK(create_ota_event_group());
-
-    // Disable task watchdog to ensure the OTA is smooth
-    // Also in case the network is down and network stack is deleted. 
-    esp_task_wdt_delete(NULL);
 
     // Wait for manifest to be downloaded
     xEventGroupWaitBits(ota_event_group, OTA_EVENT_MANIFEST_READY | OTA_EVENT_USER_CONFIRMED, pdFALSE, pdTRUE, portMAX_DELAY);
@@ -398,8 +394,15 @@ void ota_poller_task(void *p) {
     // -------------------------------------
     esp_err_t ret;
 
-    // Register event
-    ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, ota_event_handler, NULL));
+    // Register event. This runs once the user confirmed the update, so a failure is shown, not a reboot (ADR-005 C1)
+    ret = esp_event_handler_register(ESP_HTTPS_OTA_EVENT, ESP_EVENT_ANY_ID, ota_event_handler, NULL);
+    if (ret != ESP_OK) {
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text_fmt(ota_title_label, "OTA Failed - %s", esp_err_to_name(ret));
+            lvgl_port_unlock();
+        }
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_event_handler_register failed");
+    }
 
     esp_http_client_config_t http_config = {
         .host = ota_manifest.host,
@@ -462,7 +465,7 @@ void ota_poller_task(void *p) {
             lv_label_set_text(ota_title_label, "OTA Failed - Unable to download application header");
             lvgl_port_unlock();
         }
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_get_img_desc failed");
+        ESP_GOTO_ON_ERROR(ret, abort, TAG, "esp_https_ota_get_img_desc failed");
     }
     else {
         if (lvgl_port_lock(0)) {
@@ -476,58 +479,74 @@ void ota_poller_task(void *p) {
 
     if (lvgl_port_lock(0)) {
         lv_label_set_text(ota_title_label, "Applying Update");
-        lv_label_set_text_fmt(progress_label, "0K/%dK", ota_size);
+        // The size is -1 when the server sends none (chunked transfer); then only the bytes read are shown
+        if (ota_size > 0) {
+            lv_label_set_text_fmt(progress_label, "0K/%dK", ota_size / 1024);
+        }
+        else {
+            lv_label_set_text(progress_label, "0K");
+        }
         lvgl_port_unlock();
     }
 
+    // esp_https_ota_perform returns after every read: ESP_ERR_HTTPS_OTA_IN_PROGRESS while data is
+    // still coming, ESP_OK once the whole image is read, any other code on a failure
     while (1) {
         ret = esp_https_ota_perform(https_ota_handle);
         if (ret != ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
-            break; 
+            break;
         }
 
-        // esp_https_ota_perform returns after every read operation which gives user the ability to
-        // monitor the status of OTA upgrade by calling esp_https_ota_get_image_len_read, which gives length of image
-        // data read so far.
         int ota_read_size = esp_https_ota_get_image_len_read(https_ota_handle);
-        // ESP_LOGI(TAG, "OTA Read size: %d", ota_read_size);
-
-        int percentage = ota_read_size * 100.0 / ota_size;
         if (lvgl_port_lock(0)) {
             // Update progress text and bar
-            lv_label_set_text_fmt(progress_label, "%dK/%dK", ota_read_size/1024, ota_size/1024);
-            lv_bar_set_value(progress_bar, percentage, LV_ANIM_OFF);
+            if (ota_size > 0) {
+                lv_label_set_text_fmt(progress_label, "%dK/%dK", ota_read_size / 1024, ota_size / 1024);
+                lv_bar_set_value(progress_bar, (int) (ota_read_size * 100.0 / ota_size), LV_ANIM_OFF);
+            }
+            else {
+                lv_label_set_text_fmt(progress_label, "%dK", ota_read_size / 1024);
+            }
             lvgl_port_unlock();
         }
 
-        // Check for the progres
-        if (esp_https_ota_is_complete_data_received(https_ota_handle)) {
-            // Data receive complete
-            ret = esp_https_ota_finish(https_ota_handle);
-            if (ret != ESP_OK) {
-                if (lvgl_port_lock(0)) {
-                    lv_label_set_text_fmt(ota_title_label, "OTA Failed - %d", ret);
-                    lvgl_port_unlock();
-                }
-                ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_finish failed");
-            }
-            else {
-                if (lvgl_port_lock(0)) {
-                    lv_label_set_text(ota_title_label, "OTA Success");
-                    lvgl_port_unlock();
-                }
-
-                // Set the next boot partition
-                ret = esp_ota_set_boot_partition(ota_partition);
-                ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to set boot partition");
-                
-                break;
-            }
-        }
-        else {
-            vTaskDelay(pdMS_TO_TICKS(20));
-        }
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
+
+    if (ret != ESP_OK || !esp_https_ota_is_complete_data_received(https_ota_handle)) {
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text_fmt(ota_title_label, "OTA Failed - Download incomplete (%s)", esp_err_to_name(ret));
+            lvgl_port_unlock();
+        }
+        ret = (ret == ESP_OK) ? ESP_FAIL : ret;
+        ESP_GOTO_ON_ERROR(ret, abort, TAG, "esp_https_ota_perform failed");
+    }
+
+    // Validates the image and frees the handle, whether it succeeds or not
+    ret = esp_https_ota_finish(https_ota_handle);
+    https_ota_handle = NULL;
+    if (ret != ESP_OK) {
+        if (lvgl_port_lock(0)) {
+            lv_label_set_text_fmt(ota_title_label, "OTA Failed - %s", esp_err_to_name(ret));
+            lvgl_port_unlock();
+        }
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "esp_https_ota_finish failed");
+    }
+
+    if (lvgl_port_lock(0)) {
+        lv_label_set_text(ota_title_label, "OTA Success");
+        lvgl_port_unlock();
+    }
+
+    // Set the next boot partition
+    ret = esp_ota_set_boot_partition(ota_partition);
+    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to set boot partition");
+    goto finally;
+
+abort:
+    // A failure after esp_https_ota_begin: close the connection, free the handle and drop the partial image
+    // (ADR-005 B14)
+    esp_https_ota_abort(https_ota_handle);
 
 finally:
     ESP_LOGI(TAG, "OTA Complete");
@@ -539,14 +558,14 @@ finally:
 
     vTaskDelete(NULL);   // safely remove this task
 
- }
+}
 
- static void on_ota_cancel_button_pressed(lv_event_t *e) {
+static void on_ota_cancel_button_pressed(lv_event_t *e) {
     ESP_LOGI(TAG, "Cancel OTA");
     set_ota_prompt_view_visibility(false);
- }
+}
 
- static void on_ota_accept_button_pressed(lv_event_t * e) {
+static void on_ota_accept_button_pressed(lv_event_t * e) {
     ESP_LOGI(TAG, "Start Upgrade pressed");
     set_ota_prompt_view_visibility(false);
 
@@ -556,16 +575,16 @@ finally:
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
 
     xEventGroupSetBits(ota_event_group, OTA_EVENT_USER_CONFIRMED);
- }
+}
 
- void on_reboot_button_pressed(lv_event_t * e) {
+void on_reboot_button_pressed(lv_event_t * e) {
     ESP_LOGI(TAG, "Restarting");
     esp_restart();
- }
+}
 
- static void on_menu_ota_upgrade_button_pressed(lv_event_t *e) {
+static void on_menu_ota_upgrade_button_pressed(lv_event_t *e) {
     set_ota_prompt_view_visibility(true);
- }
+}
 
 
 void create_ota_mode_view(lv_obj_t * parent) {

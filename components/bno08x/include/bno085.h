@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "freertos/timers.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
 
 #include "driver/i2c_master.h"  
 #include "driver/spi_master.h"
@@ -37,6 +38,9 @@
 #define DEG_TO_RAD(deg) ((deg) * M_PI / 180.0f)
 #define RAD_TO_DEG(rad) ((rad) * 180.0f / M_PI)
 
+// One slot per sensor ID (0 .. SH2_MAX_SENSOR_ID); the sh2 decoder rejects any other ID before the table is used
+#define BNO085_REPORT_TABLE_LEN (SH2_MAX_SENSOR_ID + 1)
+
 
 typedef struct {
     float real;
@@ -55,8 +59,11 @@ typedef struct {
 typedef struct {
     sh2_Hal_t _HAL; // SH2 HAL interface -> Align the memory with the context structure allowing better type casting
     TaskHandle_t sensor_poller_task_handle;
-    sensor_report_config_t enabled_sensor_report_list[SH2_MAX_SENSOR_EVENT_LEN];
+    sensor_report_config_t enabled_sensor_report_list[BNO085_REPORT_TABLE_LEN];
     EventGroupHandle_t sensor_event_control;
+    // The sh2 library keeps one shared, single-threaded state: every sh2_*() call holds this lock.
+    // Recursive, because sh2 callbacks run inside sh2_service() and may call into sh2 again.
+    SemaphoreHandle_t sh2_lock;
 
     gpio_num_t interrupt_pin;
     gpio_num_t reset_pin;
@@ -108,6 +115,22 @@ esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx);
  * @brief Wake up the sensor from sleep state
  */
 esp_err_t bno085_wake_up(bno085_ctx_t *ctx);
+
+/**
+ * @brief Pulse the reset line while running, so the sensor restarts as after an unexpected reset.
+ * For tests of the reset recovery; returns ESP_ERR_NOT_SUPPORTED without a reset pin.
+ */
+esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx);
+
+/**
+ * @brief Tare the given axes now (sh2_setTareNow)
+ */
+esp_err_t bno085_tare_now(bno085_ctx_t *ctx, uint8_t axes, sh2_TareBasis_t basis);
+
+/**
+ * @brief Persist the current tare in the sensor (sh2_persistTare)
+ */
+esp_err_t bno085_persist_tare(bno085_ctx_t *ctx);
 
 
 /**

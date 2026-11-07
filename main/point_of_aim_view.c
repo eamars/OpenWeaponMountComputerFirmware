@@ -17,6 +17,7 @@
 #include "esp_err.h"
 
 #include "lvgl.h"
+#include "app.h"
 
 #define TAG "POIView"
 #define TARGET_RADIUS_MARGIN_PX 5      // target margin relates to the chart size (shorter edge)
@@ -57,9 +58,6 @@ static TaskHandle_t sensor_event_poller_task_handle;
 static lv_obj_t * chart;
 static lv_chart_series_t * data_series;
 
-extern bno085_ctx_t * bno085_dev;
-extern sensor_config_t sensor_config;
-extern system_config_t system_config;
 
 const float eps = 1e-6f;
 static float sensor_rv_pitch_thread_unsafe, sensor_rv_yaw_thread_unsafe;
@@ -73,9 +71,6 @@ IRAM_ATTR esp_err_t euler_to_xy(float pitch, float yaw, float *out_x, float *out
 
 
 static void sensor_event_poller_task(void *p) {
-    // Disable the task watchdog as the task is expected to block indefinitely
-    esp_task_wdt_delete(NULL);
-
     TickType_t last_poll_tick = xTaskGetTickCount();
 
     while (1) {

@@ -1,4 +1,6 @@
 #include "pmic_axp2101.h"
+#include "pmic_config.h"
+#include "ui_bridge.h"
 #include "esp_crc.h"
 #include "esp_log.h"
 #include "esp_check.h"
@@ -9,6 +11,7 @@
 #include "ota_mode.h"
 
 #include "lvgl.h"
+#include "app.h"
 
 #define TAG "AXP2101"
 #define NVS_NAMESPACE "PMG"
@@ -16,7 +19,6 @@
 static lv_obj_t * power_menu = NULL;
 static lv_obj_t * power_management_status_label_1 = NULL;
 static lv_obj_t * power_management_status_label_2 = NULL;
-extern power_management_config_t power_management_config;
 
 const char vbus_current_limit_options[] = "100mA\n500mA\n900mA\n1000mA\n1500mA\n2000mA";
 const char battery_charge_current_options[] = "100mA\n200mA\n300mA\n400mA\n500mA\n600mA\n700mA\n800mA\n900mA\n1000mA";
@@ -35,8 +37,6 @@ const power_management_config_t default_power_management_config = {
 };
 
 // from app.c
-extern axp2101_ctx_t * axp2101_dev;
-extern lv_obj_t * msg_box;
 
 HEAPS_CAPS_ATTR static char status_str_l1[64] = {0};
 HEAPS_CAPS_ATTR static char status_str_l2[64] = {0};
@@ -131,27 +131,34 @@ static void update_battery_charge_voltage_event_cb(lv_event_t *e) {
 }
 
 
-static void on_save_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(save_pmic_config());
+static lv_obj_t * power_management_config_page = NULL;
 
-    update_info_msg_box(msg_box, "Configuration Saved");
+
+static void on_save_button_pressed(lv_event_t * e) {
+    esp_err_t ret = save_pmic_config();
+
+    // The charge settings take effect now, not at the next boot (ADR-005 B15); a failed save applies nothing
+    if (ret == ESP_OK) {
+        axp2101_request_apply_charge_settings(axp2101_dev);
+    }
+
+    update_info_msg_box_result(msg_box, ret, "Configuration Saved", "Save failed");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(load_pmic_config());
+    // Nothing to apply: the timeouts are read live, the charge settings reach the chip on Save (ADR-005 B15)
+    esp_err_t ret = load_pmic_config();
+    config_page_rebuild(power_management_config_page);
 
-    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
-
-    // TODO: Update current displayed values
+    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
 }
 
 static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&power_management_config, &default_power_management_config, sizeof(power_management_config));
+    config_page_rebuild(power_management_config_page);
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-
-    // TODO: Update current display values
 }
 
 
@@ -180,20 +187,22 @@ void on_reboot_button_pressed(lv_event_t * e);
 void on_power_off_button_pressed(lv_event_t * e) {
     ESP_LOGI(TAG, "Shutting down");
 
-    pmic_power_off();
- }
+    // The PMIC service's task does the shutdown; it is the only code that talks to the chip (ADR-005 step 3)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(pmic_request_power_off());
+}
 
 
-void power_management_view_update_status(axp2101_ctx_t *ctx) {
-    snprintf(status_str_l1, sizeof(status_str_l1), "SoC:%d,VBAT:%dmV", ctx->status.battery_percentage, ctx->status.vbatt_voltage_mv);
-    snprintf(status_str_l2, sizeof(status_str_l2), "VBUS:%dmV,VSYS:%dmV", ctx->status.vbus_voltage_mv, ctx->status.vsys_voltage_mv);
+// Bound to the UI bridge's PMIC status subject (LVGL context). Both labels change together, so one observer
+// on the first label sets both
+static void power_management_status_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
+    const axp2101_status_t * status = (const axp2101_status_t *) lv_subject_get_pointer(subject);
 
-    if (power_management_status_label_1) {
-        lv_label_set_text_static(power_management_status_label_1, status_str_l1);
-    }
-    if (power_management_status_label_2) {
-        lv_label_set_text_static(power_management_status_label_2, status_str_l2);
-    }
+    snprintf(status_str_l1, sizeof(status_str_l1), "SoC:%d,VBAT:%dmV", status->battery_percentage, status->vbatt_voltage_mv);
+    snprintf(status_str_l2, sizeof(status_str_l2), "VBUS:%dmV,VSYS:%dmV", status->vbus_voltage_mv, status->vsys_voltage_mv);
+
+    // Setting the same static buffer again still marks the label for re-measuring and redrawing
+    lv_label_set_text_static(power_management_status_label_1, status_str_l1);
+    lv_label_set_text_static(power_management_status_label_2, status_str_l2);
 }
 
 
@@ -234,22 +243,22 @@ static void create_power_menu(lv_obj_t * parent) {
 
 
 void power_menu_make_visible() {
-    lv_obj_clear_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+    if (power_menu != NULL) {
+        lv_obj_clear_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 
-lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
+// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
+static void fill_power_management_config_page(lv_obj_t * sub_page_config_view) {
     lv_obj_t * container;
     lv_obj_t * config_item;
 
-    lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
-
-    // Set initial status
-    power_management_view_update_status(axp2101_dev);
-
-    // Battery status label
+    // Battery status labels; the observer sets their text now and on every new reading
     power_management_status_label_1 = create_config_label_static(sub_page_config_view, status_str_l1);
     power_management_status_label_2 = create_config_label_static(sub_page_config_view, status_str_l2);
+    lv_subject_add_observer_obj(&ui_pmic_status, power_management_status_observer_cb,
+                                power_management_status_label_1, NULL);
 
     // Idle timeout
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Idle Timeout");
@@ -275,7 +284,13 @@ lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * pare
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
     create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
-    
+}
+
+
+lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page) {
+    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_power_management_config_page);
+    power_management_config_page = sub_page_config_view;
+
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
     lv_obj_t * img = lv_image_create(cont);

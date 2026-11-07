@@ -22,6 +22,7 @@
 #include "wifi.h"
 #include "lvgl_display.h"
 #include "main_tileview.h"
+#include "app.h"
 
 #define TAG "LowPowerMode"
 
@@ -35,19 +36,8 @@ typedef enum {
 } low_power_mode_control_event_e;
 
 
-extern esp_lcd_panel_io_handle_t io_handle;
-extern esp_lcd_panel_handle_t panel_handle;
 
-extern system_config_t system_config;
-extern lv_indev_t * lvgl_touch_handle;
-extern sensor_config_t sensor_config;
-extern bno085_ctx_t * bno085_dev;
-extern axp2101_ctx_t * axp2101_dev;
-extern wifi_user_config_t wifi_user_config;
 
-extern lv_obj_t * main_tileview;
-extern lv_obj_t * default_tile;
-extern lv_obj_t * tile_low_power_mode_view;
 
 lv_obj_t * pre_low_power_mode_tile;
 
@@ -67,20 +57,33 @@ void IRAM_ATTR update_low_power_mode_last_activity_event() {
 }
 
 
-void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *data) {
-    // Update last activity tick if there is any touch activity
-    if (data->state == LV_INDEV_STATE_PR || data->enc_diff != 0) {
-        update_low_power_mode_last_activity_event();
-
-        if (is_idle_mode_activated()) {
-            wake_from_idle_mode();
-            return;  // don't propagate the touch event for the wakeup
-        }
+bool low_power_mode_swallow_wake_press(bool pressed, bool *wake_press) {
+    if (!pressed) {
+        // The wake gesture ends with the release; LVGL already sees the input as released
+        *wake_press = false;
+        return false;
     }
 
-    // Call the original read callback
+    update_low_power_mode_last_activity_event();
+    if (!*wake_press && is_idle_mode_activated()) {
+        *wake_press = true;
+        wake_from_idle_mode();
+    }
+    return *wake_press;
+}
+
+
+void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *data) {
+    static bool wake_press = false;
+
+    // Read first: LVGL clears data before every read, so the press is only known after the real read
+    // (ADR-005 B3; the old test before the read never saw a touch)
     if (original_read_cb) {
         original_read_cb(indev_drv, data);
+    }
+
+    if (low_power_mode_swallow_wake_press(data->state == LV_INDEV_STATE_PRESSED, &wake_press)) {
+        data->state = LV_INDEV_STATE_RELEASED;
     }
 }
 
@@ -150,11 +153,13 @@ static void enter_idle_mode() {
 
     lvgl_port_unlock();
 
-    // Outside the LVGL lock: Wi-Fi event handlers take it
-    wifi_request_stop();
+    // Outside the LVGL lock: the Wi-Fi service posts to the UI bridge, which takes it. Returns once the radio is
+    // off (ADR-005 step 3)
+    wifi_request_suspend(WIFI_SUSPEND_IDLE);
 
-    // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler)
-    ESP_ERROR_CHECK(esp_pm_configure(&idle_pm_config));
+    // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler). A failure
+    // is logged and the unit idles at the active clock (ADR-005 C1)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_configure(&idle_pm_config));
 }
 
 
@@ -165,7 +170,7 @@ static void exit_idle_mode() {
     }
 
     ESP_LOGI(TAG, "Exiting idle mode");
-    ESP_ERROR_CHECK(esp_pm_configure(&active_pm_config));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_configure(&active_pm_config));  // logged; the wake goes on
 
     lvgl_port_lock(0);
 
@@ -199,8 +204,8 @@ static void exit_idle_mode() {
 
     lvgl_port_unlock();
 
-    // Outside the LVGL lock: Wi-Fi event handlers take it
-    wifi_request_start();
+    // Outside the LVGL lock: the Wi-Fi service posts to the UI bridge, which takes it
+    wifi_request_suspend(WIFI_SUSPEND_NONE);
 }
 
 
@@ -223,8 +228,8 @@ void enter_sleep_mode() {
     // Set flag
     xEventGroupSetBits(low_power_control_event, IN_SLEEP_MODE);
 
-    // Stop Wifi
-    wifi_request_stop();
+    // Stop Wifi; returns once the radio is off, so light sleep may follow
+    wifi_request_suspend(WIFI_SUSPEND_SLEEP);
 
 #if USE_BNO085
     // // Stop the reporting
@@ -245,15 +250,15 @@ void enter_sleep_mode() {
         set_display_brightness(&io_handle, 0);
     }
 
-    // Enter light sleep mode
-    ESP_ERROR_CHECK(esp_light_sleep_start());
+    // Enter light sleep mode; if it is refused, the wake path below runs at once (logged)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_light_sleep_start());
     // vTaskDelay(pdMS_TO_TICKS(5000));  // Sleep for a while to allow the system to enter sleep mode. The actual sleep duration is determined by the hardware and the wakeup source, so we don't use esp_light_sleep_start() here to have better control over the flow after waking up.
     
     /* Sleep Starts */
 
     /* Sleep Ends */
     wakeup_cause = esp_sleep_get_wakeup_cause();
-    ESP_LOGI(TAG, "Woke up from sleep, wakeup cause: %d", wakeup_cause);
+    ESP_LOGI(TAG, "Woke up from sleep, wakeup cause: %" PRIu32, wakeup_cause);
 
     // Resume the previous operation
     update_low_power_mode_last_activity_event();  // Update the last activity tick to prevent immediately re-entering low power mode
@@ -284,7 +289,7 @@ void enter_sleep_mode() {
     }
 
     // Restore wifi
-    wifi_request_start();
+    wifi_request_suspend(WIFI_SUSPEND_NONE);
 }
 
 
@@ -301,7 +306,8 @@ void low_power_monitor_task(void *p) {
     // Configure the wakeup sources. This includes
     // 1) Touch interrupt: to wake up the system when there is a touch event
     // 2) BNO085 interrupt: to wake up the system when there is a sensor event, which indicates the user is interacting with the system
-    ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(
+    // Only light sleep uses them, so a failure is logged and idle/wake carry on (ADR-005 C1)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_sleep_enable_ext1_wakeup_io(
             (1 << TOUCHSCREEN_INT_PIN) |
             // (1 << GPIO_NUM_0) | 
             (1 << BNO085_INT_PIN) 
@@ -332,7 +338,7 @@ void low_power_monitor_task(void *p) {
         //     (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE) != 0,
         //     (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE) != 0
         // );
-        ESP_LOGI(TAG, "Active duration: %d ms, Idle duration: %d ms", active_duration_ms, idle_duration_ms);
+        ESP_LOGI(TAG, "Active duration: %" PRIu32 " ms, Idle duration: %" PRIu32 " ms", active_duration_ms, idle_duration_ms);
 
         // In Idle mode
         if (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) {
@@ -377,10 +383,12 @@ void low_power_monitor_task(void *p) {
         {                                            
             uint32_t sleep_timeout_ms = sleep_timeout_to_secs(power_management_config.sleep_timeout) * 1000;
 
-            // Have sayed in idle long enough
+            // Have stayed in idle long enough
             if (idle_duration_ms > sleep_timeout_ms) {
                 // enter_sleep_mode();
-                pmic_power_off();
+                // The PMIC service shuts the unit down from its own task (ADR-005 step 3). Without a PMIC
+                // there is nothing to do: the request returns ESP_ERR_INVALID_STATE
+                (void) pmic_request_power_off();
             }
         }
 
@@ -390,10 +398,7 @@ void low_power_monitor_task(void *p) {
 
 void sensor_stability_detector_poller_task(void *p) {
     // Initialize sensor
-    ESP_ERROR_CHECK(bno085_enable_stability_detector_report(bno085_dev, SENSOR_STABILITY_DETECTOR_REPORT_PERIOD_MS));
-
-    // Disable the task watchdog as the task is expected to block indefinitely
-    esp_task_wdt_delete(NULL);
+    bno085_enable_stability_detector_report(bno085_dev, SENSOR_STABILITY_DETECTOR_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
 
     while (1) {
         uint16_t stability;
@@ -411,12 +416,17 @@ void sensor_stability_detector_poller_task(void *p) {
     }
 }
 
-void create_low_power_mode_view(lv_obj_t * parent) {
+esp_err_t low_power_mode_init() {
     low_power_control_event = xEventGroupCreate();
     if (low_power_control_event == NULL) {
         ESP_LOGE(TAG, "Failed to create low_power_control_event");
-        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
     }
+    return ESP_OK;
+}
+
+
+void create_low_power_mode_view(lv_obj_t * parent) {
 
     // Set background to save power on AMOLED screen
     lv_obj_set_style_bg_color(parent, lv_color_black(), LV_PART_MAIN);
@@ -427,6 +437,15 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     lv_label_set_text(low_power_mode_label, "Low Power Mode");
     lv_obj_set_style_text_color(low_power_mode_label, lv_color_white(), LV_PART_MAIN);
     lv_obj_center(low_power_mode_label);
+}
+
+
+esp_err_t low_power_mode_start() {
+    // Inject the wrapper to the pointer input, before the tasks that can put the unit to idle exist
+    lvgl_port_lock(0);
+    original_read_cb = lv_indev_get_read_cb(lvgl_touch_handle);
+    lv_indev_set_read_cb(lvgl_touch_handle, touchpad_read_cb_wrapper);
+    lvgl_port_unlock();
 
 
     // Create event poller task
@@ -440,7 +459,7 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for low_power_monitor_task");
-        ESP_ERROR_CHECK(ESP_FAIL);
+        return ESP_ERR_NO_MEM;
     }
 
 #if USE_BNO085
@@ -456,13 +475,11 @@ void create_low_power_mode_view(lv_obj_t * parent) {
     );
     if (rtos_return != pdPASS) {
         ESP_LOGE(TAG, "Failed to allocate memory for sensor_stability_detector_poller_task");
-        ESP_ERROR_CHECK(ESP_FAIL);
+        return ESP_ERR_NO_MEM;
     }
 #endif  // USE_BNO085
 
-    // Inject the wrapper to the pointer input
-    original_read_cb = lv_indev_get_read_cb(lvgl_touch_handle);
-    lv_indev_set_read_cb(lvgl_touch_handle, touchpad_read_cb_wrapper);
+    return ESP_OK;
 }
 
 bool is_idle_mode_activated() {

@@ -1,12 +1,15 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 
+#include "esp_attr.h"
 #include "esp_core_dump.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_task_wdt.h"
 
 #include "app_cfg.h"
 #include "crash_report.h"
@@ -14,6 +17,47 @@
 #define TAG "CrashReport"
 
 #define BT_MAX_DEPTH (sizeof(((esp_core_dump_bt_info_t *) 0)->bt) / sizeof(uint32_t))
+#define WDT_USERS_MAGIC 0x55544457  // "WDTU"
+
+// The task watchdog panics from its interrupt, so the core dump names the task it interrupted, not the
+// watchdog users that missed their feed. The watchdog's ISR hook saves their names here; RTC memory keeps
+// them through the panic reset, and the magic tells a saved list from power-on contents (ADR-005 B20)
+typedef struct {
+    uint32_t magic;
+    uint32_t len;
+    char names[96];
+} wdt_users_record_t;
+
+static RTC_NOINIT_ATTR wdt_users_record_t wdt_users_record;
+
+
+static void wdt_users_append(void *opaque, const char *msg) {
+    // esp_task_wdt_print_triggered_tasks sends a caption first, then "\n - ", the name and the CPU per user
+    int *calls = (int *) opaque;
+    if ((*calls)++ == 0) {
+        return;
+    }
+    if (strcmp(msg, "\n - ") == 0) {
+        msg = (wdt_users_record.len == 0) ? "" : ", ";
+    }
+
+    size_t room = sizeof(wdt_users_record.names) - 1 - wdt_users_record.len;
+    size_t n = strnlen(msg, room);
+    memcpy(wdt_users_record.names + wdt_users_record.len, msg, n);
+    wdt_users_record.len += n;
+    wdt_users_record.names[wdt_users_record.len] = '\0';
+}
+
+
+// Called by the task watchdog's ISR after it printed the users that missed their feed, before the panic
+void esp_task_wdt_isr_user_handler(void) {
+    int calls = 0;
+    wdt_users_record.len = 0;
+    wdt_users_record.names[0] = '\0';
+    esp_task_wdt_print_triggered_tasks(wdt_users_append, &calls, NULL);
+    wdt_users_record.magic = WDT_USERS_MAGIC;
+}
+
 
 static const char *reset_reason_name(esp_reset_reason_t reason) {
     switch (reason) {
@@ -90,11 +134,20 @@ static void log_core_dump_summary(void) {
 void crash_report_log_last_reset(void) {
     esp_reset_reason_t reason = esp_reset_reason();
 
+    // Read once: a later reset of another kind must not report this list again
+    uint32_t saved_magic = wdt_users_record.magic;
+    wdt_users_record.magic = 0;
+
     if (!reset_reason_is_crash(reason)) {
         ESP_LOGI(TAG, "Reset reason: %s (%d)", reset_reason_name(reason), (int) reason);
         return;
     }
 
     ESP_LOGW(TAG, "Reset reason: %s (%d)", reset_reason_name(reason), (int) reason);
+    if (reason == ESP_RST_TASK_WDT && saved_magic == WDT_USERS_MAGIC &&
+        wdt_users_record.len < sizeof(wdt_users_record.names)) {
+        // The core dump below names the interrupted task, not these
+        ESP_LOGW(TAG, "Task watchdog: not fed in time by %s", wdt_users_record.names);
+    }
     log_core_dump_summary();
 }

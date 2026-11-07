@@ -35,4 +35,7 @@ void system_config_set_rotation(lv_display_rotation_t rotation);
 
 lv_obj_t * create_system_config_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page);
 
+// Shared state, defined in system_config.c
+extern system_config_t system_config;
+
 #endif  // SYSTEM_CONFIG_H_

@@ -16,6 +16,9 @@
 #include "low_power_mode.h"
 #include "bno085.h"
 #include "sensor_config.h"
+#include "digital_level_view.h"
+#include "app.h"
+#include "main_tileview.h"
 
 
 #define TAG "SensorCalibrationView"
@@ -25,8 +28,6 @@ typedef enum {
 } sensor_calibration_task_control_bit_e;
 
 
-extern bno085_ctx_t * bno085_dev;
-extern sensor_config_t sensor_config;
 
 static EventGroupHandle_t sensor_calibration_task_control;
 
@@ -34,17 +35,12 @@ lv_obj_t * rv_measurements_label = NULL;
 lv_obj_t * rv_accuracy_label = NULL;
 lv_obj_t * last_tile_before_enter_calibration = NULL;
 
-extern lv_obj_t * main_tileview;                 // from main_tileview.c
-extern lv_obj_t * default_tile;                         // from main_tileview.c`
 
 HEAPS_CAPS_ATTR static char rv_measurements[64] = {0};
 HEAPS_CAPS_ATTR static char rv_accuracy_str[32] = {0};
 
 void rotation_vector_poller_task(void *p) {
     float roll, pitch, yaw, accuracy;
-
-    // Disable the task watchdog as the task is expected to block indefinitely
-    esp_task_wdt_delete(NULL);
 
     while (1) {
         xEventGroupWaitBits(sensor_calibration_task_control, RV_POLLER_RUN, pdFALSE, pdFALSE, portMAX_DELAY);
@@ -73,22 +69,17 @@ void rotation_vector_poller_task(void *p) {
 void on_tare_button_clicked(lv_event_t * e) {
     ESP_LOGI(TAG, "Tare function called");
 
-    int sh2_ret;
-
-    sh2_ret = sh2_setTareNow(SH2_TARE_X | SH2_TARE_Y | SH2_TARE_Z, SH2_TARE_BASIS_ROTATION_VECTOR);
-    if (sh2_ret == SH2_OK) {
+    // Through the driver, which serialises access to the sh2 library (ADR-005 B5)
+    if (bno085_tare_now(bno085_dev, SH2_TARE_X | SH2_TARE_Y | SH2_TARE_Z, SH2_TARE_BASIS_ROTATION_VECTOR) == ESP_OK) {
         ESP_LOGI(TAG, "Tare command sent successfully");
 
         // persist th tare
-        sh2_ret = sh2_persistTare();
-        if (sh2_ret == SH2_OK) {
+        if (bno085_persist_tare(bno085_dev) == ESP_OK) {
             ESP_LOGI(TAG, "Tare persisted successfully");
-        } else {
-            ESP_LOGE(TAG, "Failed to persist tare: %d", sh2_ret);
         }
-    }
-    else {
-        ESP_LOGE(TAG, "Failed to send tare command: %d", sh2_ret);
+
+        // The tare pose must read 0 on the level at the current screen rotation (ADR-005 B25)
+        digital_level_view_zero_after_tare();
     }
 
     // Move back to the previous tile
@@ -110,7 +101,7 @@ void enter_sensor_calibration_mode(bool enable) {
         prevent_idle_mode_enter(true);
         
         // Enable RV report from BNO085
-        ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_REPORT_PERIOD_MS));
+        bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
 
         // Enable the poller task to update the RV measurement on the screen
         xEventGroupSetBits(sensor_calibration_task_control, RV_POLLER_RUN);
@@ -122,7 +113,7 @@ void enter_sensor_calibration_mode(bool enable) {
         xEventGroupClearBits(sensor_calibration_task_control, RV_POLLER_RUN);
 
         // Set RV report back to idle mode period
-        ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS));
+        bno085_enable_rotation_vector_report(bno085_dev, SENSOR_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
 }
 

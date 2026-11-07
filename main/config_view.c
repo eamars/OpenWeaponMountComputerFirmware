@@ -1,5 +1,7 @@
 #include "config_view.h"
 
+#include <stdio.h>
+
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
@@ -10,8 +12,10 @@
 #include "sensor_config.h"
 #include "about_config.h"
 #include "wifi_config.h"
+#include "ui_bridge.h"
 #include "ota_mode.h"
 #include "pmic_axp2101.h"
+#include "pmic_config.h"
 
 #define TAG "ConfigView"
 
@@ -23,10 +27,9 @@ static lv_obj_t * status_bar;
 static lv_obj_t * status_bar_wireless_state;
 static lv_obj_t * status_bar_battery_state;
 
-HEAPS_CAPS_ATTR static char status_bar_wireless_state_str[4] = {0};
-HEAPS_CAPS_ATTR static char status_bar_battery_state_str[4] = {0};
+static void status_bar_wifi_observer_cb(lv_observer_t * observer, lv_subject_t * subject);
+static void status_bar_battery_observer_cb(lv_observer_t * observer, lv_subject_t * subject);
 
-extern system_config_t system_config;
 
 
 lv_obj_t * create_menu_container_with_text(lv_obj_t * parent, const char * icon, const char * text) {
@@ -358,6 +361,47 @@ void update_info_msg_box(lv_obj_t * msg_box, const char * text) {
     lv_obj_clear_flag(msg_box, LV_OBJ_FLAG_HIDDEN);
 }
 
+void update_info_msg_box_result(lv_obj_t * msg_box, esp_err_t ret, const char * done_text, const char * failed_text) {
+    if (ret == ESP_OK) {
+        update_info_msg_box(msg_box, done_text);
+        return;
+    }
+
+    char text[64];
+    snprintf(text, sizeof(text), "%s: %s", failed_text, esp_err_to_name(ret));
+    update_info_msg_box(msg_box, text);
+}
+
+lv_obj_t * create_config_page(lv_obj_t * menu, config_page_fill_func_t fill) {
+    lv_obj_t * page = lv_menu_page_create(menu, NULL);
+    lv_obj_set_user_data(page, (void *) fill);
+    fill(page);
+
+    return page;
+}
+
+
+// LVGL task (lv_async_call), after the Reload or Reset event has returned
+static void config_page_rebuild_async(void * p) {
+    lv_obj_t * page = (lv_obj_t *) p;
+    config_page_fill_func_t fill = (config_page_fill_func_t) lv_obj_get_user_data(page);
+    int32_t scroll_y = lv_obj_get_scroll_y(page);
+
+    lv_obj_clean(page);  // observers bound to the old widgets go with them
+    fill(page);
+
+    lv_obj_update_layout(page);
+    lv_obj_scroll_to_y(page, scroll_y, LV_ANIM_OFF);
+}
+
+
+void config_page_rebuild(lv_obj_t * page) {
+    if (page) {
+        lv_async_call(config_page_rebuild_async, page);
+    }
+}
+
+
 void set_rotation_config_view(lv_display_rotation_t rotation) {
     if (rotation == LV_DISPLAY_ROTATION_0 || rotation == LV_DISPLAY_ROTATION_180) {
         // Parent container layout
@@ -424,15 +468,11 @@ void create_config_view(lv_obj_t *parent) {
 
     // WiFi icon
     status_bar_wireless_state = lv_label_create(status_bar);
-    memset(status_bar_wireless_state_str, 0, sizeof(status_bar_wireless_state_str));
-    lv_label_set_text_static(status_bar_wireless_state, status_bar_wireless_state_str);
-    status_bar_update_wireless_state(WIRELESS_STATE_NOT_PROVISIONED);
+    lv_subject_add_observer_obj(&ui_wifi_state, status_bar_wifi_observer_cb, status_bar_wireless_state, NULL);
 
     // Battery icon
     status_bar_battery_state = lv_label_create(status_bar);
-    memset(status_bar_battery_state_str, 0, sizeof(status_bar_battery_state_str));
-    lv_label_set_text_static(status_bar_battery_state, status_bar_battery_state_str);
-    status_bar_update_battery_level(101);
+    lv_subject_add_observer_obj(&ui_battery_level, status_bar_battery_observer_cb, status_bar_battery_state, NULL);
 
     // Create menu item
     config_menu = lv_menu_create(parent_container);
@@ -484,65 +524,47 @@ void create_config_view(lv_obj_t *parent) {
 }
 
 
-void status_bar_update_wireless_state(wireless_state_e state) {
-    switch (state)
-    {
+// The Wi-Fi icon follows the Wi-Fi service through the UI bridge, in LVGL context. It used to be written into a
+// static buffer from the system event task with no lock and no redraw (ADR-005 B2)
+static const char * status_bar_wifi_symbol(wireless_state_e state) {
+    switch (state) {
+        case WIRELESS_STATE_PROVISIONING:           return LV_SYMBOL_SHUFFLE;
+        case WIRELESS_STATE_PROVISION_FAILED:       return LV_SYMBOL_WARNING;
+        case WIRELESS_STATE_PROVISION_EXPIRE:       return LV_SYMBOL_CLOSE;
+        case WIRELESS_STATE_CONNECTED:              return LV_SYMBOL_WIFI;
+        case WIRELESS_STATE_NOT_CONNECTED_EXPIRE:   return LV_SYMBOL_CLOSE;
         case WIRELESS_STATE_NOT_PROVISIONED:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
-            wifi_config_update_status("not provisioned");
-            break;
-        case WIRELESS_STATE_PROVISIONING:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_SHUFFLE, sizeof(LV_SYMBOL_SHUFFLE));
-            wifi_config_update_status("provisioning");
-            break;
-        case WIRELESS_STATE_PROVISION_FAILED:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_WARNING, sizeof(LV_SYMBOL_WARNING));
-            wifi_config_update_status("provision failed");
-            break;
-        case WIRELESS_STATE_PROVISION_EXPIRE:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_CLOSE, sizeof(LV_SYMBOL_CLOSE));
-            wifi_config_update_status("provision expired");
-            break;
         case WIRELESS_STATE_NOT_CONNECTED:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
-            wifi_config_update_status("not connected");
-            break;
         case WIRELESS_STATE_CONNECTING:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
-            wifi_config_update_status("connecting");
-            break;
-        case WIRELESS_STATE_CONNECTED:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_WIFI, sizeof(LV_SYMBOL_WIFI));
-            wifi_config_update_status("connected");
-            break;
         case WIRELESS_STATE_DISCONNECTED:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_LOOP, sizeof(LV_SYMBOL_LOOP));
-            wifi_config_update_status("disconnected");
-            break;
-        case WIRELESS_STATE_NOT_CONNECTED_EXPIRE:
-            memcpy(status_bar_wireless_state_str, LV_SYMBOL_CLOSE, sizeof(LV_SYMBOL_CLOSE));
-            wifi_config_update_status("connect expired");
-            break;
-        default:
-            break;
+        default:                                    return LV_SYMBOL_LOOP;
     }
 }
 
-void status_bar_update_battery_level(int level_percentage) {
-    if (level_percentage < 0) {
-        // Unknown state
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_WARNING, sizeof(LV_SYMBOL_WARNING));
-    } else if (level_percentage < 10) {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_EMPTY, sizeof(LV_SYMBOL_BATTERY_EMPTY));
-    } else if (level_percentage < 40) {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_1, sizeof(LV_SYMBOL_BATTERY_1));
-    } else if (level_percentage < 70) {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_2, sizeof(LV_SYMBOL_BATTERY_2));
-    } else if (level_percentage < 90) {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_3, sizeof(LV_SYMBOL_BATTERY_3));
-    } else if (level_percentage <= 100) {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_BATTERY_FULL, sizeof(LV_SYMBOL_BATTERY_FULL));
+static void status_bar_wifi_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
+    lv_label_set_text(lv_observer_get_target_obj(observer),
+                      status_bar_wifi_symbol((wireless_state_e) lv_subject_get_int(subject)));
+}
+
+// The battery icon follows the PMIC service the same way (the battery half of B2)
+static const char * status_bar_battery_symbol(int32_t level) {
+    if (level < 0) {
+        return LV_SYMBOL_WARNING;  // unknown
+    } else if (level < 10) {
+        return LV_SYMBOL_BATTERY_EMPTY;
+    } else if (level < 40) {
+        return LV_SYMBOL_BATTERY_1;
+    } else if (level < 70) {
+        return LV_SYMBOL_BATTERY_2;
+    } else if (level < 90) {
+        return LV_SYMBOL_BATTERY_3;
+    } else if (level <= 100) {
+        return LV_SYMBOL_BATTERY_FULL;
     } else {
-        memcpy(status_bar_battery_state_str, LV_SYMBOL_USB, sizeof(LV_SYMBOL_USB));
+        return LV_SYMBOL_USB;
     }
+}
+
+static void status_bar_battery_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
+    lv_label_set_text(lv_observer_get_target_obj(observer), status_bar_battery_symbol(lv_subject_get_int(subject)));
 }

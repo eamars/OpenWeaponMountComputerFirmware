@@ -19,6 +19,11 @@ typedef struct {
     int minor;
     int patch;
 } version_t;
+
+/**
+ * @brief Read major.minor.patch from a version string such as v1.2.3, v1.2.3-4-gabc or 1.2.3.
+ * Returns ESP_ERR_INVALID_VERSION if the string has no such version.
+ */
 esp_err_t parse_git_describe_version(const char *describe, version_t * version);
 
 /**

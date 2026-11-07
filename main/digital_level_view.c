@@ -49,17 +49,11 @@ static lv_obj_t * tilt_angle_button = NULL;
 static lv_obj_t * parent_container = NULL;
 static lv_obj_t * overlay_container = NULL;
 
-extern system_config_t system_config;
 HEAPS_CAPS_ATTR countdown_timer_t countdown_timer;
 digital_level_view_t * current_digital_level_view;
 
-extern digital_level_view_t digital_level_view_type_1_context;
-extern digital_level_view_t digital_level_view_type_2_context;
-extern lv_obj_t * msg_box;
 
 // NOT threadsafe copy of roll and pitch to be shared within the module
-extern float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
-extern float sensor_x_acceleration_thread_unsafe;
 
 
 // Forward declaration
@@ -74,10 +68,25 @@ void tilt_angle_button_short_press_cb(lv_event_t * e) {
     ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
 }
 
+void digital_level_view_zero_after_tare() {
+    // After a tare the sensor reads roll 0 in the tare pose, but the level subtracts rotation x 90 deg, which
+    // assumes the untared sensor; so at rotation 2 the tare pose read 180. The offset cancels that term, so the
+    // tare pose reads 0 at the current rotation. Saved with the level's settings, as the tare is saved in the
+    // sensor, so the two stay together across reboots (ADR-005 B25)
+    digital_level_view_config.user_roll_rad_offset = system_config.rotation * M_PI_2;
+    ESP_LOGI(TAG, "user_roll_rad_offset := %f (after tare)", digital_level_view_config.user_roll_rad_offset);
+
+    esp_err_t ret = save_digital_level_view_config();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save the level zero after tare: %s", esp_err_to_name(ret));
+    }
+}
+
+
 // Degrees the label shows; INT_MIN when the label is new and still shows "--"
 static int tilt_angle_label_deg = INT_MIN;
 
- void update_roll_deg_indicator(float roll_rad) {
+void update_roll_deg_indicator(float roll_rad) {
     // Setting the text redraws the label, so set it only when the shown number changes
     const int deg = (int) roundf(RAD_TO_DEG(roll_rad));
     if (deg != tilt_angle_label_deg) {
@@ -105,7 +114,7 @@ void update_digital_level_view(float roll_rad, float pitch_rad)
     if (current_digital_level_view != NULL) {
         current_digital_level_view->update_callback(roll_rad, pitch_rad);
     }
- }
+}
 
 
 void create_roll_deg_indicator(lv_obj_t * parent) {
@@ -152,7 +161,7 @@ void create_digital_level_overlay(lv_obj_t *parent)
 digital_level_view_t * select_digital_level_view(digital_level_view_type_t level_style) {
     digital_level_view_t * selected = NULL;
     // Load digital level view widget
-    switch(digital_level_view_config.level_style) {
+    switch(level_style) {
         case DIGITAL_LEVEL_VIEW_TYPE_1:
             selected = &digital_level_view_type_1_context;
             break;
@@ -169,8 +178,7 @@ void create_digital_level_view(lv_obj_t *parent)
 {
     parent_container = parent;
 
-    // Read configuration from NVS
-    ESP_ERROR_CHECK(load_digital_level_view_config());
+    // The settings are read at start-up (app_main)
 
     // Load digital level view widget
     current_digital_level_view = select_digital_level_view(digital_level_view_config.level_style);
@@ -212,27 +220,47 @@ static void update_roll_offset(lv_event_t *e) {
 }
 
 
-static void on_save_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(save_digital_level_view_config());
+static lv_obj_t * digital_level_config_page = NULL;
 
-    update_info_msg_box(msg_box, "Configuration Saved");
+
+// Show the style the settings ask for (the style dropdown, Reload, Reset); the level reads its other settings live
+static void apply_digital_level_view_style() {
+    digital_level_view_t * wanted = select_digital_level_view(digital_level_view_config.level_style);
+    if (wanted == NULL || wanted == current_digital_level_view) {
+        return;
+    }
+
+    // LVGL task (an LVGL event), so the swap needs no lock
+    current_digital_level_view->destructor(current_digital_level_view->container);
+    current_digital_level_view = wanted;
+    current_digital_level_view->constructor(parent_container);
+
+    // Important! Move overlay to foreground
+    lv_obj_move_foreground(overlay_container);
+}
+
+static void on_save_button_pressed(lv_event_t * e) {
+    update_info_msg_box_result(msg_box, save_digital_level_view_config(), "Configuration Saved", "Save failed");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(load_digital_level_view_config());
+    esp_err_t ret = load_digital_level_view_config();
+    apply_digital_level_view_style();
+    config_page_rebuild(digital_level_config_page);
 
-    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
-
-    // TODO: Update current displayed values
+    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
 }
 
 static void on_reset_button_pressed(lv_event_t * e) {
-    // Initialize with default values
+    // Initialize with default values. Reset restores the preferences, not the calibration: the zero (the mounting
+    // offset, and after a tare the rotation it was taken at) stays, as the tare stays in the sensor (owner, ADR-005)
+    float zero_rad = digital_level_view_config.user_roll_rad_offset;
     memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
+    digital_level_view_config.user_roll_rad_offset = zero_rad;
+    apply_digital_level_view_style();
+    config_page_rebuild(digital_level_config_page);
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-
-    // TODO: Update current display values
 }
 
 
@@ -244,39 +272,17 @@ void digital_level_view_rotation_event_callback(lv_event_t * e) {
 
 static void update_level_style(lv_event_t *e) {
     lv_obj_t * dropdown = lv_event_get_target(e);
-    int32_t selected = lv_dropdown_get_selected(dropdown);
+    digital_level_view_config.level_style = (digital_level_view_type_t) lv_dropdown_get_selected(dropdown);
+    ESP_LOGI(TAG, "Level style set to %d", digital_level_view_config.level_style);
 
-    if (selected != digital_level_view_config.level_style) {
-        digital_level_view_config.level_style = (digital_level_view_type_t) selected;
-        ESP_LOGI(TAG, "Level style updated to %d", digital_level_view_config.level_style);
-
-        // Deinitialize the previous style
-        // TODO: Add lock
-        current_digital_level_view->destructor(current_digital_level_view->container);
-        current_digital_level_view = NULL;
-
-        // Load digital level view widget
-        current_digital_level_view = select_digital_level_view(digital_level_view_config.level_style);
-
-        // Create widget
-        current_digital_level_view->constructor(parent_container);
-
-        // Important! Move overlay to foreground
-         lv_obj_move_foreground(overlay_container);
-        
-    }
-    else {
-        ESP_LOGI(TAG, "Level style unchanged");
-    }
+    apply_digital_level_view_style();
 }
 
 
-lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
+// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
+static void fill_digital_level_config_page(lv_obj_t * sub_page_config_view) {
     lv_obj_t * container;
     lv_obj_t * config_item;
-
-    // Create a sub page for digital_level_view
-    lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
     // Type
     const char level_style_options[] = "Level\nBlock";
@@ -322,6 +328,12 @@ lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
     config_item = create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
+}
+
+
+lv_obj_t * create_digital_level_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
+    lv_obj_t * sub_page_config_view = create_config_page(parent, fill_digital_level_config_page);
+    digital_level_config_page = sub_page_config_view;
 
     // Add to the menu
     lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);

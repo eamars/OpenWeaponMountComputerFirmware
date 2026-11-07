@@ -17,10 +17,13 @@ esp_err_t set_display_brightness(esp_lcd_panel_io_handle_t *io_handle, uint8_t b
     ESP_UNUSED(io_handle);
 
     uint32_t duty = (brightness_pct * (LCD_BL_LEDC_DUTY - 1)) / 100;
-    ESP_ERROR_CHECK(ledc_set_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL));
+    // Returned, not aborted: brightness also changes at runtime (ADR-005 C1)
+    esp_err_t ret = ledc_set_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL, duty);
+    if (ret == ESP_OK) {
+        ret = ledc_update_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL);
+    }
 
-    return ESP_OK;
+    return ret;
 }
 
 esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle_t *panel_handle, uint8_t brightness_pct) {

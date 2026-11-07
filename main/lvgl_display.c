@@ -18,13 +18,9 @@
 #include "system_config.h"
 #include "main_tileview.h"
 #include "low_power_mode.h"
+#include "ui_bridge.h"
 
 #define TAG "LVGLDisplay"
-
-
-typedef enum {
-    LVGL_DISPLAY_IS_READY = (1 << 0),
-} lvgl_display_stateful_event_e;
 
 
 // Initialize SPI touch screen and I2C display
@@ -36,12 +32,7 @@ esp_lcd_touch_handle_t touch_handle = NULL;
 lv_indev_t *lvgl_touch_handle = NULL;  // allow the low power module to inject callback
 lv_group_t * button_input_group = NULL;
 
-// Event control
-EventGroupHandle_t lvgl_display_event_group = NULL;
-
-
 // External services
-extern system_config_t system_config;
 
 
 #if DISPLAY_PROFILING_ENABLED
@@ -297,19 +288,6 @@ static void display_profile_start(lv_display_t *disp) {
 #endif  // DISPLAY_PROFILING_ENABLED
 
 
-static inline esp_err_t create_lvgl_display_event_group() {
-    // If not created, then create the event group. This function may be called before the `lvgl_display_init()`. 
-    if (lvgl_display_event_group == NULL) {
-        lvgl_display_event_group = xEventGroupCreate();
-        if (lvgl_display_event_group == NULL) {
-            ESP_LOGE(TAG, "Failed to create lvgl_display_event_group");
-            return ESP_FAIL;
-        }
-    }
-    return ESP_OK;
-}
-
-
 #if USE_EXT_BUTTON
 // button
 volatile bool ext_button_interrupt_occurred = false;
@@ -327,8 +305,11 @@ void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
     static uint32_t last_interrupt_tick = 0;
     uint32_t tick_now = lv_tick_get();
 
-    // if no interrupt has happen in last xx ms then pause the indev timer
-    if (lv_tick_diff(tick_now, last_interrupt_tick) > 450)  // longer than default long_press_time
+    bool pressed = gpio_get_level(EXT_BUTTON_PIN) == 0;
+
+    // If no interrupt has happened in the last 450 ms (longer than the default long_press_time), pause the indev
+    // timer, but only once released: the interrupt sees the press edge only, so pausing while held lost the release
+    if (!pressed && lv_tick_diff(tick_now, last_interrupt_tick) > 450)
     {
         lv_timer_pause(ext_button_indev_timer);
     }
@@ -342,22 +323,21 @@ void btn_gpio_read(lv_indev_t *indev, lv_indev_data_t *data) {
         }
     }
 
-    bool gpio_level = gpio_get_level(EXT_BUTTON_PIN);
-    data->state = gpio_level == 0 ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    // Activity and wake on a real press only: this callback also runs on every touch interrupt (the LVGL port
+    // reads all keypads then), and it used to wake the unit on any read while idle. A press that wakes the unit
+    // is not passed to LVGL (ADR-005 B3)
+    static bool wake_press = false;
+    bool swallow = low_power_mode_swallow_wake_press(pressed, &wake_press);
+    data->state = (pressed && !swallow) ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
     data->key = LV_KEY_ENTER;
-
-    // Update last activity tick to wake up the device from sleep mode when the button is pressed
-    update_low_power_mode_last_activity_event();
-
-    if (is_idle_mode_activated()) {
-        wake_from_idle_mode();
-    }
 }
 
 #endif  // USE_EXT_BUTTON
 
 
 #define LVGL_WATCHDOG_FEED_PERIOD_MS 1000
+// While idle, how long the low-power task waits for the LVGL lock before it skips a watchdog feed
+#define LVGL_WATCHDOG_IDLE_LOCK_PROBE_MS 100
 
 static esp_task_wdt_user_handle_t lvgl_watchdog_user = NULL;
 static volatile bool lvgl_watchdog_paused = false;
@@ -379,7 +359,15 @@ void lvgl_watchdog_pause(bool pause) {
 
 
 void lvgl_watchdog_feed_while_paused() {
-    if (lvgl_watchdog_paused && lvgl_watchdog_user != NULL) {
+    if (!lvgl_watchdog_paused || lvgl_watchdog_user == NULL) {
+        return;
+    }
+
+    // Feed only if the LVGL lock is free. Its holders while idle keep it for milliseconds; one that
+    // holds it for the whole watchdog timeout is a lock-up, and must reboot the unit then, not at the
+    // next wake (ADR-005 B4)
+    if (lvgl_port_lock(LVGL_WATCHDOG_IDLE_LOCK_PROBE_MS)) {
+        lvgl_port_unlock();
         esp_task_wdt_reset_user(lvgl_watchdog_user);
     }
 }
@@ -387,9 +375,6 @@ void lvgl_watchdog_feed_while_paused() {
 
 esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
     esp_err_t ret;
-
-    // Create event group
-    ESP_ERROR_CHECK(create_lvgl_display_event_group());
 
     // Initialize display modules
     ESP_ERROR_CHECK(display_init(&io_handle, &panel_handle, system_config.screen_brightness_normal_pct));
@@ -454,6 +439,9 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
 #if DISPLAY_PROFILING_ENABLED
         display_profile_start(lvgl_disp);
 #endif
+        // The services' state, for the widgets to bind to (ADR-005 step 3)
+        ui_bridge_init();
+
         create_main_tileview(lv_screen_active());
         lv_display_set_rotation(lvgl_disp, system_config.rotation);
 
@@ -470,38 +458,8 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
         lvgl_port_unlock();
     }
 
-    // Set display ready event
-    xEventGroupSetBits(lvgl_display_event_group, LVGL_DISPLAY_IS_READY);
-
     ESP_LOGI(TAG, "LVGL display initialized successfully");
 
     return ret;
 }
 
-
-esp_err_t lvgl_display_wait_for_ready(uint32_t block_wait_ms) {
-    create_lvgl_display_event_group();
-
-    // Wait for display ready event
-    EventBits_t asserted_bits = xEventGroupWaitBits(
-        lvgl_display_event_group, 
-        LVGL_DISPLAY_IS_READY, 
-        pdFALSE,        // don't clear on assert
-        pdTRUE,         // wait for all bits to assert
-        pdMS_TO_TICKS(block_wait_ms)
-    );
-
-    if (asserted_bits & LVGL_DISPLAY_IS_READY) {
-        return ESP_OK;
-    }
-
-    return ESP_ERR_TIMEOUT;
-}
-
-
-bool lvgl_display_is_ready() {
-    create_lvgl_display_event_group();
-    EventBits_t asserted_bits = xEventGroupGetBits(lvgl_display_event_group);
-
-    return asserted_bits & LVGL_DISPLAY_IS_READY;
-}

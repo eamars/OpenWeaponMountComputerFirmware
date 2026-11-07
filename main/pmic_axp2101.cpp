@@ -7,19 +7,86 @@
 #include "sdkconfig.h"
 #include "XPowersLib.h"
 
-#include "config_view.h"
-#include "lvgl_display.h"
+#include <string.h>
+
+#include "freertos/FreeRTOS.h"
+
 #include "low_power_mode.h"
 
 static XPowersPMU PMU;
 
 #define TAG "AXP2101"
 
+#define PMIC_EVENT_POST_TIMEOUT_MS  50
+
 
 // C Function region
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+ESP_EVENT_DEFINE_BASE(PMIC_SERVICE_EVENT);
+
+// The service's context, set once by axp2101_init; NULL on a unit without a PMIC
+static axp2101_ctx_t * pmic_ctx = NULL;
+static portMUX_TYPE pmic_status_lock = portMUX_INITIALIZER_UNLOCKED;
+
+
+axp2101_status_t pmic_get_status() {
+    axp2101_status_t status = {};
+    if (pmic_ctx != NULL) {
+        taskENTER_CRITICAL(&pmic_status_lock);
+        status = pmic_ctx->status;
+        taskEXIT_CRITICAL(&pmic_status_lock);
+    }
+    return status;
+}
+
+
+static void pmic_publish(pmic_service_event_e event) {
+    // Dropped if the default event loop is full; the next reading posts again
+    esp_err_t ret = esp_event_post(PMIC_SERVICE_EVENT, event, NULL, 0, pdMS_TO_TICKS(PMIC_EVENT_POST_TIMEOUT_MS));
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to post PMIC event %d: %s", event, esp_err_to_name(ret));
+    }
+}
+
+
+esp_err_t pmic_request_power_off() {
+    if (pmic_ctx == NULL || pmic_ctx->pmic_event_control == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xEventGroupSetBits(pmic_ctx->pmic_event_control, PMIC_POWER_OFF_EVENT_BIT);
+    return ESP_OK;
+}
+
+
+// Zeroed first, so a change check with memcmp does not see padding
+static void pmic_read_status(axp2101_status_t *status) {
+    memset(status, 0, sizeof(*status));
+    status->valid = true;
+    status->charge_status = PMU.getChargerStatus();
+    status->battery_percentage = PMU.getBatteryPercent();
+    status->ts_temperature = PMU.getTsTemperature();
+
+    status->vbus_voltage_mv = PMU.getVbusVoltage();
+    status->vbatt_voltage_mv = PMU.getBattVoltage();
+    status->vsys_voltage_mv = PMU.getSystemVoltage();
+
+    status->is_usb_connected = PMU.isVbusIn();
+}
+
+
+static void pmic_power_off() {
+    // Perform the shutdown
+    ESP_LOGW(TAG, "System is powering off...");
+
+    // disable battery fet
+    PMU.disableBATFET();
+
+    // Perform shutdown
+    PMU.shutdown();
+}
 
 
 static void IRAM_ATTR axp2101_interrupt_handler(void * args) {
@@ -98,14 +165,47 @@ static xpowers_axp2101_chg_vol_t pmic_battery_charge_voltage_to_xpowers(pmic_bat
     }
 }
 
+// The settings page's charge settings. Written at init, then only by the monitor task, which owns the chip
+// after init: the page asks for it on save instead of writing over I2C from the LVGL task (ADR-005 B15)
+static void axp2101_apply_charge_settings() {
+    PMU.setVbusCurrentLimit(pmic_vbus_current_limit_to_xpowers(power_management_config.vbus_current_limit));
+    ESP_LOGI(TAG, "Set VBUS current limit to %d", PMU.getVbusCurrentLimit());
+
+    PMU.setChargerConstantCurr(pmic_battery_charge_current_to_xpowers(power_management_config.battery_charge_current));
+    ESP_LOGI(TAG, "Set battery charge current to %d", PMU.getChargerConstantCurr());
+
+    PMU.setChargeTargetVoltage(pmic_battery_charge_voltage_to_xpowers(power_management_config.battery_charge_voltage));
+    ESP_LOGI(TAG, "Set battery charge voltage to %d", PMU.getChargeTargetVoltage());
+}
+
+
+esp_err_t axp2101_request_apply_charge_settings(axp2101_ctx_t *ctx) {
+    if (ctx == NULL || ctx->pmic_event_control == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xEventGroupSetBits(ctx->pmic_event_control, PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT);
+    return ESP_OK;
+}
+
+
 void axp2101_monitor_task(void * args) {
     axp2101_ctx_t *ctx = (axp2101_ctx_t *) args;
 
     ESP_LOGI(TAG, "AXP2101 monitor task started");
 
     while (1) {
-        // Wait until the interrupt happens
-        if (xEventGroupWaitBits(ctx->pmic_event_control, PMIC_INTERRUPT_EVENT_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(2000)) == pdTRUE) {
+        // Wait until the interrupt happens, or the settings page asks for the charge settings to be applied
+        EventBits_t bits = xEventGroupWaitBits(ctx->pmic_event_control,
+                                               PMIC_INTERRUPT_EVENT_BIT | PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT |
+                                               PMIC_POWER_OFF_EVENT_BIT,
+                                               pdTRUE, pdFALSE, pdMS_TO_TICKS(2000));
+        if (bits & PMIC_POWER_OFF_EVENT_BIT) {
+            pmic_power_off();
+        }
+        if (bits & PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT) {
+            axp2101_apply_charge_settings();
+        }
+        if (bits & PMIC_INTERRUPT_EVENT_BIT) {
             // Handle PMIC interrupt
             PMU.getIrqStatus();
 
@@ -157,10 +257,7 @@ void axp2101_monitor_task(void * args) {
                     wake_from_idle_mode();
                 }
 
-                if (lvgl_port_lock(0)) {
-                    power_menu_make_visible();
-                    lvgl_port_unlock();
-                }
+                pmic_publish(PMIC_SERVICE_EVENT_POWER_KEY_LONG_PRESS);
                 ESP_LOGI(TAG, "isPekeyLongPress");
             }
             if (PMU.isPekeyNegativeIrq()) {
@@ -198,27 +295,16 @@ void axp2101_monitor_task(void * args) {
         }
 
         // Read status
-        ctx->status.charge_status = PMU.getChargerStatus();
-        ctx->status.battery_percentage = PMU.getBatteryPercent();
-        ctx->status.ts_temperature = PMU.getTsTemperature();
+        axp2101_status_t status;
+        pmic_read_status(&status);
 
-        ctx->status.vbus_voltage_mv = PMU.getVbusVoltage();
-        ctx->status.vbatt_voltage_mv = PMU.getBattVoltage();
-        ctx->status.vsys_voltage_mv = PMU.getSystemVoltage();
-
-        ctx->status.is_usb_connected = PMU.isVbusIn();
-
-        // Update LVGL
-        if (lvgl_display_is_ready() && lvgl_port_lock(0)) {
-            if (ctx->status.is_usb_connected) {
-                status_bar_update_battery_level(101);  // USB power
-            }
-            else {
-                status_bar_update_battery_level(ctx->status.battery_percentage);
-            }
-
-            power_management_view_update_status(ctx);
-            lvgl_port_unlock();
+        // Publish it; the UI bridge shows it whenever the UI exists
+        taskENTER_CRITICAL(&pmic_status_lock);
+        bool changed = memcmp(&status, &ctx->status, sizeof(status)) != 0;
+        ctx->status = status;
+        taskEXIT_CRITICAL(&pmic_status_lock);
+        if (changed) {
+            pmic_publish(PMIC_SERVICE_EVENT_STATUS_CHANGED);
         }
 
         if (ctx->status.is_usb_connected) {
@@ -256,7 +342,7 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     // Create event group
     ctx->pmic_event_control = xEventGroupCreate();
     if (ctx->pmic_event_control == NULL) {
-        ESP_LOGE(TAG, "Failed to create sensor_event_control");
+        ESP_LOGE(TAG, "Failed to create pmic_event_control");
         return ESP_FAIL;
     }
 
@@ -344,9 +430,6 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setVbusVoltageLimit(XPOWERS_AXP2101_VBUS_VOL_LIM_3V88);  // allow extremely low voltage input
     ESP_LOGI(TAG, "Set VBUS voltage limit to %d", PMU.getVbusVoltageLimit());
 
-    // Set maximum current per VBUS input
-    PMU.setVbusCurrentLimit(pmic_vbus_current_limit_to_xpowers(power_management_config.vbus_current_limit));
-    ESP_LOGI(TAG, "Set VBUS current limit to %d", PMU.getVbusCurrentLimit());
 
     // Configure LED behavior (by the charger)
     PMU.setChargingLedMode(XPOWERS_CHG_LED_CTRL_CHG);
@@ -366,15 +449,11 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setPrechargeCurr(XPOWERS_AXP2101_PRECHARGE_100MA);
     ESP_LOGI(TAG, "Set battery pre-charge current to %d", PMU.getPrechargeCurr());
 
-    PMU.setChargerConstantCurr(pmic_battery_charge_current_to_xpowers(power_management_config.battery_charge_current));
-    ESP_LOGI(TAG, "Set battery charge current to %d", PMU.getChargerConstantCurr());
-
     PMU.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_200MA);
     ESP_LOGI(TAG, "Set battery charge termination current to %d", PMU.getChargerTerminationCurr());
 
-    // Set charge voltage
-    PMU.setChargeTargetVoltage(pmic_battery_charge_voltage_to_xpowers(power_management_config.battery_charge_voltage));
-    ESP_LOGI(TAG, "Set battery charge voltage to %d", PMU.getChargeTargetVoltage());
+    // VBUS current limit, charge current and charge voltage from the settings page
+    axp2101_apply_charge_settings();
 
     // set low battery warning levels
     PMU.setLowBatWarnThreshold(10);
@@ -403,15 +482,7 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.disablePwronShutPMIC();     // Hard off on 16s press
 
     // Populate status
-    ctx->status.charge_status = PMU.getChargerStatus();
-    ctx->status.battery_percentage = PMU.getBatteryPercent();
-    ctx->status.ts_temperature = PMU.getTsTemperature();
-
-    ctx->status.vbus_voltage_mv = PMU.getVbusVoltage();
-    ctx->status.vbatt_voltage_mv = PMU.getBattVoltage();
-    ctx->status.vsys_voltage_mv = PMU.getSystemVoltage();
-
-    ctx->status.is_usb_connected = PMU.isVbusIn();
+    pmic_read_status(&ctx->status);
 
     // print power on reason
     xpower_power_on_source_t power_on_source = PMU.getPowerOnSource();
@@ -420,6 +491,9 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     // print power off reason
     xpower_power_off_source_t power_off_source = PMU.getPowerOffSource();
     ESP_LOGI(TAG, "Power Off Source: %d", power_off_source);
+
+    // From here on the monitor task is the only code that talks to the chip
+    pmic_ctx = ctx;
 
     // Create task to handle PMIC interrupt
     BaseType_t rtos_return = xTaskCreateWithCaps(
@@ -453,6 +527,7 @@ esp_err_t axp2101_deinit(axp2101_ctx_t *ctx) {
         ctx->pmic_monitor_task_handle = NULL;
     }
     ESP_LOGI(TAG, "Monitor task deleted");
+    pmic_ctx = NULL;
 
     // Remove interrupt handler
     if (ctx->interrupt_pin != GPIO_NUM_NC) {
@@ -477,17 +552,6 @@ esp_err_t axp2101_deinit(axp2101_ctx_t *ctx) {
     return ESP_OK;
 }
 
-
-void pmic_power_off() {
-    // Perform the shutdown
-    ESP_LOGW(TAG, "System is powering off...");
-
-    // disable battery fet
-    PMU.disableBATFET();
-
-    // Perform shutdown
-    PMU.shutdown();
-}
 
 
 #ifdef __cplusplus

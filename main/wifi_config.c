@@ -4,90 +4,42 @@
 #include "wifi.h"
 #include "config_view.h"
 #include "wifi_provision.h"
+#include "ui_bridge.h"
 
-#include "esp_wifi.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
-#include "nvs.h"
-#include "esp_crc.h"
 
 #include "common.h"
 #include "app_cfg.h"
 
 #define TAG "WiFiConfig"
-#define NVS_NAMESPACE "WIFI"
 
 #define PROV_QR_VERSION         "v1"
 #define PROV_TRANSPORT_SOFTAP   "softap"
 
+// The Wi-Fi settings page. It shows the Wi-Fi service through the UI bridge's subjects and asks the service for
+// changes; it never calls esp_wifi_* (which it used to do with the LVGL lock held) (ADR-005 step 3)
 
-extern wireless_state_e wireless_state;
-extern wireless_provision_state_t wifi_provision_state;
-extern wifi_user_config_t wifi_user_config;
-extern const wifi_user_config_t default_wifi_user_config;
 HEAPS_CAPS_ATTR static char wifi_status_str[64];
 static lv_obj_t * qr_container;
 static lv_obj_t * qr_code;
+static lv_obj_t * provision_note = NULL;
 static lv_obj_t * reset_provision_button;
-static lv_obj_t * wifi_status_label = NULL;
-static lv_obj_t * wifi_enable_switch = NULL;
-extern EventGroupHandle_t wireless_event_group;
-extern lv_obj_t * msg_box;
-
-extern esp_err_t save_wifi_user_config();
-extern esp_err_t load_wifi_user_config();
-
-
-void wifi_config_update_status(const char * state_str) {
-    if (wifi_status_label) {
-        snprintf(wifi_status_str, sizeof(wifi_status_str), "Status: %s", state_str);
-
-        // Force redraw
-        if (lvgl_port_lock(0)) {
-            lv_label_set_text_static(wifi_status_label, wifi_status_str);
-            lvgl_port_unlock();
-        }
-    }
-}
-
-
-esp_err_t wifi_config_set_enable(bool enable) {
-    wifi_user_config.wifi_enable = enable;
-
-    esp_err_t ret;
-    if (wifi_user_config.wifi_enable) {
-        ret = esp_wifi_start();
-    }
-    else {
-        ret = esp_wifi_stop();
-    }
-
-    // Keep the switch in step when the change does not come from the switch itself
-    if (wifi_enable_switch) {
-        if (enable) {
-            lv_obj_add_state(wifi_enable_switch, LV_STATE_CHECKED);
-        }
-        else {
-            lv_obj_remove_state(wifi_enable_switch, LV_STATE_CHECKED);
-        }
-    }
-
-    return ret;
-}
+static bool wifi_enable_switch_initial;
 
 
 static void toggle_enable_wifi(lv_event_t *e) {
     lv_obj_t * sw = lv_event_get_target_obj(e);
-    wifi_config_set_enable(lv_obj_has_state(sw, LV_STATE_CHECKED));
+    wifi_request_enable(lv_obj_has_state(sw, LV_STATE_CHECKED));
 }
 
 
 static void on_reset_provision_button_pressed(lv_event_t * e) {
-    wifi_provision_reset();
-    update_info_msg_box(msg_box, "WiFi Provisioning reset. Please re-provision the device.");
+    // The result comes back through the UI bridge, which shows it in the message box
+    wifi_request_reset_provisioning();
 }
 
 
@@ -122,84 +74,100 @@ void on_qr_code_clicked(lv_event_t * e) {
 }
 
 
-void wifi_config_disable_enable_interface() {
-    if (lvgl_port_lock(0)) {
-        // Then disable the enable wifi toggle switch
-        lv_obj_remove_state(wifi_enable_switch, LV_STATE_CHECKED);
-        lv_obj_add_state(wifi_enable_switch, LV_STATE_DISABLED);
-        lvgl_port_unlock();
+// ---- Observers (LVGL context): the widgets follow the Wi-Fi service ----------------------------------------------
+
+static void wifi_status_label_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
+    lv_label_set_text_fmt(lv_observer_get_target_obj(observer), "Status: %s",
+                          wifi_state_name((wireless_state_e) lv_subject_get_int(subject)));
+}
+
+
+// Bound to the enabled and expired subjects. Setting the state does not fire the switch's VALUE_CHANGED.
+// After the expiry the radio is off, so the switch shows off; switching it on starts a new Wi-Fi window
+static void wifi_enable_switch_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
+    lv_obj_t * sw = lv_observer_get_target_obj(observer);
+
+    if (lv_subject_get_int(&ui_wifi_enabled) && !lv_subject_get_int(&ui_wifi_expired)) {
+        lv_obj_add_state(sw, LV_STATE_CHECKED);
+    }
+    else {
+        lv_obj_remove_state(sw, LV_STATE_CHECKED);
     }
 }
 
 
-void wifi_config_disable_provision_interface(wireless_state_e reason) {
-    if (lvgl_port_lock(0)) {
-        // Delete QR code first
-        if (qr_code) {
-            lv_obj_delete(qr_code);
-            qr_code = NULL;
+static void create_provision_qr_code() {
+    qr_code = lv_qrcode_create(qr_container);
+
+    lv_color_t bg_color = lv_color_darken(lv_color_white(), 0);
+    lv_color_t fg_color = lv_color_darken(lv_color_black(), 0);
+
+    lv_qrcode_set_dark_color(qr_code, fg_color);
+    lv_qrcode_set_light_color(qr_code, bg_color);
+
+    lv_obj_set_style_border_color(qr_code, bg_color, 0);
+    lv_obj_set_style_border_width(qr_code, 5, 0);
+
+    lv_obj_add_flag(qr_code, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(qr_code, on_qr_code_clicked, LV_EVENT_CLICKED, NULL);
+}
+
+
+// Bound to the provisioned and expired subjects: the QR code while the unit waits for credentials (rebuilt after
+// a provisioning reset; its data, with the new proof of possession, is set when it is opened), a note otherwise
+static void wifi_provision_panel_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
+    bool provisioned = lv_subject_get_int(&ui_wifi_provisioned);
+    bool expired = lv_subject_get_int(&ui_wifi_expired);
+
+    if (!provisioned && !expired) {
+        if (provision_note) {
+            lv_obj_delete(provision_note);
+            provision_note = NULL;
         }
-
-        if (reason == WIRELESS_STATE_PROVISION_EXPIRE) {
-            // Disable the button to reset provisioning state
-            lv_obj_add_state(reset_provision_button, LV_STATE_DISABLED);
-
-            lv_obj_t * reason_label = lv_label_create(qr_container);
-            lv_obj_set_width(reason_label, lv_pct(80));
-            lv_label_set_long_mode(reason_label, LV_LABEL_LONG_MODE_WRAP);
-            lv_obj_add_flag(reason_label, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_add_event_cb(reason_label, on_qr_code_clicked, LV_EVENT_CLICKED, NULL);
-
-            lv_label_set_text(reason_label, "Provision Expired. Power cycle the device to restart provision process.");
+        if (qr_code == NULL) {
+            create_provision_qr_code();
         }
-        else if (reason == WIRELESS_STATE_PROVISIONED) {
-            lv_obj_t * reason_label = lv_label_create(qr_container);
-            lv_obj_set_width(reason_label, lv_pct(80));
-            lv_label_set_long_mode(reason_label, LV_LABEL_LONG_MODE_WRAP);
-            lv_obj_add_flag(reason_label, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_add_event_cb(reason_label, on_qr_code_clicked, LV_EVENT_CLICKED, NULL);
-
-            lv_label_set_text(reason_label, "Provision Complete. Use Reset Provision button and power cycle the device to restart provision process.");
-        }
-
-        lvgl_port_unlock();
+        return;
     }
+
+    if (qr_code) {
+        lv_obj_delete(qr_code);
+        qr_code = NULL;
+    }
+
+    if (provision_note == NULL) {
+        provision_note = lv_label_create(qr_container);
+        lv_obj_set_width(provision_note, lv_pct(80));
+        lv_label_set_long_mode(provision_note, LV_LABEL_LONG_MODE_WRAP);
+        lv_obj_add_flag(provision_note, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(provision_note, on_qr_code_clicked, LV_EVENT_CLICKED, NULL);
+    }
+
+    lv_label_set_text(provision_note, provisioned ?
+        "Provision Complete. Use the Reset Provision button to provision again." :
+        "Provision Expired. Switch WiFi on to provision again.");
 }
-
-
-esp_err_t save_wifi_user_config() {
-    return save_config(NVS_NAMESPACE, &wifi_user_config, sizeof(wifi_user_config));
-}
-
-
-
-esp_err_t load_wifi_user_config() {
-    return load_config(NVS_NAMESPACE, &wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
-}
-
 
 
 static void on_save_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(save_wifi_user_config());
-
-    update_info_msg_box(msg_box, "Configuration Saved");
+    update_info_msg_box_result(msg_box, save_wifi_user_config(), "Configuration Saved", "Save failed");
 }
 
 static void on_reload_button_pressed(lv_event_t * e) {
-    ESP_ERROR_CHECK(load_wifi_user_config());
+    esp_err_t ret = load_wifi_user_config();
 
-    update_info_msg_box(msg_box, "Previous Configuration Reloaded");
+    // The switch follows the service (UI bridge), so asking the service is all the page needs
+    wifi_request_enable(wifi_user_config.wifi_enable);
 
-    // TODO: Update current displayed values
+    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
 }
 
 static void on_reset_button_pressed(lv_event_t * e) {
     // Initialize with default values
     memcpy(&wifi_user_config, &default_wifi_user_config, sizeof(wifi_user_config));
+    wifi_request_enable(wifi_user_config.wifi_enable);
 
     update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-
-    // TODO: Update current display values
 }
 
 
@@ -207,20 +175,17 @@ lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_m
     lv_obj_t * container;
     lv_obj_t * config_item;
 
-    // Load configuration
-    ESP_ERROR_CHECK(load_wifi_user_config());
-
-
     lv_obj_t * sub_page_config_view = lv_menu_page_create(parent, NULL);
 
-    // Wifi status label
-    snprintf(wifi_status_str, sizeof(wifi_status_str), "Status: %s", "Disconnected");  // TODO: load actual wifi status
-    wifi_status_label = create_config_label_static(sub_page_config_view, wifi_status_str);
+    // Wifi status label (the observer below sets the text)
+    snprintf(wifi_status_str, sizeof(wifi_status_str), "Status: %s", "");
+    lv_obj_t * wifi_status_label = create_config_label_static(sub_page_config_view, wifi_status_str);
 
 
     // Enable Wifi
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Enable WiFi");
-    wifi_enable_switch = create_switch(container, &wifi_user_config.wifi_enable, toggle_enable_wifi);
+    wifi_enable_switch_initial = lv_subject_get_int(&ui_wifi_enabled);
+    lv_obj_t * wifi_enable_switch = create_switch(container, &wifi_enable_switch_initial, toggle_enable_wifi);
 
     // Reset Wifi provision
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Reset Provision");
@@ -242,30 +207,26 @@ lv_obj_t * create_wifi_config_view_config(lv_obj_t * parent, lv_obj_t * parent_m
                           LV_FLEX_ALIGN_CENTER,  /* cross axis */
                           LV_FLEX_ALIGN_CENTER); /* track cross axis */
 
-    // Create Wifi provision QR code
-    qr_code = lv_qrcode_create(qr_container);
-
-    lv_color_t bg_color = lv_color_darken(lv_color_white(), 0);
-    lv_color_t fg_color = lv_color_darken(lv_color_black(), 0);
-
-    lv_qrcode_set_dark_color(qr_code, fg_color);
-    lv_qrcode_set_light_color(qr_code, bg_color);
-
-    lv_obj_set_style_border_color(qr_code, bg_color, 0);
-    lv_obj_set_style_border_width(qr_code, 5, 0);
-
-    lv_obj_add_flag(qr_code, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(qr_code, on_qr_code_clicked, LV_EVENT_CLICKED, NULL);
+    // The QR code or the note is made by the provisioning observer below
+    qr_code = NULL;
 
     // set hidden
     lv_obj_add_flag(qr_container, LV_OBJ_FLAG_HIDDEN);
-    
+
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Provision QR Code");
     config_item = create_single_button(container, LV_SYMBOL_IMAGE, on_qr_code_button_pressed);
 
     // Save Reload
     container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
     config_item = create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
+
+
+    // Bind the widgets to the Wi-Fi service; each observer runs once now with the current value
+    lv_subject_add_observer_obj(&ui_wifi_state, wifi_status_label_observer_cb, wifi_status_label, NULL);
+    lv_subject_add_observer_obj(&ui_wifi_enabled, wifi_enable_switch_observer_cb, wifi_enable_switch, NULL);
+    lv_subject_add_observer_obj(&ui_wifi_expired, wifi_enable_switch_observer_cb, wifi_enable_switch, NULL);
+    lv_subject_add_observer_obj(&ui_wifi_provisioned, wifi_provision_panel_observer_cb, qr_container, NULL);
+    lv_subject_add_observer_obj(&ui_wifi_expired, wifi_provision_panel_observer_cb, qr_container, NULL);
 
 
     // Add to the menu

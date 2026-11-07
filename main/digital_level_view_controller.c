@@ -18,6 +18,7 @@
 #include "countdown_timer.h"
 #include "esp_task_wdt.h"
 #include "bno085.h"
+#include "app.h"
 
 #define TAG "DigitalLevelViewController"
 
@@ -30,11 +31,6 @@ static EventGroupHandle_t sensor_task_control;
 float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
 float sensor_x_acceleration_thread_unsafe, sensor_y_acceleration_thread_unsafe, sensor_z_acceleration_thread_unsafe;
 
-extern bno085_ctx_t * bno085_dev;
-extern system_config_t system_config;
-extern digital_level_view_config_t digital_level_view_config;
-extern sensor_config_t sensor_config;
-extern countdown_timer_t countdown_timer;
 
 
 #if DISPLAY_PROFILING_ENABLED
@@ -114,9 +110,6 @@ float get_relative_roll_angle_rad_thread_unsafe() {
 
 
 void unified_sensor_poller_task(void *p) {
-    // Disable the task watchdog as the task is expected to block indefinitely
-    esp_task_wdt_delete(NULL);
-
     TickType_t last_poll_tick;
     float last_sensor_x_acceleration = 0;
 
@@ -202,20 +195,20 @@ void enable_digital_level_view_controller(bool enable) {
     if (enable) {
         // Enable sensor report
         if (sensor_config.enable_game_rotation_vector_report) {
-            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
+            bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
         }
         if (sensor_config.enable_linear_acceleration_report) {
-            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
+            bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
         }
 
         xEventGroupSetBits(sensor_task_control, SENSOR_POLL_EVENT_RUN);
     } else {
         // Disable sensor report
         if (sensor_config.enable_game_rotation_vector_report) {
-            ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
+            bno085_enable_game_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
         }
         if (sensor_config.enable_linear_acceleration_report) {
-            ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
+            bno085_enable_linear_acceleration_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
         }
         xEventGroupClearBits(sensor_task_control, SENSOR_POLL_EVENT_RUN);
     }
@@ -241,22 +234,22 @@ esp_err_t digital_level_view_controller_init() {
         HEAPS_CAPS_ALLOC_DEFAULT_FLAGS
     );
     if (rtos_return != pdPASS) {
-        ESP_LOGE(TAG, "Failed to allocate memory for unified_ensor_poller_task");
+        ESP_LOGE(TAG, "Failed to allocate memory for unified_sensor_poller_task");
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 
     // Initialize sensor reports
     if (sensor_config.enable_game_rotation_vector_report) {
-        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS));
+        bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
     else {
-        ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
+        bno085_enable_game_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
     if (sensor_config.enable_linear_acceleration_report) {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS));
+        bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
     else {
-        ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
+        bno085_enable_linear_acceleration_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
     }
 
     return ESP_OK;

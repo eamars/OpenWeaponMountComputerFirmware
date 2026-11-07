@@ -27,5 +27,8 @@ esp_err_t digital_level_view_controller_init();
 void enable_digital_level_view_controller(bool enable);
 float get_relative_roll_angle_rad_thread_unsafe();
 
+// Shared state, defined in digital_level_view_controller.c
+extern float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
+extern float sensor_x_acceleration_thread_unsafe;
 
 #endif // DIGITAL_LEVEL_VIEW_CONTROLLER_H

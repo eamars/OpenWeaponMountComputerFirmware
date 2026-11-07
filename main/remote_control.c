@@ -22,10 +22,15 @@
 #include "remote_control.h"
 #include "app_cfg.h"
 #include "common.h"
+#include "bno085.h"
 #include "low_power_mode.h"
+#include "pmic_axp2101.h"
+#include "ui_bridge.h"
 #include "system_config.h"
 #include "wifi.h"
 #include "wifi_config.h"
+#include "app.h"
+#include "main_tileview.h"
 
 #define TAG "RemoteControl"
 #define NVS_NAMESPACE "RC"
@@ -47,7 +52,7 @@
 #define RC_MAX_ARGS 4
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats bt tap swipe tile rot wifi save idle wake reboot hang"
+#define RC_HELP_COMMANDS "help state stats bt pmic tap swipe tile rot wifi save idle wake reboot hang bnoreset"
 
 
 typedef struct {
@@ -63,8 +68,6 @@ const remote_control_config_t remote_control_config_default = {
     .serial_enable = true,  // on while the firmware is in development; flip before a release build
 };
 
-extern lv_obj_t * main_tileview;
-extern wifi_user_config_t wifi_user_config;
 
 static SemaphoreHandle_t rc_execute_mutex = NULL;
 static esp_timer_handle_t rc_reboot_timer = NULL;
@@ -495,24 +498,24 @@ static bool rc_cmd_wifi(int argc, char **argv, char *reply, size_t reply_size) {
     else if (argc == 2 && strcmp(argv[1], "off") == 0) {
         enable = false;
     }
+    else if (argc == 2 && strcmp(argv[1], "expire") == 0) {
+        // Debug: end the Wi-Fi window now, as the expiry timer would; Wi-Fi stays off until the next boot
+        wifi_expire_now();
+        return rc_reply(reply, reply_size, true, "@ok wifi=expire");
+    }
+    else if (argc == 2 && strcmp(argv[1], "drop") == 0) {
+        // Debug: disconnect from the AP, handled as a lost connection (the AP gone), to test the reconnect
+        wifi_drop_now();
+        return rc_reply(reply, reply_size, true, "@ok wifi=drop");
+    }
     else {
         return rc_reply(reply, reply_size, false, "@err args");
     }
 
-    // After the Wi-Fi window expires the screen disables the switch; refuse the same way
-    if (wifi_is_expired()) {
-        return rc_reply(reply, reply_size, false, "@err expired");
-    }
-
-    if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
-        return rc_reply(reply, reply_size, false, "@err busy");
-    }
-    esp_err_t ret = wifi_config_set_enable(enable);
-    lvgl_port_unlock();
-
-    if (ret != ESP_OK) {
-        return rc_reply(reply, reply_size, false, "@err wifi %s", esp_err_to_name(ret));
-    }
+    // A request to the Wi-Fi service, as the switch makes it: no LVGL lock, the switch follows by itself
+    // (ADR-005 step 3). The radio starts or stops in the service task, so a start/stop error is only logged there.
+    // After the expiry, on starts a new Wi-Fi window, as the switch does
+    wifi_request_enable(enable);
     return rc_reply(reply, reply_size, true, "@ok wifi=%s", enable ? "on" : "off");
 }
 
@@ -597,6 +600,27 @@ static bool rc_cmd_reboot(char *reply, size_t reply_size) {
 }
 
 
+// The PMIC service's newest reading, and the battery level the UI bridge holds for the status bar icon
+// (101 = USB icon), so a script can see a reading reach the UI (ADR-005 step 3)
+static bool rc_cmd_pmic(char *reply, size_t reply_size) {
+    axp2101_status_t status = pmic_get_status();
+
+    if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
+        return rc_reply(reply, reply_size, false, "@err busy");
+    }
+    int32_t icon = lv_subject_get_int(&ui_battery_level);
+    const axp2101_status_t *shown = (const axp2101_status_t *) lv_subject_get_pointer(&ui_pmic_status);
+    unsigned shown_vbat = shown->vbatt_voltage_mv;
+    lvgl_port_unlock();
+
+    return rc_reply(reply, reply_size, true,
+                    "@ok pmic valid=%d soc=%d vbat=%u vbus=%u vsys=%u usb=%d chg=%d icon=%ld shown_vbat=%u",
+                    status.valid ? 1 : 0, status.battery_percentage, (unsigned) status.vbatt_voltage_mv,
+                    (unsigned) status.vbus_voltage_mv, (unsigned) status.vsys_voltage_mv,
+                    status.is_usb_connected ? 1 : 0, status.charge_status, (long) icon, shown_vbat);
+}
+
+
 // Debug: print every task's backtrace to the console (ROM printing). Needs no LVGL lock, so it
 // still works when the LVGL task is stuck; decode the addresses with the matching ELF.
 static bool rc_cmd_bt(char *reply, size_t reply_size) {
@@ -613,6 +637,17 @@ static bool rc_cmd_hang(char *reply, size_t reply_size) {
     }
     // No unlock, on purpose
     return rc_reply(reply, reply_size, true, "@ok hang");
+}
+
+
+// Debug: pulse the BNO085's reset line, so the sensor restarts as after an unexpected reset and the
+// driver's recovery (re-enabling the saved reports) runs (ADR-005 B6).
+static bool rc_cmd_bnoreset(char *reply, size_t reply_size) {
+    esp_err_t ret = bno085_hardware_reset(bno085_dev);
+    if (ret != ESP_OK) {
+        return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(ret));
+    }
+    return rc_reply(reply, reply_size, true, "@ok bnoreset");
 }
 
 
@@ -636,11 +671,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     const char *cmd = argv[0];
     bool is_observer = strcmp(cmd, "idle") == 0 || strcmp(cmd, "state") == 0 ||
                        strcmp(cmd, "stats") == 0 || strcmp(cmd, "help") == 0 ||
-                       strcmp(cmd, "bt") == 0;
+                       strcmp(cmd, "bt") == 0 || strcmp(cmd, "pmic") == 0;
     bool is_known = is_observer ||
                     strcmp(cmd, "tap") == 0 || strcmp(cmd, "swipe") == 0 || strcmp(cmd, "tile") == 0 ||
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
-                    strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0;
+                    strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
+                    strcmp(cmd, "bnoreset") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -679,6 +715,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
         }
         return rc_cmd_bt(reply, reply_size);
     }
+    if (strcmp(cmd, "pmic") == 0) {
+        if (argc != 1) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        return rc_cmd_pmic(reply, reply_size);
+    }
     if (strcmp(cmd, "idle") == 0) {
         if (argc != 1) {
             return rc_reply(reply, reply_size, false, "@err args");
@@ -702,6 +744,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
             return rc_reply(reply, reply_size, false, "@err args");
         }
         return rc_cmd_hang(reply, reply_size);
+    }
+    if (strcmp(cmd, "bnoreset") == 0) {
+        if (argc != 1) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        return rc_cmd_bnoreset(reply, reply_size);
     }
     if (strcmp(cmd, "tap") == 0) {
         return rc_cmd_tap(argc, argv, reply, reply_size);

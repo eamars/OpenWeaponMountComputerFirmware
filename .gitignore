@@ -117,3 +117,5 @@ sdkconfig.old
 
 # Python virtual environments
 venv/*
+# Device-test session logs (tools/remote_control/rc_run.py)
+logs/

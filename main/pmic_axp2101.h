@@ -15,7 +15,7 @@
 #include "freertos/timers.h"
 #include "freertos/event_groups.h"
 
-#include "lvgl.h"
+#include "esp_event.h"
 
 #ifndef AXP2101_I2C_SLAVE_ADDRESS
     #define AXP2101_I2C_SLAVE_ADDRESS 0x34 // Default I2C address for AXP2101
@@ -41,8 +41,20 @@ extern "C" {
 
 typedef enum {
     PMIC_INTERRUPT_EVENT_BIT = (1 << 0),
-    PMIC_INIT_SUCCESS_EVENT_BIT = (1 << 1), 
+    PMIC_INIT_SUCCESS_EVENT_BIT = (1 << 1),
+    PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT = (1 << 2),  // the monitor task writes the saved charge settings
+    PMIC_POWER_OFF_EVENT_BIT = (1 << 3),  // the monitor task shuts the unit down
 } pmic_event_control_bit_e;
+
+
+// The PMIC service (ADR-005 step 3): the monitor task owns the AXP2101 after init and is the only code that
+// talks to it. It publishes its readings as events and never calls LVGL; the UI bridge shows them.
+ESP_EVENT_DECLARE_BASE(PMIC_SERVICE_EVENT);
+
+typedef enum {
+    PMIC_SERVICE_EVENT_STATUS_CHANGED,      // a reading changed; read it with pmic_get_status(). No data
+    PMIC_SERVICE_EVENT_POWER_KEY_LONG_PRESS,  // the power key was held: show the power menu. No data
+} pmic_service_event_e;
 
 
 typedef enum {
@@ -106,6 +118,8 @@ typedef struct {
 } power_management_config_t;
 
 typedef struct {
+    bool valid;  // false until the monitor task's first reading, and on a unit without a PMIC
+
     int charge_status;
     int battery_percentage;
     float ts_temperature;
@@ -132,21 +146,29 @@ typedef struct {
 esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handle, gpio_num_t interrupt_pin);
 esp_err_t axp2101_deinit(axp2101_ctx_t *ctx);
 
+/** @brief A copy of the newest readings; callable from any task. */
+axp2101_status_t pmic_get_status();
+
+/**
+ * @brief Have the PMIC monitor task write the VBUS current limit, charge current and charge voltage from
+ * power_management_config to the chip. Returns at once; callable from any task (ADR-005 B15).
+ */
+esp_err_t axp2101_request_apply_charge_settings(axp2101_ctx_t *ctx);
+
 esp_err_t save_pmic_config();
 esp_err_t load_pmic_config();
 
-void pmic_power_off();
-
-
-lv_obj_t * create_power_management_view_config(lv_obj_t *parent, lv_obj_t * parent_menu_page);
-void power_management_view_update_status(axp2101_ctx_t *ctx);
-void power_menu_make_visible();
+/**
+ * @brief Have the PMIC monitor task shut the unit down. Returns at once; callable from any task. Returns
+ * ESP_ERR_INVALID_STATE on a unit without a PMIC.
+ */
+esp_err_t pmic_request_power_off();
 
 uint32_t idle_timeout_to_secs(idle_timeout_t timeout);
 uint32_t sleep_timeout_to_secs(sleep_timeout_t timeout);
 
 
-extern const power_management_config_t default_power_management_config_t;
+extern const power_management_config_t default_power_management_config;
 extern power_management_config_t power_management_config;
 
 

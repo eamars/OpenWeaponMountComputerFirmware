@@ -10,13 +10,15 @@
 
 
 #define TAG "Common"
-#define CRC32_POLYNOMIAL 0xEDB88320
+// Passed as esp_crc32_le's initial value (the polynomial is built in). The name used to say "polynomial"; the value
+// stays, because every saved setting carries a CRC made with it
+#define CRC32_INIT 0xEDB88320
 
 uint32_t crc32_wrapper(void * data, size_t length, size_t offset) {
     uint8_t * data_start_addr = (uint8_t *) data + offset;
     size_t crc_length = length - offset;
 
-    return esp_crc32_le(CRC32_POLYNOMIAL, data_start_addr, crc_length);
+    return esp_crc32_le(CRC32_INIT, data_start_addr, crc_length);
 }
 
 
@@ -29,9 +31,15 @@ float wrap_angle(float rad) {
 
 
 esp_err_t parse_git_describe_version(const char *describe, version_t * version) {
-    // captures format like v1.0.0-dirty or v1.0.0
-    sscanf(describe, "v%d.%d.%d", &version->major, &version->minor, &version->patch);
-    
+    // Captures formats like v1.0.0-dirty, v1.0.0 or 1.0.0; anything else is an error, so the
+    // caller never compares unset fields (ADR-005 B14)
+    if (describe[0] == 'v' || describe[0] == 'V') {
+        describe++;
+    }
+    if (sscanf(describe, "%d.%d.%d", &version->major, &version->minor, &version->patch) != 3) {
+        return ESP_ERR_INVALID_VERSION;
+    }
+
     return ESP_OK;
 }
 

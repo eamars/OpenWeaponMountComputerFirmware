@@ -9,8 +9,6 @@
 
 
 
-extern digital_level_view_config_t digital_level_view_config;
-extern system_config_t system_config;
 
 
 static lv_obj_t * left_tilt_led = NULL;
