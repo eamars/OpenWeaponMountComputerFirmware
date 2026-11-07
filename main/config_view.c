@@ -19,6 +19,7 @@
 #include "countdown_timer_config_view.h"
 #include "dope_config_view.h"
 #include "kestrel_config_view.h"
+#include "settings_ui.h"
 
 #define TAG "ConfigView"
 
@@ -451,7 +452,8 @@ void config_view_rotation_event_callback(lv_event_t * e) {
     set_rotation_config_view(system_config.rotation);
 }
 
-void create_config_view(lv_obj_t *parent) {
+// The settings before ADR-008, reached from the hub's "More settings" until their pages move (step 2)
+static void create_old_settings_menu(lv_obj_t *parent) {
     // Create a parent container
     parent_container = lv_obj_create(parent);
     lv_obj_set_size(parent_container, lv_pct(100), lv_pct(100));
@@ -508,8 +510,6 @@ void create_config_view(lv_obj_t *parent) {
 
     // All top level menu items
 #if USE_BNO085
-    create_countdown_timer_view_config(config_menu, main_page);
-    create_dope_view_config(config_menu, main_page);
     create_kestrel_view_config(config_menu, main_page);
 #endif  // USE_BNO085
     create_system_config_view_config(config_menu, main_page);
@@ -529,6 +529,29 @@ void create_config_view(lv_obj_t *parent) {
 
     // Setup event callback handlers
     lv_obj_add_event_cb(parent, config_view_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
+}
+
+
+static void more_settings_summary(char * buf, size_t size, void * ctx) {
+    snprintf(buf, size, "Kestrel, level, Wi-Fi, power, about");
+}
+
+
+// The settings tile (ADR-008): the hub, a page a row, each row saying what its page holds
+void create_config_view(lv_obj_t * tile) {
+    settings_page_t * hub = settings_ui_create(tile);
+
+#if USE_BNO085
+    settings_row_link(hub, LV_SYMBOL_BELL, "Timer", countdown_timer_settings_summary, NULL,
+                      create_countdown_timer_settings_page());
+    settings_row_link(hub, LV_SYMBOL_LIST, "Dope", dope_settings_summary, NULL, create_dope_settings_page());
+#endif  // USE_BNO085
+
+    settings_page_t * more = settings_page_create("More settings");
+    create_old_settings_menu(settings_page_body(more));
+    settings_row_link(hub, LV_SYMBOL_SETTINGS, "More settings", more_settings_summary, NULL, more);
+
+    settings_ui_start();
 }
 
 

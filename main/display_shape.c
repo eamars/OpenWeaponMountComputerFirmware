@@ -29,6 +29,19 @@ int32_t display_corner_clearance(int32_t depth) {
 }
 
 
+int32_t display_locked_row_height(int32_t viewport, int32_t min_row, int32_t gap) {
+    if (viewport <= 0 || min_row <= 0) {
+        return min_row;
+    }
+    // n rows and n - 1 gaps fill the viewport: n (row + gap) = viewport + gap
+    int32_t rows = (viewport + gap) / (min_row + gap);
+    if (rows < 1) {
+        return viewport;    // not even one row fits: a row is the whole viewport
+    }
+    return (viewport + gap) / rows - gap;
+}
+
+
 void display_shape_show_outline(bool show) {
     if (!show) {
         if (display_outline) {

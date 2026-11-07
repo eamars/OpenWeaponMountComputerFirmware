@@ -32,6 +32,13 @@ int32_t display_concentric_radius(int32_t margin);
 int32_t display_corner_clearance(int32_t depth);
 
 /**
+ * @brief Row height for a scrolling list that shows whole rows only (ADR-008, the owner: no half row at the end of
+ * a scroll): as many rows of at least `min_row` px as fit in `viewport` with `gap` between them, stretched to fill
+ * it exactly. Used with LV_SCROLL_SNAP_START, every scroll then stops on a row edge.
+ */
+int32_t display_locked_row_height(int32_t viewport, int32_t min_row, int32_t gap);
+
+/**
  * @brief Debug: draw the panel's outline on the top layer (remote control `outline on|off`). LVGL lock held.
  */
 void display_shape_show_outline(bool show);

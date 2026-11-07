@@ -11,6 +11,7 @@
 #include "app_cfg.h"
 #include "display_shape.h"
 #include "value_editor.h"
+#include "settings_ui.h"
 #include "config_view.h"
 #include "level_band.h"
 #include "kestrel_service.h"
@@ -27,6 +28,8 @@
 #define DOPE_CELL_PX 122
 #define DOPE_HEADER_LANDSCAPE_PX 64     // landscape: the column with the letter and the range
 #define DOPE_HEADER_INSET_PX 12         // portrait: the letter clears the panel's top corner
+#define DOPE_HEADER_PORTRAIT_PX 40      // portrait: the letter and range line over the cells
+#define DOPE_ROW_INNER_GAP_PX 8         // between a row's header (or status) and its cells
 #define DOPE_CELL_INACTIVE_COLOUR 0x1a1a1a
 
 // The editor's ranges, mil x 10
@@ -46,9 +49,7 @@ static const dope_settings_t dope_settings_default = {
     .pull_count = 5,
     .target_count = 12,
 };
-static const char * target_names_options = "A, B, C\n1, 2, 3";
 static const uint8_t target_count_values[] = {10, 12, 15};
-static const char * target_count_options = "10\n12\n15";
 
 
 typedef enum {
@@ -618,8 +619,8 @@ static void pull_clicked_cb(lv_event_t * e) {
 static void create_kestrel_row(lv_obj_t * parent) {
     kestrel_row = lv_obj_create(parent);
     lv_obj_remove_style_all(kestrel_row);
-    lv_obj_set_size(kestrel_row, lv_pct(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_row(kestrel_row, 8, LV_PART_MAIN);
+    lv_obj_set_size(kestrel_row, lv_pct(100), DOPE_CELL_PX);  // the rotation sets the locked height
+    lv_obj_set_style_pad_row(kestrel_row, DOPE_ROW_INNER_GAP_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_column(kestrel_row, DOPE_TILE_GAP_PX, LV_PART_MAIN);
     lv_obj_remove_flag(kestrel_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(kestrel_row, LV_OBJ_FLAG_HIDDEN);
@@ -641,9 +642,9 @@ static void create_kestrel_row(lv_obj_t * parent) {
 static void set_rotation_kestrel_row(bool portrait) {
     // Portrait: the status over a full-width Pull; landscape: the status on the left, Pull on the right
     static const int32_t portrait_cols[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static const int32_t portrait_rows[] = {LV_GRID_CONTENT, DOPE_CELL_PX, LV_GRID_TEMPLATE_LAST};
+    static const int32_t portrait_rows[] = {LV_GRID_CONTENT, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
     static const int32_t landscape_cols[] = {LV_GRID_FR(1), DOPE_PULL_BUTTON_LANDSCAPE_PX, LV_GRID_TEMPLATE_LAST};
-    static const int32_t landscape_rows[] = {DOPE_CELL_PX, LV_GRID_TEMPLATE_LAST};
+    static const int32_t landscape_rows[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
 
     if (portrait) {
         lv_obj_set_grid_dsc_array(kestrel_row, portrait_cols, portrait_rows);
@@ -690,8 +691,8 @@ static void create_target_row(lv_obj_t * parent, int index) {
 
     w->row = lv_obj_create(parent);
     lv_obj_remove_style_all(w->row);
-    lv_obj_set_size(w->row, lv_pct(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_row(w->row, 8, LV_PART_MAIN);
+    lv_obj_set_size(w->row, lv_pct(100), DOPE_CELL_PX);   // the rotation sets the locked height
+    lv_obj_set_style_pad_row(w->row, DOPE_ROW_INNER_GAP_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_column(w->row, DOPE_TILE_GAP_PX, LV_PART_MAIN);
     lv_obj_remove_flag(w->row, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -723,9 +724,9 @@ void set_rotation_dope_card_config_view(lv_display_rotation_t rotation) {
 
     // Portrait: the letter and range over the two cells; landscape: the letter and range in a column on the left
     static const int32_t portrait_cols[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static const int32_t portrait_rows[] = {LV_GRID_CONTENT, DOPE_CELL_PX, LV_GRID_TEMPLATE_LAST};
+    static const int32_t portrait_rows[] = {DOPE_HEADER_PORTRAIT_PX, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
     static const int32_t landscape_cols[] = {DOPE_HEADER_LANDSCAPE_PX, LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static const int32_t landscape_rows[] = {DOPE_CELL_PX, LV_GRID_TEMPLATE_LAST};
+    static const int32_t landscape_rows[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
 
     for (int i = 0; i < DOPE_TARGET_MAX; i++) {
         dope_target_widgets_t * w = &target_widgets[i];
@@ -775,11 +776,44 @@ void set_rotation_dope_card_config_view(lv_display_rotation_t rotation) {
 }
 
 
+// Whole rows only (owner, 2026-11-07): every row of the list is one height, as many as fit the list, stretched to
+// fill it; the list snaps to row edges, so a scroll never stops on half a row. Portrait: 2 rows (cells 164 px);
+// landscape: 2 rows of 122 px. Run when the list itself changes size, from the size it has then: the rotation
+// handler runs before the list has its new size
+static void realign_list_async(void * p) {
+    lv_obj_update_layout(target_list);
+    lv_obj_update_snap(target_list, LV_ANIM_OFF);    // back onto a row edge
+}
+
+
+static void lock_rows_to_list(void) {
+    int32_t height = lv_obj_get_content_height(target_list);
+    bool portrait = height > lv_obj_get_content_width(target_list);
+    int32_t min_row = portrait ? DOPE_HEADER_PORTRAIT_PX + DOPE_ROW_INNER_GAP_PX + DOPE_CELL_PX : DOPE_CELL_PX;
+    int32_t row_height = display_locked_row_height(height, min_row, DOPE_TILE_GAP_PX);
+
+    lv_obj_set_height(kestrel_row, row_height);
+    lv_obj_set_height(clear_all_button, row_height);
+    for (int i = 0; i < DOPE_TARGET_MAX; i++) {
+        lv_obj_set_height(target_widgets[i].row, row_height);
+    }
+    // Inside a layout pass (the size-change event) a layout update is ignored: realign once it has finished
+    lv_async_call(realign_list_async, NULL);
+}
+
+
+static void target_list_size_changed_cb(lv_event_t * e) {
+    lock_rows_to_list();
+}
+
+
 // The card is read at start-up (app_main), so the level's band and the tile show the same targets
 void create_dope_config_view(lv_obj_t * parent) {
     target_list = create_screen(parent);
     lv_obj_set_flex_flow(target_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scroll_dir(target_list, LV_DIR_VER);
+    lv_obj_set_scroll_snap_y(target_list, LV_SCROLL_SNAP_START);    // stops on row edges: no half rows
+    lv_obj_add_event_cb(target_list, target_list_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
 
     create_kestrel_row(target_list);
     for (int i = 0; i < DOPE_TARGET_MAX; i++) {
@@ -797,6 +831,8 @@ void create_dope_config_view(lv_obj_t * parent) {
     create_confirm(parent);
 
     set_rotation_dope_card_config_view(system_config.rotation);
+    lv_obj_update_layout(target_list);
+    lock_rows_to_list();
     refresh_card();
 }
 
@@ -825,94 +861,76 @@ void enable_dope_config_view(bool enable) {
 
 /*
 ----------------------------------------------------
-Settings page: Dope
+Settings page: Dope (ADR-008: each change stored when made)
 ----------------------------------------------------
 */
 
-static lv_obj_t * dope_config_page = NULL;
+static const char * const target_names_option_names[] = {"A, B, C", "1, 2, 3"};
+static const char * const target_count_option_names[] = {"10 targets", "12 targets", "15 targets"};
 
 
-// The names show at once on the tile and the level; Save keeps them
-static void target_names_changed_cb(lv_event_t * e) {
-    uint32_t selected = lv_dropdown_get_selected(lv_event_get_target_obj(e));
-    if (selected <= DOPE_TARGET_NAMES_NUMBERS) {
-        dope_settings.target_names = (uint8_t) selected;
-        refresh_card();
-    }
+static int get_target_names(void * ctx) {
+    return dope_settings.target_names;
 }
 
 
-// The size shows at once on the tile and the level; Save keeps it. Targets past a smaller size are kept, hidden
-static void target_count_changed_cb(lv_event_t * e) {
-    uint32_t selected = lv_dropdown_get_selected(lv_event_get_target_obj(e));
-    if (selected < sizeof(target_count_values)) {
-        dope_settings.target_count = target_count_values[selected];
-        refresh_card();
-    }
-}
-
-
-static void on_save_button_pressed(lv_event_t * e) {
-    update_info_msg_box_result(msg_box, save_dope_settings(), "Configuration Saved", "Save failed");
-}
-
-
-static void on_reload_button_pressed(lv_event_t * e) {
-    esp_err_t ret = load_dope_settings();
+// The names show at once on the tile and the level
+static void set_target_names(int index, void * ctx) {
+    dope_settings.target_names = (uint8_t) index;
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_dope_settings());
     refresh_card();
-    config_page_rebuild(dope_config_page);
-
-    update_info_msg_box_result(msg_box, ret, "Previous Configuration Reloaded", "Reload failed");
 }
 
 
-static void on_reset_button_pressed(lv_event_t * e) {
-    memcpy(&dope_settings, &dope_settings_default, sizeof(dope_settings));
-    refresh_card();
-    config_page_rebuild(dope_config_page);
-
-    update_info_msg_box(msg_box, "Configuration reset to default. Use reload button to undo the action");
-}
-
-
-// The page's widgets, built from the settings; config_page_rebuild() runs it again after Reload and Reset
-static void fill_dope_config_page(lv_obj_t * sub_page_config_view) {
-    lv_obj_t * container;
-
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Target Names");
-    create_dropdown_list(container, target_names_options, dope_settings.target_names, target_names_changed_cb, NULL);
-
-    uint32_t size_index = 0;
-    for (uint32_t i = 0; i < sizeof(target_count_values); i++) {
+static int get_target_count(void * ctx) {
+    for (int i = 0; i < (int) sizeof(target_count_values); i++) {
         if (target_count_values[i] == dope_settings.target_count) {
-            size_index = i;
+            return i;
         }
     }
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Card Size");
-    create_dropdown_list(container, target_count_options, size_index, target_count_changed_cb, NULL);
-
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Next Target on Recoil");
-    create_switch(container, &dope_settings.next_target_on_recoil, NULL);
-
-    container = create_menu_container_with_text(sub_page_config_view, NULL, "Save/Reload/Reset");
-    create_save_reload_reset_buttons(container, on_save_button_pressed, on_reload_button_pressed, on_reset_button_pressed);
+    return 0;
 }
 
 
-lv_obj_t * create_dope_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page) {
-    dope_config_page = create_config_page(parent, fill_dope_config_page);
-
-    lv_obj_t * cont = lv_menu_cont_create(parent_menu_page);
-    lv_obj_t * img = lv_image_create(cont);
-    lv_obj_t * label = lv_label_create(cont);
-
-    lv_image_set_src(img, LV_SYMBOL_SETTINGS);
-    lv_label_set_text(label, "Dope");
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
-    lv_obj_set_flex_grow(label, 1);
-
-    lv_menu_set_load_page_event(parent, cont, dope_config_page);
-
-    return dope_config_page;
+// The size shows at once on the tile and the level. Targets past a smaller size are kept, hidden
+static void set_target_count(int index, void * ctx) {
+    dope_settings.target_count = target_count_values[index];
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_dope_settings());
+    refresh_card();
 }
 
+
+static bool get_next_on_recoil(void * ctx) {
+    return dope_settings.next_target_on_recoil;
+}
+
+
+static void set_next_on_recoil(bool on, void * ctx) {
+    dope_settings.next_target_on_recoil = on;
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_dope_settings());
+}
+
+
+// The settings, not the card: Clear all on the tile clears the targets
+static void reset_dope_settings(void * ctx) {
+    memcpy(&dope_settings, &dope_settings_default, sizeof(dope_settings));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_dope_settings());
+    refresh_card();
+}
+
+
+void dope_settings_summary(char * buf, size_t size, void * ctx) {
+    snprintf(buf, size, "%d targets, %s", dope_target_count(),
+             dope_settings.target_names == DOPE_TARGET_NAMES_NUMBERS ? "1, 2, 3" : "A, B, C");
+}
+
+
+settings_page_t * create_dope_settings_page(void) {
+    settings_page_t * page = settings_page_create("Dope");
+    settings_row_choice(page, "Target names", target_names_option_names, 2, get_target_names, set_target_names, NULL);
+    settings_row_choice(page, "Card size", target_count_option_names, 3, get_target_count, set_target_count, NULL);
+    settings_row_toggle(page, "Next target on recoil", get_next_on_recoil, set_next_on_recoil, NULL);
+    settings_row_reset(page, "Reset Dope settings", "Reset the Dope settings? The targets stay.", reset_dope_settings,
+                       NULL);
+    return page;
+}

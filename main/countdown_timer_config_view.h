@@ -6,6 +6,7 @@
 
 #include <lvgl.h>
 #include "esp_err.h"
+#include "settings_ui.h"
 
 #define TIMER_PRESET_COUNT 3
 
@@ -20,8 +21,10 @@ void create_countdown_timer_config_view(lv_obj_t * parent);
 void enable_countdown_timer_config_view(bool enable);
 void countdown_timer_rotation_event_callback(lv_event_t * e);
 
-/** @brief The Timer page of the settings menu */
-lv_obj_t * create_countdown_timer_view_config(lv_obj_t * parent, lv_obj_t * parent_menu_page);
+/** @brief The Timer page of the settings (ADR-008) */
+settings_page_t * create_countdown_timer_settings_page(void);
+/** @brief One line for the hub: the step and the first-shot start */
+void countdown_timer_settings_summary(char * buf, size_t size, void * ctx);
 
 esp_err_t load_countdown_timer_config();
 esp_err_t save_countdown_timer_config();

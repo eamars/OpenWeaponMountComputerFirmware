@@ -14,12 +14,12 @@ The virtual environment **must** be located at the project root in a folder name
 ```
 <project_root>/
 ├── venv/          ← always here
-├── workspace/
 ├── .agents/
+├── main/
 └── ...
 ```
 
-**Never create a venv inside `workspace/`, `.agents/`, or any subdirectory.** The project root is the directory that contains `workspace/` and `.agents/`.
+**Never create a venv inside `.agents/`, `tools/` or any other subdirectory.** The project root is the repository root, the directory that contains `.agents/` and `main/`. Use the latest Python available.
 
 ## Workflow
 
