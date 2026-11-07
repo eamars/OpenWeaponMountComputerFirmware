@@ -252,8 +252,11 @@ static void on_reload_button_pressed(lv_event_t * e) {
 }
 
 static void on_reset_button_pressed(lv_event_t * e) {
-    // Initialize with default values
+    // Initialize with default values. Reset restores the preferences, not the calibration: the zero (the mounting
+    // offset, and after a tare the rotation it was taken at) stays, as the tare stays in the sensor (owner, ADR-005)
+    float zero_rad = digital_level_view_config.user_roll_rad_offset;
     memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
+    digital_level_view_config.user_roll_rad_offset = zero_rad;
     apply_digital_level_view_style();
     config_page_rebuild(digital_level_config_page);
 
