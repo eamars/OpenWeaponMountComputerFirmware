@@ -17,6 +17,7 @@
 #include "pmic_axp2101.h"
 #include "pmic_config.h"
 #include "countdown_timer_config_view.h"
+#include "dope_config_view.h"
 
 #define TAG "ConfigView"
 
@@ -507,6 +508,7 @@ void create_config_view(lv_obj_t *parent) {
     // All top level menu items
 #if USE_BNO085
     create_countdown_timer_view_config(config_menu, main_page);
+    create_dope_view_config(config_menu, main_page);
 #endif  // USE_BNO085
     create_system_config_view_config(config_menu, main_page);
 #if USE_BNO085

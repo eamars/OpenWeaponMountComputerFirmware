@@ -17,6 +17,7 @@
 #include "app.h"
 #include "digital_level_view.h"
 #include "countdown_timer_config_view.h"
+#include "dope_config_view.h"
 #include "main_tileview.h"
 #include "app_cfg.h"
 #include "bno085.h"
@@ -160,6 +161,10 @@ void app_main(void)
 
     // The timer tile and the Timer settings page both show these (ADR-006)
     ESP_ERROR_CHECK(load_countdown_timer_config());
+
+    // The dope tile and the level's dope strip both show the card and name its targets (ADR-007)
+    ESP_ERROR_CHECK(load_dope_config());
+    ESP_ERROR_CHECK(load_dope_settings());
 #endif  // USE_BNO085
 
     // Set buzzer
