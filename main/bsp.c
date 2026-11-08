@@ -1,4 +1,7 @@
 #include "bsp.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "app_cfg.h"
 #include "esp_check.h"
 
@@ -90,6 +93,12 @@ esp_err_t display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handl
 
     return ESP_OK;
 }
+esp_err_t set_display_sleep(esp_lcd_panel_io_handle_t io_handle, bool sleep) {
+    (void) io_handle;
+    (void) sleep;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
 #elif USE_LCD_SH8601
 #include "esp_lcd_sh8601.h"
 #include "esp_lcd_touch_ft3168.h"
@@ -106,6 +115,39 @@ esp_err_t set_display_brightness(esp_lcd_panel_io_handle_t *io_handle, uint8_t b
 
     return ESP_OK;
 }
+
+// The panel module (DO0164, ICNA3311 / CO5300 compatible) powers down as display off, then sleep-in; it needs 50 ms
+// from sleep-out to display on (DO0164 p.20-21). Sleep-in to sleep-out is kept at least 120 ms apart, the usual rule
+// for this command set; a wake right after idle entry waits out the rest
+#define DISPLAY_SLEEP_OUT_TO_ON_MS      60
+#define DISPLAY_SLEEP_IN_TO_OUT_MIN_MS  120
+
+static int64_t display_sleep_in_us = 0;
+
+
+static esp_err_t display_send_cmd(esp_lcd_panel_io_handle_t io_handle, uint8_t cmd) {
+    // The SH8601 driver's QSPI command form, as set_display_brightness
+    uint32_t lcd_cmd = (0x02u << 24) | ((uint32_t) cmd << 8);
+    return esp_lcd_panel_io_tx_param(io_handle, lcd_cmd, NULL, 0);
+}
+
+
+esp_err_t set_display_sleep(esp_lcd_panel_io_handle_t io_handle, bool sleep) {
+    if (sleep) {
+        esp_err_t ret = display_send_cmd(io_handle, 0x10);  // SLPIN
+        display_sleep_in_us = esp_timer_get_time();
+        return ret;
+    }
+
+    int64_t since_ms = (esp_timer_get_time() - display_sleep_in_us) / 1000;
+    if (display_sleep_in_us != 0 && since_ms < DISPLAY_SLEEP_IN_TO_OUT_MIN_MS) {
+        vTaskDelay(pdMS_TO_TICKS(DISPLAY_SLEEP_IN_TO_OUT_MIN_MS - since_ms));
+    }
+    esp_err_t ret = display_send_cmd(io_handle, 0x11);  // SLPOUT
+    vTaskDelay(pdMS_TO_TICKS(DISPLAY_SLEEP_OUT_TO_ON_MS));
+    return ret;
+}
+
 
 static const sh8601_lcd_init_cmd_t lcd_init_cmds[] = {
     {0x11, (uint8_t []){0x00}, 0, 80},   

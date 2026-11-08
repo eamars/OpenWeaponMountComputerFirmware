@@ -11,6 +11,7 @@
 #include "esp_timer.h"
 #include "esp_pm.h"
 #include "esp_lcd_panel_ops.h"
+#include "src/misc/lv_timer_private.h"  // the paused flag; LVGL 9.6 has no getter for it
 
 #include "low_power_mode.h"
 #include "system_config.h"
@@ -23,6 +24,7 @@
 #include "lvgl_display.h"
 #include "main_tileview.h"
 #include "app.h"
+#include "display_flush.h"
 
 #define TAG "LowPowerMode"
 
@@ -51,6 +53,80 @@ static EventGroupHandle_t low_power_control_event;
 static lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
 
 
+// LVGL's timers paused while idle (ADR-009). lvgl_port_stop() alone disables LVGL's timers, and LVGL 9.6's
+// lv_timer_handler() then asks to be called again in 1 ms, so the port's task woke about every 2 ms all through idle.
+// Instead every running timer is paused and timers stay enabled: the task sleeps until an input event (touch and
+// button still reach it) or its longest sleep. No timer runs, so no frame is started while idle (the ADR-002 rule)
+#define LVGL_IDLE_MAX_PAUSED_TIMERS 64
+static lv_timer_t * lvgl_idle_paused_timers[LVGL_IDLE_MAX_PAUSED_TIMERS];
+static int lvgl_idle_paused_count = 0;
+
+
+// LVGL lock held, LVGL stopped (lvgl_port_stop)
+static void lvgl_idle_pause_timers(void) {
+    lvgl_idle_paused_count = 0;
+    for (lv_timer_t * t = lv_timer_get_next(NULL); t != NULL; t = lv_timer_get_next(t)) {
+        if (t->paused) {
+            continue;  // paused by its owner; left to it
+        }
+        if (lvgl_idle_paused_count == LVGL_IDLE_MAX_PAUSED_TIMERS) {
+            // More timers than slots: leave LVGL's timers disabled, as lvgl_port_stop() did (correct, not quiet)
+            ESP_LOGW(TAG, "More than %d LVGL timers; LVGL stays disabled while idle", LVGL_IDLE_MAX_PAUSED_TIMERS);
+            for (int i = 0; i < lvgl_idle_paused_count; i++) {
+                lv_timer_resume(lvgl_idle_paused_timers[i]);
+            }
+            lvgl_idle_paused_count = 0;
+            return;
+        }
+        lv_timer_pause(t);
+        lvgl_idle_paused_timers[lvgl_idle_paused_count++] = t;
+    }
+    lv_timer_enable(true);
+}
+
+
+// LVGL lock held, before lvgl_port_resume(). Resumes only timers that still exist (one may have been deleted while
+// idle, by a UI bridge update)
+static void lvgl_idle_resume_timers(void) {
+    for (lv_timer_t * t = lv_timer_get_next(NULL); t != NULL; t = lv_timer_get_next(t)) {
+        for (int i = 0; i < lvgl_idle_paused_count; i++) {
+            if (lvgl_idle_paused_timers[i] == t) {
+                lv_timer_resume(t);
+                break;
+            }
+        }
+    }
+    lvgl_idle_paused_count = 0;
+}
+
+
+#if WAKE_PROFILING_ENABLED
+// One wake from idle, timed (ADR-009): requested, exit started, panel on, LVGL resumed; reported by the monitor task
+// a second after the resume, with the first frame and the BNO085's first reports
+static struct {
+    const char * volatile cause;
+    volatile int64_t request_us;
+    int64_t idle_start_us;
+    int64_t exit_us;
+    int64_t panel_on_us;
+    int64_t resumed_us;
+    uint32_t idle_te_pulses;    // panel tearing-effect pulses while idle: the panel scanning
+    bool pending;
+} wake_prof;
+#endif  // WAKE_PROFILING_ENABLED
+
+
+void low_power_mode_note_wake_cause(const char *cause) {
+#if WAKE_PROFILING_ENABLED
+    if (wake_prof.request_us == 0) {
+        wake_prof.cause = cause;
+    }
+#else
+    (void) cause;
+#endif  // WAKE_PROFILING_ENABLED
+}
+
+
 
 void IRAM_ATTR update_low_power_mode_last_activity_event() {
     last_activity_tick = xTaskGetTickCount();
@@ -67,6 +143,7 @@ bool low_power_mode_swallow_wake_press(bool pressed, bool *wake_press) {
     update_low_power_mode_last_activity_event();
     if (!*wake_press && is_idle_mode_activated()) {
         *wake_press = true;
+        low_power_mode_note_wake_cause("press");
         wake_from_idle_mode();
     }
     return *wake_press;
@@ -89,6 +166,11 @@ void IRAM_ATTR touchpad_read_cb_wrapper(lv_indev_t *indev_drv, lv_indev_data_t *
 
 
 void wake_from_idle_mode() {
+#if WAKE_PROFILING_ENABLED
+    if (wake_prof.request_us == 0 && is_idle_mode_activated()) {
+        wake_prof.request_us = esp_timer_get_time();
+    }
+#endif  // WAKE_PROFILING_ENABLED
     // Runs in the low power monitor task, never inside an LVGL pass
     xEventGroupSetBits(low_power_control_event, REQUEST_WAKE);
     xTaskNotifyGive(low_power_monitor_task_handle);
@@ -118,15 +200,26 @@ static void enter_idle_mode() {
     }
 
     ESP_LOGI(TAG, "Entering idle mode");
+#if WAKE_PROFILING_ENABLED
+    wake_prof.idle_start_us = esp_timer_get_time();
+    wake_prof.request_us = 0;
+    wake_prof.cause = NULL;
+    display_flush_timing_t te_reset;
+    display_flush_take_timing(&te_reset);
+#endif  // WAKE_PROFILING_ENABLED
     xEventGroupSetBits(low_power_control_event, IN_IDLE_MODE);
     last_idle_tick = xTaskGetTickCount();
 
     // No LVGL timer runs after this, so no new flush starts
     lvgl_port_stop();
+    lvgl_idle_pause_timers();
     lvgl_watchdog_pause(true);
 
     // A panel command waits for every queued strip of the last frame to leave the bus
     esp_lcd_panel_disp_on_off(panel_handle, false);
+    // Then the panel's own sleep: display off alone leaves its supplies and scan running (about 0.6 mA asleep by
+    // its datasheet; its TE pulses stop) (ADR-009)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(set_display_sleep(io_handle, true));
 
 #if USE_BNO085
     // // Stop the reporting
@@ -170,6 +263,12 @@ static void exit_idle_mode() {
     }
 
     ESP_LOGI(TAG, "Exiting idle mode");
+#if WAKE_PROFILING_ENABLED
+    wake_prof.exit_us = esp_timer_get_time();
+    display_flush_timing_t te_idle;
+    display_flush_take_timing(&te_idle);
+    wake_prof.idle_te_pulses = te_idle.te_pulses;
+#endif  // WAKE_PROFILING_ENABLED
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_configure(&active_pm_config));  // logged; the wake goes on
 
     lvgl_port_lock(0);
@@ -192,15 +291,26 @@ static void exit_idle_mode() {
     //     lvgl_port_unlock();
     // }
 
-    // Restore display brightness. LVGL is stopped, so the panel bus is idle
+    // Restore display brightness. LVGL is stopped, so the panel bus is idle. Sleep-out first; it returns once the
+    // panel may be switched on (the sensor's first report, 99 ms after its wake above, comes later anyway)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(set_display_sleep(io_handle, false));
     esp_lcd_panel_disp_on_off(panel_handle, true);
+#if WAKE_PROFILING_ENABLED
+    wake_prof.panel_on_us = esp_timer_get_time();
+    display_flush_arm_first_frame();
+#endif  // WAKE_PROFILING_ENABLED
 
     // Reset idle timer; clear the flag before Wi-Fi starts (its disconnect handler reconnects only when active)
     last_idle_tick = xTaskGetTickCount();
     xEventGroupClearBits(low_power_control_event, IN_IDLE_MODE);
 
     lvgl_watchdog_pause(false);
+    lvgl_idle_resume_timers();
     lvgl_port_resume();
+#if WAKE_PROFILING_ENABLED
+    wake_prof.resumed_us = esp_timer_get_time();
+    wake_prof.pending = true;
+#endif  // WAKE_PROFILING_ENABLED
 
     lvgl_port_unlock();
 
@@ -293,6 +403,38 @@ void enter_sleep_mode() {
 }
 
 
+#if WAKE_PROFILING_ENABLED
+// Low power monitor task. Times in ms from the wake request; the BNO085's from its wake command
+static void wake_profile_report_if_due(void) {
+    if (!wake_prof.pending || esp_timer_get_time() - wake_prof.resumed_us < 1000000) {
+        return;
+    }
+    wake_prof.pending = false;
+
+    const int64_t t0 = wake_prof.request_us ? wake_prof.request_us : wake_prof.exit_us;
+    display_flush_timing_t te_awake;
+    display_flush_take_timing(&te_awake);
+    const int64_t frame_us = display_flush_first_frame_us();
+    uint32_t cmd_us = 0, grv_us = 0, grv_n = 0, la_us = 0, la_n = 0, st_us = 0, st_n = 0;
+#if USE_BNO085
+    bno085_get_wake_profile(bno085_dev, SH2_GAME_ROTATION_VECTOR, &grv_us, &grv_n, &cmd_us);
+    bno085_get_wake_profile(bno085_dev, SH2_LINEAR_ACCELERATION, &la_us, &la_n, NULL);
+    bno085_get_wake_profile(bno085_dev, SH2_STABILITY_DETECTOR, &st_us, &st_n, NULL);
+#endif  // USE_BNO085
+
+    ESP_LOGI(TAG, "wake_prof: cause=%s idle_ms=%" PRIu32 " exit=%.1f panel_on=%.1f resumed=%.1f frame=%.1f"
+             " bno_cmd=%.1f grv_first=%.1f grv_100ms=%" PRIu32 " la_first=%.1f la_100ms=%" PRIu32
+             " stab_first=%.1f stab_100ms=%" PRIu32 " te_idle=%" PRIu32 " te_awake=%" PRIu32,
+             wake_prof.cause ? wake_prof.cause : "other",
+             (uint32_t) ((wake_prof.exit_us - wake_prof.idle_start_us) / 1000),
+             (wake_prof.exit_us - t0) / 1000.0, (wake_prof.panel_on_us - t0) / 1000.0,
+             (wake_prof.resumed_us - t0) / 1000.0, frame_us ? (frame_us - t0) / 1000.0 : -1.0,
+             cmd_us / 1000.0, grv_us ? grv_us / 1000.0 : -1.0, grv_n, la_us ? la_us / 1000.0 : -1.0, la_n,
+             st_us ? st_us / 1000.0 : -1.0, st_n, wake_prof.idle_te_pulses, te_awake.te_pulses);
+}
+#endif  // WAKE_PROFILING_ENABLED
+
+
 void low_power_mode_request_idle() {
     // Runs in the low power monitor task, never inside an LVGL pass; does nothing when already idle
     xEventGroupSetBits(low_power_control_event, REQUEST_IDLE);
@@ -338,7 +480,8 @@ void low_power_monitor_task(void *p) {
         //     (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE) != 0,
         //     (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE) != 0
         // );
-        ESP_LOGI(TAG, "Active duration: %" PRIu32 " ms, Idle duration: %" PRIu32 " ms", active_duration_ms, idle_duration_ms);
+        // Debug level: once a second at info it was a console line (and a wake-up) every second, idle or not
+        ESP_LOGD(TAG, "Active duration: %" PRIu32 " ms, Idle duration: %" PRIu32 " ms", active_duration_ms, idle_duration_ms);
 
         // In Idle mode
         if (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) {
@@ -348,6 +491,10 @@ void low_power_monitor_task(void *p) {
 
         // LVGL stopped on purpose (idle): keep its lock-up watchdog fed; no-op otherwise
         lvgl_watchdog_feed_while_paused();
+
+#if WAKE_PROFILING_ENABLED
+        wake_profile_report_if_due();
+#endif  // WAKE_PROFILING_ENABLED
 
         if (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE) {
             // Update sleep mode tick
@@ -410,6 +557,7 @@ void sensor_stability_detector_poller_task(void *p) {
             update_low_power_mode_last_activity_event();
 
             if (is_idle_mode_activated()) {
+                low_power_mode_note_wake_cause("motion");
                 wake_from_idle_mode();
             }
         }

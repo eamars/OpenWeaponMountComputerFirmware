@@ -122,7 +122,8 @@ typedef struct {
 
     int charge_status;
     int battery_percentage;
-    float ts_temperature;
+    uint16_t ts_raw;        // TS ADC, 0.5 mV a step (ADR-009)
+    float ts_temperature;   // degC from TH1 (the board), NAN when out of range
     
     uint16_t vbus_voltage_mv;
     uint16_t vbatt_voltage_mv;

@@ -40,6 +40,10 @@ typedef struct {
 // Copy the timing gathered since the previous call and start a new window
 void display_flush_take_timing(display_flush_timing_t *timing);
 
+/** @brief Wake profiling (ADR-009): arm, then read when the first frame sent after arming finished (0 until then) */
+void display_flush_arm_first_frame(void);
+int64_t display_flush_first_frame_us(void);
+
 #ifdef __cplusplus
 }
 #endif

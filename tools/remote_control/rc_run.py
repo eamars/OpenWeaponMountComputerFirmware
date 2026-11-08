@@ -18,6 +18,7 @@ import base64
 import datetime
 import pathlib
 import re
+import statistics
 import struct
 import sys
 import time
@@ -74,6 +75,8 @@ REPLY_PREFIXES = {
     "bnoreset": "@ok bnoreset",
     "settings": "@ok settings",
     "ota": "@ok ota",
+    "bno": "@ok bno",
+    "top": "@ok top",
 }
 FAILURE_MARKERS = (
     RESET_MARKER,
@@ -537,6 +540,101 @@ def scenario_watch(session: Session):
         session.command("state")
 
 
+# Wake profile (ADR-009): which of the level's reports keep running while the BNO085 sleeps, as (grv, la) always-on
+WAKE_PROFILE_VARIANTS = ((0, 0), (0, 1))   # the firmware's since ADR-009 step 2, then linear acceleration kept on
+WAKE_PROFILE_DEFAULT = (0, 0)
+WAKE_PROFILE_CYCLES = 8
+WAKE_PROFILE_IDLE_S = 10.0
+WAKE_PROFILE_AFTER_WAKE_S = 2.5    # the device reports 1 s after LVGL resumes
+WAKE_PROFILE_FIELDS = ("exit", "panel_on", "resumed", "frame", "bno_cmd", "grv_first", "grv_100ms",
+                       "la_first", "la_100ms", "te_idle", "te_awake", "idle_ms")
+
+
+def wake_profile_summary(lines):
+    """Median of each wake_prof field over the given log lines; -1 (not seen) values are left out."""
+    values = {name: [] for name in WAKE_PROFILE_FIELDS}
+    count = 0
+    for line in lines:
+        if "wake_prof:" not in line:
+            continue
+        count += 1
+        for name in WAKE_PROFILE_FIELDS:
+            match = re.search(rf" {name}=(-?[\d.]+)", line)
+            if match and float(match.group(1)) >= 0:
+                values[name].append(float(match.group(1)))
+    medians = {name: (statistics.median(v) if v else None) for name, v in values.items()}
+    return count, medians
+
+
+def scenario_wake_profile(session: Session):
+    """Wake from idle on the level tile, timed by the device's `wake_prof:` lines, for each always-on variant.
+
+    Needs a build with WAKE_PROFILING_ENABLED. Each variant: WAKE_PROFILE_CYCLES of idle for WAKE_PROFILE_IDLE_S
+    then `wake`. `top` once while active and once while idle (verification builds with run-time stats). Leaves the
+    sensor as the firmware sets it.
+    """
+    session.command(f"tile {HOME_TILE[0]} {HOME_TILE[1]}")
+    session.dwell(3.0)
+    session.command("top 3000")
+    session.command("idle")
+    session.dwell(3.0)
+    session.command("top 3000")
+    session.command("wake")
+    session.dwell(WAKE_PROFILE_AFTER_WAKE_S)
+
+    results = []
+    for grv, la in WAKE_PROFILE_VARIANTS:
+        session.command(f"bno alwayson grv {grv}")
+        session.command(f"bno alwayson la {la}")
+        session.dwell(1.0)
+        start_index = len(session.lines)
+        for _ in range(WAKE_PROFILE_CYCLES):
+            session.command("idle")
+            session.dwell(WAKE_PROFILE_IDLE_S)
+            session.command("wake")
+            session.dwell(WAKE_PROFILE_AFTER_WAKE_S)
+        results.append(((grv, la), wake_profile_summary(session.lines[start_index:])))
+
+    session.command(f"bno alwayson grv {WAKE_PROFILE_DEFAULT[0]}")
+    session.command(f"bno alwayson la {WAKE_PROFILE_DEFAULT[1]}")
+
+    print("wake profile (medians, ms from the wake request; bno from its wake command):")
+    for (grv, la), (count, medians) in results:
+        shown = " ".join(f"{name}={'-' if v is None else f'{v:.1f}'}" for name, v in medians.items())
+        print(f"  grv_alwayson={grv} la_alwayson={la} wakes={count}: {shown}")
+        if count < WAKE_PROFILE_CYCLES:
+            session.failures.append(f"grv={grv} la={la}: {count} of {WAKE_PROFILE_CYCLES} wake_prof lines")
+
+
+IDLE_CYCLES_DURATION_S = 600.0    # the owner caps cycle tests at 10 minutes
+IDLE_CYCLE_IDLE_S = 10.0
+IDLE_CYCLE_AWAKE_S = 4.0
+
+
+def scenario_idle_cycles(session: Session):
+    """Idle and wake on the level tile for IDLE_CYCLES_DURATION_S, `state` after each wake.
+
+    A wake that never completes (the LVGL lock held, the LVGL watchdog's reboot) shows as a failure marker or a lost
+    `state` reply. With WAKE_PROFILING_ENABLED, the medians of the `wake_prof:` lines are printed as well.
+    """
+    session.command(f"tile {HOME_TILE[0]} {HOME_TILE[1]}")
+    start_index = len(session.lines)
+    cycles = 0
+    deadline = time.monotonic() + IDLE_CYCLES_DURATION_S
+    while time.monotonic() < deadline:
+        session.command("idle")
+        session.dwell(IDLE_CYCLE_IDLE_S)
+        session.command("wake")
+        session.dwell(IDLE_CYCLE_AWAKE_S)
+        session.command("state")
+        cycles += 1
+    count, medians = wake_profile_summary(session.lines[start_index:])
+    print(f"idle cycles: {cycles}")
+    if count:
+        shown = " ".join(f"{name}={'-' if v is None else f'{v:.1f}'}" for name, v in medians.items())
+        print(f"  wake_prof lines={count}: {shown}")
+
+
 def wait_for_text(session: Session, text: str, timeout_s: float, start_index: int) -> bool:
     """Read the log (sending nothing) until a line from start_index on contains text."""
     deadline = time.monotonic() + timeout_s
@@ -597,6 +695,8 @@ SCENARIOS = {
     "rotation_sweep": scenario_rotation_sweep,
     "watch": scenario_watch,
     "watchdog": scenario_watchdog,
+    "wake_profile": scenario_wake_profile,
+    "idle_cycles": scenario_idle_cycles,
 }
 
 

@@ -26,6 +26,8 @@
 #define TAG "DigitalLevelViewController"
 
 #define SENSOR_POLL_EVENT_RUN   (1 << 0)
+// Longest wait for a rotation report before the loop checks whether it should still run
+#define LEVEL_REPORT_WAIT_MS    500
 
 
 static TaskHandle_t sensor_poller_task_handle;
@@ -113,7 +115,6 @@ float get_relative_roll_angle_rad_thread_unsafe() {
 
 
 void unified_sensor_poller_task(void *p) {
-    TickType_t last_poll_tick;
     float last_sensor_x_acceleration = 0;
 
 #if DISPLAY_PROFILING_ENABLED
@@ -123,14 +124,15 @@ void unified_sensor_poller_task(void *p) {
     while (1) {
         xEventGroupWaitBits(sensor_task_control, SENSOR_POLL_EVENT_RUN, pdFALSE, pdFALSE, portMAX_DELAY);
 
-        last_poll_tick = xTaskGetTickCount();
         while (xEventGroupGetBits(sensor_task_control) & SENSOR_POLL_EVENT_RUN) {
 #if DISPLAY_PROFILING_ENABLED
             digital_level_profile.poll_loops++;
 #endif
             // Wait for watched sensor ids
             // Game rotation vectors
-            if (bno085_wait_for_game_rotation_vector_roll_pitch_yaw(bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, NULL, false) == ESP_OK) {
+            // Wait for the next report (ADR-009): each one is shown as it arrives, and the loop sleeps while there
+            // are none (idle, the sensor asleep). The timeout only rechecks the run flag
+            if (bno085_wait_for_game_rotation_vector_roll_pitch_yaw_ticks(bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, NULL, pdMS_TO_TICKS(LEVEL_REPORT_WAIT_MS)) == ESP_OK) {
 #if DISPLAY_PROFILING_ENABLED
                 digital_level_profile.game_reports++;
                 digital_level_profile.ui_update_attempts++;
@@ -190,7 +192,6 @@ void unified_sensor_poller_task(void *p) {
 #if DISPLAY_PROFILING_ENABLED
             digital_level_profile_report_if_due();
 #endif
-            vTaskDelayUntil(&last_poll_tick, pdMS_TO_TICKS(DIGITAL_LEVEL_VIEW_DISPLAY_UPDATE_PERIOD_MS));
         }
     }
 }

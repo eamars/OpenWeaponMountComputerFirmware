@@ -121,5 +121,9 @@
 #define DISPLAY_PROFILING_ENABLED 0
 #define DISPLAY_PROFILING_REPORT_PERIOD_MS 1000
 
+// Wake profiling (ADR-009): one `wake_prof:` line a second after each wake from idle (cause, the wake path's steps,
+// the first frame, the BNO085's first reports)
+#define WAKE_PROFILING_ENABLED 0
+
 
 #endif // APP_CFG_H

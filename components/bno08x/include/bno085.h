@@ -69,6 +69,13 @@ typedef struct {
     gpio_num_t reset_pin;
     gpio_num_t boot_pin;
     gpio_num_t ps0_wake_pin;
+
+    // Wake profile (ADR-009): when the last bno085_wake_up() started, how long its command took, and per sensor
+    // the first report after it and the reports in its first 100 ms. Written by the poller task, under sh2_lock
+    int64_t wake_us;
+    uint32_t wake_cmd_us;
+    int64_t wake_first_report_us[BNO085_REPORT_TABLE_LEN];
+    uint16_t wake_burst_reports[BNO085_REPORT_TABLE_LEN];
 } bno085_ctx_t;
 
 
@@ -115,6 +122,20 @@ esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx);
  * @brief Wake up the sensor from sleep state
  */
 esp_err_t bno085_wake_up(bno085_ctx_t *ctx);
+
+/**
+ * @brief The last wake's profile for one sensor (ADR-009): microseconds from the wake command to the sensor's first
+ * report after it (0 if none yet), how many of its reports came within 100 ms of the command, and how long the
+ * command itself took
+ */
+void bno085_get_wake_profile(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t *first_report_us,
+                             uint32_t *burst_reports, uint32_t *wake_cmd_us);
+
+/**
+ * @brief Set whether a report keeps running while the hub sleeps (always-on), and send that to the sensor if the
+ * report is on. Kept for the sensor's reset recovery; the report's enable function sets it back to its default
+ */
+esp_err_t bno085_set_report_always_on(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, bool always_on);
 
 /**
  * @brief Pulse the reset line while running, so the sensor restarts as after an unexpected reset.
@@ -186,6 +207,10 @@ esp_err_t bno085_enable_stability_detector_report(bno085_ctx_t *ctx, uint32_t in
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
 esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch_yaw(bno085_ctx_t *ctx, float *roll, float *pitch, float *yaw, bool block_wait);
+
+/** @brief As bno085_wait_for_game_rotation_vector_roll_pitch_yaw(), waiting at most `wait_ticks` for the report */
+esp_err_t bno085_wait_for_game_rotation_vector_roll_pitch_yaw_ticks(bno085_ctx_t *ctx, float *roll, float *pitch,
+                                                                    float *yaw, TickType_t wait_ticks);
 
 /**
  * @brief Wait for linear acceleration report

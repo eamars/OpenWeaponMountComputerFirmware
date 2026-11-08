@@ -38,6 +38,9 @@ void prevent_sleep_mode_enter(bool prevent);
  */
 void wake_from_idle_mode();
 
+/** @brief Wake profiling (ADR-009): name the cause of the next wake (a string literal); no-op without profiling */
+void low_power_mode_note_wake_cause(const char *cause);
+
 /**
  * @brief For input read callbacks: report what the hardware just read, get back whether LVGL must not see it.
  * A press counts as activity. A press that starts while idle wakes the unit, and that whole press, until it is

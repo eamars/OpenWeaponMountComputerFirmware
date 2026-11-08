@@ -22,6 +22,7 @@
 #include "lvgl.h"
 
 #include "remote_control.h"
+#include "mem_diag.h"
 #include "app_cfg.h"
 #include "pmic_config.h"
 #include "ota_mode.h"
@@ -60,7 +61,7 @@
 #define RC_MAX_ARGS 6   // "settings open How to pair"
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota"
+#define RC_HELP_COMMANDS "help state stats bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top"
 
 
 typedef struct {
@@ -728,6 +729,7 @@ static bool rc_cmd_wake(char *reply, size_t reply_size) {
     }
     // Every existing caller wakes only from idle; waking an active device would rerun the exit path
     if (is_idle_mode_activated()) {
+        low_power_mode_note_wake_cause("rc");
         wake_from_idle_mode();
     }
     lvgl_port_unlock();
@@ -767,10 +769,12 @@ static bool rc_cmd_pmic(char *reply, size_t reply_size) {
     lvgl_port_unlock();
 
     return rc_reply(reply, reply_size, true,
-                    "@ok pmic valid=%d soc=%d vbat=%u vbus=%u vsys=%u usb=%d chg=%d icon=%ld shown_vbat=%u",
+                    "@ok pmic valid=%d soc=%d vbat=%u vbus=%u vsys=%u usb=%d chg=%d icon=%ld shown_vbat=%u"
+                    " ts_raw=%u ts=%.1f",
                     status.valid ? 1 : 0, status.battery_percentage, (unsigned) status.vbatt_voltage_mv,
                     (unsigned) status.vbus_voltage_mv, (unsigned) status.vsys_voltage_mv,
-                    status.is_usb_connected ? 1 : 0, status.charge_status, (long) icon, shown_vbat);
+                    status.is_usb_connected ? 1 : 0, status.charge_status, (long) icon, shown_vbat,
+                    (unsigned) status.ts_raw, (double) status.ts_temperature);
 }
 
 
@@ -947,6 +951,47 @@ static bool rc_cmd_hang(char *reply, size_t reply_size) {
 }
 
 
+// Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
+// keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
+static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
+    if (argc != 4 || strcmp(argv[1], "alwayson") != 0 || (strcmp(argv[3], "0") != 0 && strcmp(argv[3], "1") != 0)) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    sh2_SensorId_t id;
+    if (strcmp(argv[2], "grv") == 0) {
+        id = SH2_GAME_ROTATION_VECTOR;
+    }
+    else if (strcmp(argv[2], "la") == 0) {
+        id = SH2_LINEAR_ACCELERATION;
+    }
+    else {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    esp_err_t ret = bno085_set_report_always_on(bno085_dev, id, argv[3][0] == '1');
+    if (ret != ESP_OK) {
+        return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(ret));
+    }
+    return rc_reply(reply, reply_size, true, "@ok bno alwayson %s %s", argv[2], argv[3]);
+}
+
+
+// Debug (ADR-009): `top [ms]` logs each task's CPU share over the window (default 2000 ms, at most 4000, inside the
+// runner's reply timeout); verification builds only
+static bool rc_cmd_top(int argc, char **argv, char *reply, size_t reply_size) {
+    uint32_t window_ms = 2000;
+    if (argc == 2) {
+        window_ms = (uint32_t) strtoul(argv[1], NULL, 10);
+    }
+    if (argc > 2 || window_ms < 100 || window_ms > 4000) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    if (!mem_diag_cpu_report(window_ms)) {
+        return rc_reply(reply, reply_size, false, "@err unsupported");
+    }
+    return rc_reply(reply, reply_size, true, "@ok top window_ms=%" PRIu32, window_ms);
+}
+
+
 // Debug: pulse the BNO085's reset line, so the sensor restarts as after an unexpected reset and the
 // driver's recovery (re-enabling the saved reports) runs (ADR-005 B6).
 static bool rc_cmd_bnoreset(char *reply, size_t reply_size) {
@@ -976,7 +1021,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     }
 
     const char *cmd = argv[0];
-    bool is_observer = strcmp(cmd, "idle") == 0 || strcmp(cmd, "state") == 0 ||
+    bool is_observer = strcmp(cmd, "idle") == 0 || strcmp(cmd, "state") == 0 || strcmp(cmd, "top") == 0 ||
                        strcmp(cmd, "stats") == 0 || strcmp(cmd, "help") == 0 ||
                        strcmp(cmd, "bt") == 0 || strcmp(cmd, "pmic") == 0 || strcmp(cmd, "snap") == 0;
     bool is_known = is_observer ||
@@ -984,7 +1029,8 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
                     strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
                     strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0 ||
-                    strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0;
+                    strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0 || strcmp(cmd, "bno") == 0 ||
+                    strcmp(cmd, "top") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -1088,6 +1134,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     }
     if (strcmp(cmd, "kestrel") == 0) {
         return rc_cmd_kestrel(argc, argv, reply, reply_size);
+    }
+    if (strcmp(cmd, "bno") == 0) {
+        return rc_cmd_bno(argc, argv, reply, reply_size);
+    }
+    if (strcmp(cmd, "top") == 0) {
+        return rc_cmd_top(argc, argv, reply, reply_size);
     }
     if (strcmp(cmd, "ota") == 0) {
         return rc_cmd_ota(argc, argv, reply, reply_size);

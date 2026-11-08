@@ -1,6 +1,7 @@
 #include "pmic_axp2101.h"
 #include "pmic_config.h"
 
+#include <math.h>
 #include <stdio.h>
 
 #include "ui_bridge.h"
@@ -25,11 +26,11 @@ static lv_obj_t * power_menu = NULL;
 
 HEAPS_CAPS_ATTR power_management_config_t power_management_config;
 const power_management_config_t default_power_management_config = {
-    .vbus_current_limit = PMIC_VBUS_CURRENT_LIMIT_500MA,
+    .vbus_current_limit = PMIC_VBUS_CURRENT_LIMIT_1000MA,  // the running unit shares it with the charge (ADR-009)
     .battery_charge_current = PMIC_BATTERY_CHARGE_CURRENT_500MA,
     .battery_charge_voltage = PMIC_BATTERY_CHARGE_VOLTAGE_4V2,
     .idle_timeout = IDLE_TIMEOUT_5_MIN,
-    .sleep_timeout = SLEEP_TIMEOUT_1_HRS,
+    .sleep_timeout = SLEEP_TIMEOUT_5_HRS,  // a long wait between stages ends idle, not off (ADR-009)
 };
 
 
@@ -266,8 +267,13 @@ static void power_status_text(char * buf, size_t size, void * ctx) {
         snprintf(buf, size, "Battery: no reading yet");
         return;
     }
-    snprintf(buf, size, "Battery %d%%, %d mV\nUSB %d mV, system %d mV", status->battery_percentage,
-             status->vbatt_voltage_mv, status->vbus_voltage_mv, status->vsys_voltage_mv);
+    // The board temperature from TH1 (ADR-009); dashes when out of the thermistor table's range
+    char board[16] = "--";
+    if (!isnan(status->ts_temperature)) {
+        snprintf(board, sizeof(board), "%.1f\xC2\xB0" "C", (double) status->ts_temperature);
+    }
+    snprintf(buf, size, "Battery %d%%, %d mV\nUSB %d mV\nSystem %d mV\nBoard %s", status->battery_percentage,
+             status->vbatt_voltage_mv, status->vbus_voltage_mv, status->vsys_voltage_mv, board);
 }
 
 
