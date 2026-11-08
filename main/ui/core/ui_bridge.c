@@ -1,0 +1,108 @@
+#include "ui_bridge.h"
+
+#include <string.h>
+
+#include "esp_event.h"
+#include "esp_log.h"
+#include "esp_lvgl_port.h"
+
+#include "pmic_axp2101.h"
+#include "power_page.h"
+#include "wifi.h"
+
+#define TAG "UIBridge"
+
+lv_subject_t * ui_wifi_state;
+lv_subject_t * ui_wifi_enabled;
+lv_subject_t * ui_wifi_expired;
+lv_subject_t * ui_wifi_provisioned;
+lv_subject_t * ui_battery_level;
+lv_subject_t * ui_pmic_status;
+
+// The bridge's copy of the PMIC readings, which ui_pmic_status points to; changed only with the LVGL lock held
+static axp2101_status_t ui_pmic_status_copy;
+
+
+
+// LVGL lock held. Reads the service's current status rather than the event's, so the newest is always shown
+static void ui_bridge_show_wifi_status() {
+    wifi_status_t status = wifi_get_status();
+
+    // Each set notifies the bound widgets only when the value changes
+    lv_subject_set_int(ui_wifi_state, status.state);
+    lv_subject_set_int(ui_wifi_enabled, status.enabled);
+    lv_subject_set_int(ui_wifi_expired, status.expired);
+    lv_subject_set_int(ui_wifi_provisioned, status.provisioned);
+}
+
+
+// System event task
+static void ui_bridge_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    lvgl_port_lock(0);
+
+    // A provisioning reset (Forget network) shows through the status as well: the Wi-Fi page's status line and
+    // its rows follow it (ADR-008); a failure is logged by the Wi-Fi service and is not fatal (ADR-005 B10)
+    if (event_id == WIFI_SERVICE_EVENT_STATUS_CHANGED || event_id == WIFI_SERVICE_EVENT_PROVISION_RESET) {
+        ui_bridge_show_wifi_status();
+    }
+
+    lvgl_port_unlock();
+}
+
+
+// 101 shows the USB icon: on USB power, and before the first reading (or with no PMIC), as before
+static int32_t ui_bridge_battery_level(const axp2101_status_t * status) {
+    return (!status->valid || status->is_usb_connected) ? 101 : status->battery_percentage;
+}
+
+
+// LVGL lock held
+static void ui_bridge_show_pmic_status() {
+    axp2101_status_t status = pmic_get_status();
+
+    lv_subject_set_int(ui_battery_level, ui_bridge_battery_level(&status));
+    if (memcmp(&status, &ui_pmic_status_copy, sizeof(status)) != 0) {
+        ui_pmic_status_copy = status;
+        lv_subject_notify(ui_pmic_status);  // same pointer, new contents
+    }
+}
+
+
+// System event task
+static void ui_bridge_pmic_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    lvgl_port_lock(0);
+
+    if (event_id == PMIC_SERVICE_EVENT_STATUS_CHANGED) {
+        ui_bridge_show_pmic_status();
+    }
+    else if (event_id == PMIC_SERVICE_EVENT_POWER_KEY_LONG_PRESS) {
+        power_menu_show(true);
+    }
+
+    lvgl_port_unlock();
+}
+
+
+void ui_bridge_init() {
+    wifi_status_t status = wifi_get_status();
+    ui_wifi_state = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_set_int(ui_wifi_state, status.state);
+    ui_wifi_enabled = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_set_int(ui_wifi_enabled, status.enabled);
+    ui_wifi_expired = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_set_int(ui_wifi_expired, status.expired);
+    ui_wifi_provisioned = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_set_int(ui_wifi_provisioned, status.provisioned);
+
+    ui_pmic_status_copy = pmic_get_status();
+    ui_battery_level = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_set_int(ui_battery_level, ui_bridge_battery_level(&ui_pmic_status_copy));
+    ui_pmic_status = lv_subject_create(LV_SUBJECT_TYPE_POINTER);
+    lv_subject_set_pointer(ui_pmic_status, &ui_pmic_status_copy);
+
+    // A change between the reads above and these registrations is still shown: the handlers read the status anew
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_SERVICE_EVENT, ESP_EVENT_ANY_ID, ui_bridge_wifi_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(PMIC_SERVICE_EVENT, ESP_EVENT_ANY_ID, ui_bridge_pmic_event_handler, NULL));
+
+    ESP_LOGI(TAG, "UI bridge ready, Wi-Fi status: %s", wifi_state_name(status.state));
+}

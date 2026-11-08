@@ -33,7 +33,19 @@ jobs:
           # The checkout belongs to another user in the container; without this git refuses it and the version is lost
           git config --global --add safe.directory '*'
           . "$IDF_PATH/export.sh"
-          idf.py build
+          set -o pipefail
+          idf.py build 2>&1 | tee build.log
+
+      - name: No compiler warnings from our code
+        run: |
+          # Our code: main/ and components/ in this repo (ADR-012). ESP-IDF's, LVGL's and the other managed
+          # components' own warnings are not ours and do not count
+          # ESP-IDF compiles with -fdiagnostics-color=always: strip the colour codes before matching
+          if sed 's/\x1b\[[0-9;]*[mK]//g' build.log |
+             grep -E "^$GITHUB_WORKSPACE/(main|components)/[^:]+:[0-9]+:[0-9]+: warning:"; then
+            echo "::error::The build warns in our code (listed above)"
+            exit 1
+          fi
 
       - name: Check the version
         id: version

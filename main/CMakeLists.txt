@@ -1,4 +1,7 @@
-file(GLOB_RECURSE SRC_FILES "*.c" "*.cpp")
+# Sources by role (AGENTS.md): app wiring, board bring-up, shared helpers, services (no UI), the UI (its core,
+# the tiles, the settings pages), test and diagnostic tools, generated fonts
+file(GLOB_RECURSE SRC_FILES "*.c" "*.cpp")  # a new file needs `idf.py reconfigure`
+set(MAIN_INCLUDE_DIRS app board common services ui/core ui/views ui/settings tools fonts)
 
 set(ALL_DEPS
     # Base requirements
@@ -20,9 +23,6 @@ set(ALL_DEPS
     # Sensor
     bno08x
 
-    # 1.47" LCD display
-    esp_lcd_jd9853
-    esp_lcd_touch_axs5106
 
     # 1.64" AMOLED display
     esp_lcd_sh8601
@@ -55,13 +55,8 @@ set(ALL_DEPS
 )
 
 
-# if(IDF_TARGET STREQUAL "esp32c6")
-#     list(APPEND ALL_DEPS "esp_lcd_jd9853" "esp_lcd_touch_axs5106")
-# elseif (IDF_TARGET STREQUAL "esp32s3")
-#     list(APPEND ALL_DEPS "esp_lcd_co5300" "esp_lcd_touch_ft3168")
-# endif()
 
 idf_component_register(
     SRCS ${SRC_FILES}
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS ${MAIN_INCLUDE_DIRS}
     REQUIRES ${ALL_DEPS})

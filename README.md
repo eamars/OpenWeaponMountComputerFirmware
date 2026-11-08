@@ -54,6 +54,8 @@ The unit is built around an ESP32-S3, an AMOLED touch screen, a BNO085 motion se
 
 The firmware is an ESP-IDF project. Clone it with its submodules (`git clone --recursive`), then build and flash it with `idf.py build` and `idf.py -p <port> flash`. The ESP-IDF version it is built with is the one the [build workflow](.github/workflows/firmware.yml) uses.
 
+Before changing it, read [AGENTS.md](AGENTS.md): where code goes, the rules it keeps, and how a change is proven on a unit.
+
 How the firmware got to where it is, and the reasons behind each design, are in the architecture decision records under [docs/developments_plans](docs/developments_plans/README.md).
 
 Tools:

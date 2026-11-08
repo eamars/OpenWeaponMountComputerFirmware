@@ -1,6 +1,6 @@
 # Technical brief
 
-The hardware the firmware runs on: the parts, how they are wired, and how the motion sensor sits in the unit. The pin numbers are the ones in `main/app_cfg.h`; if the two ever disagree, the header is what the firmware uses.
+The hardware the firmware runs on: the parts, how they are wired, and how the motion sensor sits in the unit. The pin numbers are the ones in `main/board/board_cfg.h`; if the two ever disagree, the header is what the firmware uses.
 
 ## Parts
 

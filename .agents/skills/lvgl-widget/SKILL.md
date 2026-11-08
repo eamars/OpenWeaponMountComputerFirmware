@@ -64,7 +64,7 @@ Use the simplest widget with the right interaction contract:
 - `lv_tabview`: tabbed organization when tabs are a better model than swipe-only tile navigation.
 - `lv_msgbox` or a custom modal container: confirmation, warning, or short blocking prompt.
 
-How a control looks and behaves on this device (sizes, colours, corners, one action per row, store on change) is set by the `embedded-ui-design` skill; reuse its shared pieces (`value_editor_create_button`, `value_editor_create_label`, `value_editor`). The `config_view.c` helpers (menu containers, spin boxes, colour picker, drop-downs, Save/Reload/Reset, info message box) are the old settings design that ADR-008 replaces.
+How a control looks and behaves on this device (sizes, colours, corners, one action per row, store on change) is set by the `embedded-ui-design` skill; reuse its shared pieces (`value_editor_create_button`, `value_editor_create_label`, `value_editor`). The old settings helpers (menu containers, spin boxes, colour picker, drop-downs, Save/Reload/Reset, info message box) were removed in ADR-008; do not bring them back.
 
 ## Text And Lifetime
 
@@ -118,7 +118,7 @@ Common widget event contracts:
 - `lv_table`: `LV_EVENT_VALUE_CHANGED` when a new cell is selected with keys.
 - `lv_tileview`: `LV_EVENT_VALUE_CHANGED` after a new tile is displayed; use `lv_tileview_get_tile_active`.
 - `lv_textarea`: `LV_EVENT_INSERT` before insertion, `LV_EVENT_VALUE_CHANGED` after content changes, and `LV_EVENT_READY` for Enter in one-line mode.
-- `lv_label` and `lv_list`: no special events by default; labels are not clickable unless `LV_OBJ_FLAG_CLICKABLE` is added, and list button events come from the child buttons.
+- `lv_label` and `lv_list`: no special events by default; labels are not clickable unless made so with `lv_obj_set_clickable(label, true)` (the per-flag setters replace the deprecated `lv_obj_add_flag`), and list button events come from the child buttons.
 
 If a widget does not emit the semantic event you need, either send the event explicitly after changing its state, as this repo does for LED color picking, or attach the callback to the actual interactive child.
 
@@ -182,8 +182,8 @@ For `lv_dropdown`, newline-separated options are copied by `lv_dropdown_set_opti
 The firmware builds LVGL views directly in `main/*.c`:
 
 - `create_*_view(parent)` creates widgets, styles them, attaches callbacks, and stores object pointers when later updates need them.
-- Settings pages are built with `settings_ui` (`main/settings_ui.h`): a page per hub row, full-width rows (link, choice, colour, toggle, number, action, reset, status), shown only while they do something (`settings_row_shown_when`).
-- `main_tileview.c` uses `lv_tileview_add_tile`, tile user data, and `LV_EVENT_VALUE_CHANGED` to enable/disable tile-specific behavior.
+- Settings pages are built with `settings_ui` (`main/ui/core/settings_ui.h`): a page per hub row, full-width rows (link, choice, colour, toggle, number, action, reset, status), shown only while they do something (`settings_row_shown_when`).
+- `main/ui/core/main_tileview.c` uses `lv_tileview_add_tile`, tile user data, and `LV_EVENT_VALUE_CHANGED` to enable/disable tile-specific behavior; `main_tileview_jump_to()` switches tiles from code.
 - Status/value labels often use static buffers declared with `HEAPS_CAPS_ATTR` and `lv_label_set_text_static`.
 - Buttons often use `lv_obj_set_style_bg_image_src(button, LV_SYMBOL_..., 0)` for symbol-only controls.
 - Several views update LVGL objects from task-like flows; preserve the project's `esp_lvgl_port` locking pattern when touching cross-task UI updates.
