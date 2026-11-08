@@ -7,7 +7,7 @@ description: Enforce and review this project's C/C++ coding style for ESP-IDF fi
 
 This skill captures the C/C++ style used in this repository. Apply it proactively when writing or reviewing firmware code.
 
-The strongest style signal is tracked history: project-owned code is under `main/`, in folders by role (`AGENTS.md` lists them and the dependency rule), with our own drivers in `components/bno08x`, `components/esp_lcd_touch_ft3168` and `components/kestrel_link`. Treat `components/XPowersLib` and other third-party code as external unless the user asks to modify it.
+The strongest style signal is tracked history: project-owned code is under `main/`, in folders by role (`AGENTS.md` lists them and the boundary between services and the UI), with our own drivers in `components/bno08x`, `components/esp_lcd_touch_ft3168` and `components/kestrel_link`. Treat `components/XPowersLib` and other third-party code as external unless the user asks to modify it.
 
 The style is direct embedded C with small C++ bridge islands: explicit setup, clear task/event control flow, practical comments, and conservative abstractions.
 
@@ -17,7 +17,7 @@ The style is direct embedded C with small C++ bridge islands: explicit setup, cl
 
 Keep code organized as small module pairs: `feature.c` / `feature.h`, or `feature.cpp` / `feature.h` when C++ is required to bridge a C++ library. Public APIs are declared in the header and implemented in the source file. File-local helpers, callbacks, and state stay in the source file as `static`.
 
-A new module goes in the folder for its role (`main/app`, `board`, `common`, `services`, `ui/core`, `ui/views`, `ui/settings`, `tools`; see `AGENTS.md`), named for what it is: a settings page is `*_page.c`, a tile `*_view.c`. A service never includes LVGL or a header from `ui/`, `tools/` or `board/`: it publishes events for `ui_bridge`, or calls a listener the UI registers. After adding a file, run `idf.py reconfigure` (the build globs `main/`).
+A new module goes in the folder for its role (`main/app`, `board`, `common`, `services`, `ui/core`, `ui/views`, `ui/settings`, `tools`; see `AGENTS.md`), named for what it is: a settings page is `*_page.c`, a tile `*_view.c`. A new service does not include LVGL or a header from `ui/`, `tools/` or `board/`: it publishes events for `ui_bridge`, or calls a listener the UI registers. After adding a file, run `idf.py reconfigure` (the build globs `main/`).
 
 Prefer the existing module prefixes:
 

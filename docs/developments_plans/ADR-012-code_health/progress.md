@@ -98,7 +98,7 @@
 | `app/` | Start-up and wiring, the app's build settings | `app`, `app_cfg.h` |
 | `board/` | Bring-up of the board: panel, touch, LVGL port, flush; pins and panel in `board_cfg.h` | `bsp`, `lvgl_display`, `display_flush`, `board_cfg.h` |
 | `common/` | Helpers with no UI: settings storage, CRC, memory diagnostics | `common`, `circular_buffer`, `mem_diag` |
-| `services/` | Own their state and task; no UI (two recorded exceptions, below) | `wifi`, `wifi_provision`, `pmic_axp2101`, `pmic_settings`, `kestrel_service`, `buzzer`, `sensor_frame`, `countdown_timer`, `low_power_mode`, `ota_mode` |
+| `services/` | Own their state and task; no UI in new code (two older modules cross it, below) | `wifi`, `wifi_provision`, `pmic_axp2101`, `pmic_settings`, `kestrel_service`, `buzzer`, `sensor_frame`, `countdown_timer`, `low_power_mode`, `ota_mode` |
 | `ui/core/` | The tile view, settings pages, value editor, corners, UI bridge | `main_tileview`, `settings_ui`, `value_editor`, `display_shape`, `ui_bridge` |
 | `ui/views/` | The tiles | the level view and its styles, `level_band`, `timer_view`, `dope_view`, `sensor_calibration_view`; kept, disabled: `point_of_aim_view`, `acceleration_analysis_view`, `opentrickler_remote_controller_view` |
 | `ui/settings/` | The settings pages | `settings_hub`, `about_page`, `wifi_page`, `power_page`, `kestrel_page`, `system_config`, `sensor_config` |
@@ -127,11 +127,13 @@ Their includes, guards and comments followed. Function names did not change.
 - **`main_tileview_jump_to(tile)`** replaces the "set the tile, send the change event, remember where we were" code written three times (OTA install, Sensor calibration in and out).
 - **Leftover includes:** `system_config.h` and `sensor_config.h` in the timer and low power services, and `main_tileview.h` in low power. Nothing in those files used them.
 
-**Exceptions to the rule:**
+**Two older modules still cross the boundary:**
 - **`low_power_mode` calls the display:** it is the display's power switch, accepted in ADR-005.
-- **`ota_mode` is the update service and its own screens** (tile, offer, prompt) in one file of about 1,050 lines. Splitting it into a service and a view is its own change to the update path, so it is left for a later ADR.
+- **`ota_mode` is the update service and its own screens** (tile, offer, prompt) in one file of about 1,050 lines.
 
-A script checks the rule: no other file in `services/` includes a header from `ui/`, `tools/` or `board/`.
+The owner's direction (2026-11-08): the boundary is guidance for new code, not a rule to retrofit, so both stay as they are unless they need changing for another reason. OTA works, and it is the path that delivers fixes to units in the field.
+
+A script shows what crosses it: no other file in `services/` includes a header from `ui/`, `tools/` or `board/`.
 
 **Checks:**
 - Clean build: no warning from our code.
@@ -149,12 +151,12 @@ A script checks the rule: no other file in `services/` includes a header from `u
 **Built:**
 - **CI warning check** (`.github/workflows/firmware.yml`): the build's output is kept, and the job fails on any compiler warning whose file is in the repo's `main/` or `components/`. Colour codes are stripped first, because ESP-IDF compiles with `-fdiagnostics-color=always`. ESP-IDF's, LVGL's and the other managed components' own warnings do not count.
   - Tried on real logs: it finds 112 warnings in the v1.2.0 CI log and 104 in step 1's local log, and none in step 4's.
-- **`AGENTS.md`** (new): build, flash and update; where code goes; the dependency rule with its two exceptions and a one-line check; settings in NVS; warnings; style (the skills); proving a change on a unit; the ADR rules, including closing an ADR before its PR; what not to do.
+- **`AGENTS.md`** (new): build, flash and update; where code goes; the boundary between services and the UI, the two older modules that cross it, and a one-line check; settings in NVS; warnings; style (the skills); proving a change on a unit; the ADR rules, including closing an ADR before its PR; what not to do.
 - **`tools/remote_control/ui_snaps.py`** (new): the capture and compare used in steps 2 to 4, for the next change to the screens.
 - **`requirements.txt`** (new): what the repo's host tools import (pyserial, zeroconf, pillow), for the venv at the repo root.
 - **Skills and docs:**
   - the skills' file paths follow the new layout;
-  - `c-style` states where a new module goes and the dependency rule;
+  - `c-style` states where a new module goes and the boundary for new services;
   - the LVGL skills name `main_tileview_jump_to()` and the per-flag setters;
   - the technical brief points at `board_cfg.h`, `ota_host.py`'s docstring at `services/ota_mode.c`, and the README at `AGENTS.md`.
 
@@ -162,9 +164,10 @@ A script checks the rule: no other file in `services/` includes a header from `u
 
 All five steps are built and checked on COM11. The firmware behaves as v1.2.0 did, and the build prints no warning from our code.
 
-**Left for later ADRs:**
-- splitting `ota_mode` into a service and its screens;
+**Left for later ADRs, if wanted:**
 - the 136 `ESP_ERROR_CHECK` in runtime paths;
 - the decision on the three disabled tiles.
+
+`ota_mode` and `low_power_mode` keep their screens (owner, 2026-11-08).
 
 COM11 runs the step 4 build from `ota_1`.

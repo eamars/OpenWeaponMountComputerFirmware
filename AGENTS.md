@@ -30,20 +30,20 @@ Firmware for the Open Weapon Mount Computer: an ESP32-S3 with an AMOLED touch sc
 
 Our own drivers live in `components/`: `bno08x`, `esp_lcd_touch_ft3168`, `kestrel_link`, and `esp_driver_usb_serial_jtag` (a patched copy of the ESP-IDF component; its README says why and how to re-apply it on an ESP-IDF upgrade).
 
-**The dependency rule:** services never call LVGL or include anything from `ui/`, `tools/` or `board/`.
+**The boundary between services and the UI** is guidance for new code, so services and UI stay clearly apart: a new service does not call LVGL or include anything from `ui/`, `tools/` or `board/`.
 - A service publishes changes as ESP-IDF events, which `ui_bridge` turns into LVGL subjects; or it calls a listener the UI registers (the countdown timer).
 - The UI reads services through their getters.
-- Two recorded exceptions:
+- Two older modules cross it, and stay as they are unless they need changing for another reason:
   - `low_power_mode` switches the display (it is its power switch; ADR-005);
-  - `ota_mode` holds the update's screens with its tasks (to be split later; ADR-012).
+  - `ota_mode` holds the update's screens with its tasks. It works, and it is the path that delivers fixes to units in the field.
 
-To check the rule:
+To see what crosses it:
 
 ```bash
 cd main && for f in services/*; do for inc in $(grep -oE '#include "[a-z0-9_]+\.h"' $f | sed 's/#include "//; s/"//'); do loc=$(find . -name "$inc" | head -1); case "$loc" in ./ui/*|./tools/*|./board/*) echo "$f -> $loc";; esac; done; done
 ```
 
-Only the two exceptions should print.
+Only those two older modules should print.
 
 **Settings in NVS:**
 - Each module stores one struct in its own namespace with `load_config` / `save_config` (`common/common.h`), with a CRC.
