@@ -119,8 +119,8 @@ void sensor_settings_add_advanced_rows(settings_page_t * page) {
                         &sensor_config.enable_linear_acceleration_report);
     settings_row_toggle(page, "Rotation vector", get_report, set_report,
                         &sensor_config.enable_rotation_vector_report);
-    settings_row_action(page, NULL, "Tare calibration", NULL, NULL, start_tare_calibration,
-                        "Start the tare calibration?", "Start", false);
+    // The factory calibration routine (ADR-011); it asks nothing here: its first screen has Start and Cancel
+    settings_row_action(page, NULL, "Sensor calibration", NULL, NULL, start_tare_calibration, NULL, NULL, false);
 }
 
 

@@ -29,6 +29,7 @@
 #include "ota_mode.h"
 #include "common.h"
 #include "bno085.h"
+#include "digital_level_view_controller.h"  // the level's raw roll and pitch (grav)
 #include "low_power_mode.h"
 #include "pmic_axp2101.h"
 #include "ui_bridge.h"
@@ -63,7 +64,7 @@
 #define RC_MAX_ARGS 6   // "settings open How to pair"
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top tear"
+#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top tear grav"
 
 
 typedef struct {
@@ -974,6 +975,28 @@ static bool rc_cmd_hang(char *reply, size_t reply_size) {
 }
 
 
+// Debug (ADR-011 step 0): `grav` gives "up" in the sensor's frame from the newest game rotation vector (the third
+// row of its rotation matrix), the level's raw roll and pitch (the Z-Y-X Euler angles) in degrees, and the report
+// count. Needs the level tile, whose loop runs the game rotation vector
+static bool rc_cmd_grav(int argc, char **argv, char *reply, size_t reply_size) {
+    if (argc != 1) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    float q[4];
+    const uint32_t count = bno085_get_game_rotation_quaternion(bno085_dev, q);
+    if (count == 0) {
+        return rc_reply(reply, reply_size, false, "@err no game rotation vector yet");
+    }
+    const float w = q[0], x = q[1], y = q[2], z = q[3];
+    const float ux = 2.0f * (x * z - w * y);
+    const float uy = 2.0f * (y * z + w * x);
+    const float uz = 1.0f - 2.0f * (x * x + y * y);
+    return rc_reply(reply, reply_size, true, "@ok grav up=%.4f,%.4f,%.4f roll=%.2f pitch=%.2f n=%" PRIu32,
+                    (double) ux, (double) uy, (double) uz, (double) RAD_TO_DEG(sensor_roll_thread_unsafe),
+                    (double) RAD_TO_DEG(sensor_pitch_thread_unsafe), count);
+}
+
+
 // Trial (ADR-010 step 2): `tear [free|off]` shows or sets anti-tearing (the flush's wait for the panel's scan).
 // RAM only: a reboot restores it
 static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
@@ -993,6 +1016,14 @@ static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
 // Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
 // keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
 static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
+    // `bno tare clear` (ADR-011): drop any tare, run-time and persisted
+    if (argc == 3 && strcmp(argv[1], "tare") == 0 && strcmp(argv[2], "clear") == 0) {
+        esp_err_t err = bno085_clear_tare(bno085_dev);
+        if (err != ESP_OK) {
+            return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(err));
+        }
+        return rc_reply(reply, reply_size, true, "@ok bno tare cleared");
+    }
     if (argc != 4 || strcmp(argv[1], "alwayson") != 0 || (strcmp(argv[3], "0") != 0 && strcmp(argv[3], "1") != 0)) {
         return rc_reply(reply, reply_size, false, "@err args");
     }
@@ -1069,7 +1100,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
                     strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0 ||
                     strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0 || strcmp(cmd, "bno") == 0 ||
-                    strcmp(cmd, "top") == 0 || strcmp(cmd, "tear") == 0;
+                    strcmp(cmd, "top") == 0 || strcmp(cmd, "tear") == 0 || strcmp(cmd, "grav") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -1188,6 +1219,9 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     }
     if (strcmp(cmd, "tear") == 0) {
         return rc_cmd_tear(argc, argv, reply, reply_size);
+    }
+    if (strcmp(cmd, "grav") == 0) {
+        return rc_cmd_grav(argc, argv, reply, reply_size);
     }
     if (strcmp(cmd, "ota") == 0) {
         return rc_cmd_ota(argc, argv, reply, reply_size);

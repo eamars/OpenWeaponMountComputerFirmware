@@ -3,16 +3,7 @@
 
 #include "lvgl.h"
 
-
-#ifndef SENSOR_CALIBRATION_VIEW_RV_REPORT_POLLER_TASK_STACK
-    #define SENSOR_CALIBRATION_VIEW_RV_REPORT_POLLER_TASK_STACK 4096
-#endif  // SENSOR_CALIBRATION_VIEW_RV_REPORT_POLLER_TASK_STACK
-
-
-#ifndef SENSOR_CALIBRATION_VIEW_RV_REPORT_POLLER_TASK_PRIORITY
-    #define SENSOR_CALIBRATION_VIEW_RV_REPORT_POLLER_TASK_PRIORITY 4
-#endif  // SENSOR_CALIBRATION_VIEW_RV_REPORT_POLLER_TASK_PRIORITY
-
+// The factory calibration routine (ADR-011), on the tile the Tare page used
 
 void create_sensor_calibration_view(lv_obj_t * parent);
 void enter_sensor_calibration_mode(bool enable);

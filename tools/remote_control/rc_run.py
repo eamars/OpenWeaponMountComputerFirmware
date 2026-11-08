@@ -59,6 +59,7 @@ REPLY_PREFIXES = {
     "stats": "@ok free_int=",
     "sleep": "@ok sleep",
     "tear": "@ok tear",
+    "grav": "@ok grav",
     "bt": "@ok bt",
     "pmic": "@ok pmic",
     "snap": "@ok snap",

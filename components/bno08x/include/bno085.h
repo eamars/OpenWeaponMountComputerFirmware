@@ -79,6 +79,11 @@ typedef struct {
 
     // Resets the hub announced (SH2_RESET): each restarts its sensors, which drops state built from their reports
     volatile uint32_t reset_count;
+
+    // The newest game rotation vector (real, i, j, k) and how many have arrived; written by the sensor callback,
+    // read under sh2_lock (ADR-011)
+    float grv_quat[4];
+    uint32_t grv_count;
 } bno085_ctx_t;
 
 
@@ -139,6 +144,24 @@ void bno085_get_wake_profile(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32
  * state built from a sensor's earlier reports (for example the stability detector's still or moving) no longer holds
  */
 uint32_t bno085_get_reset_count(bno085_ctx_t *ctx);
+
+/**
+ * @brief The newest game rotation vector as a quaternion (real, i, j, k) and how many have arrived since init
+ * (ADR-011). Returns 0 before the first report
+ */
+uint32_t bno085_get_game_rotation_quaternion(bno085_ctx_t *ctx, float quat[4]);
+
+/**
+ * @brief Clear any tare: the run-time reorientation, and the persisted one (the master sensor orientation record,
+ * FRS 0x2D3E, SH-2 6.4.3.3) (ADR-011)
+ */
+esp_err_t bno085_clear_tare(bno085_ctx_t *ctx);
+
+/**
+ * @brief If a tare is persisted (the master sensor orientation record holds data), clear it as bno085_clear_tare
+ * does; *cleared says whether there was one. Nothing is written when there is none (ADR-011)
+ */
+esp_err_t bno085_clear_persisted_tare(bno085_ctx_t *ctx, bool *cleared);
 
 /**
  * @brief Set whether a report keeps running while the hub sleeps (always-on), and send that to the sensor if the

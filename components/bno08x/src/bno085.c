@@ -111,6 +111,14 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
         }
     }
 
+    if (sensor_value.sensorId == SH2_GAME_ROTATION_VECTOR) {
+        ctx->grv_quat[0] = sensor_value.un.gameRotationVector.real;
+        ctx->grv_quat[1] = sensor_value.un.gameRotationVector.i;
+        ctx->grv_quat[2] = sensor_value.un.gameRotationVector.j;
+        ctx->grv_quat[3] = sensor_value.un.gameRotationVector.k;
+        ctx->grv_count++;
+    }
+
     xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
 }
 
@@ -411,6 +419,47 @@ esp_err_t bno085_wake_up(bno085_ctx_t *ctx) {
 
 uint32_t bno085_get_reset_count(bno085_ctx_t *ctx) {
     return ctx->reset_count;
+}
+
+
+uint32_t bno085_get_game_rotation_quaternion(bno085_ctx_t *ctx, float quat[4]) {
+    sh2_lock(ctx);
+    memcpy(quat, ctx->grv_quat, sizeof(ctx->grv_quat));
+    const uint32_t count = ctx->grv_count;
+    sh2_unlock(ctx);
+    return count;
+}
+
+
+esp_err_t bno085_clear_persisted_tare(bno085_ctx_t *ctx, bool *cleared) {
+    uint32_t record[16];
+    uint16_t words = sizeof(record) / sizeof(record[0]);
+    sh2_lock(ctx);
+    int ret = sh2_getFrs(SYSTEM_ORIENTATION, record, &words);
+    sh2_unlock(ctx);
+    *cleared = false;
+    if (ret != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to read the sensor orientation record: %d", ret);
+        return ESP_FAIL;
+    }
+    if (words == 0) {
+        return ESP_OK;
+    }
+    *cleared = true;
+    return bno085_clear_tare(ctx);
+}
+
+
+esp_err_t bno085_clear_tare(bno085_ctx_t *ctx) {
+    sh2_lock(ctx);
+    int ret = sh2_clearTare();
+    int frs_ret = sh2_setFrs(SYSTEM_ORIENTATION, NULL, 0);  // no data: deletes the record
+    sh2_unlock(ctx);
+    if (ret != SH2_OK || frs_ret != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to clear the tare: %d, FRS %d", ret, frs_ret);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 
