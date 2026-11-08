@@ -40,6 +40,7 @@
 #include "display_shape.h"
 #include "kestrel_service.h"
 #include "dope_config_view.h"
+#include "display_flush.h"
 
 #define TAG "RemoteControl"
 #define NVS_NAMESPACE "RC"
@@ -62,7 +63,7 @@
 #define RC_MAX_ARGS 6   // "settings open How to pair"
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top"
+#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top tear"
 
 
 typedef struct {
@@ -973,6 +974,22 @@ static bool rc_cmd_hang(char *reply, size_t reply_size) {
 }
 
 
+// Trial (ADR-010 step 2): `tear [free|off]` shows or sets anti-tearing (the flush's wait for the panel's scan).
+// RAM only: a reboot restores it
+static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
+    if (argc == 2 && strcmp(argv[1], "free") == 0) {
+        display_flush_set_tear_free(true);
+    }
+    else if (argc == 2 && strcmp(argv[1], "off") == 0) {
+        display_flush_set_tear_free(false);
+    }
+    else if (argc != 1) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    return rc_reply(reply, reply_size, true, "@ok tear %s", display_flush_get_tear_free() ? "free" : "off");
+}
+
+
 // Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
 // keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
 static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
@@ -1052,7 +1069,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
                     strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0 ||
                     strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0 || strcmp(cmd, "bno") == 0 ||
-                    strcmp(cmd, "top") == 0;
+                    strcmp(cmd, "top") == 0 || strcmp(cmd, "tear") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -1168,6 +1185,9 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     }
     if (strcmp(cmd, "top") == 0) {
         return rc_cmd_top(argc, argv, reply, reply_size);
+    }
+    if (strcmp(cmd, "tear") == 0) {
+        return rc_cmd_tear(argc, argv, reply, reply_size);
     }
     if (strcmp(cmd, "ota") == 0) {
         return rc_cmd_ota(argc, argv, reply, reply_size);

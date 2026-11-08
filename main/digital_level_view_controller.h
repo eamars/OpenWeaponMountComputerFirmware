@@ -20,6 +20,7 @@ typedef struct {
 typedef enum {
     DIGITAL_LEVEL_VIEW_TYPE_1 = 0,
     DIGITAL_LEVEL_VIEW_TYPE_2,
+    DIGITAL_LEVEL_VIEW_TYPE_3,  // chevrons (ADR-010)
 } digital_level_view_type_t;
 
 esp_err_t digital_level_view_controller_init();

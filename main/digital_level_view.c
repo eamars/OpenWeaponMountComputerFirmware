@@ -24,6 +24,7 @@
 #include "digital_level_view_controller.h"
 #include "digital_level_view_type_1.h"
 #include "digital_level_view_type_2.h"
+#include "digital_level_view_type_3.h"
 
 
 #define TAG "DigitalLevelView"
@@ -236,6 +237,9 @@ digital_level_view_t * select_digital_level_view(digital_level_view_type_t level
         case DIGITAL_LEVEL_VIEW_TYPE_2:
             selected = &digital_level_view_type_2_context;
             break;
+        case DIGITAL_LEVEL_VIEW_TYPE_3:
+            selected = &digital_level_view_type_3_context;
+            break;
         default:
             break;
     }
@@ -294,7 +298,8 @@ void digital_level_view_rotation_event_callback(lv_event_t * e) {
 }
 
 
-static const char * const level_style_names[] = {"Level", "Block"};
+static const char * const level_style_names[] = {"Level", "Block", "Chevrons"};
+#define LEVEL_STYLE_COUNT (sizeof(level_style_names) / sizeof(level_style_names[0]))
 
 // The colours a tilt or the level can show: LVGL's palette, and black (LV_PALETTE_BLACK, after the palette)
 static const char * const colour_names[MAX_NUM_COLOURS] = {
@@ -382,7 +387,7 @@ static void reset_level(void * ctx) {
 
 void digital_level_settings_summary(char * buf, size_t size, void * ctx) {
     int32_t tenths = (int32_t) lroundf(digital_level_view_config.delta_level_threshold * 10.0f);
-    snprintf(buf, size, "%s, within %ld.%ld\xC2\xB0", level_style_names[digital_level_view_config.level_style % 2],
+    snprintf(buf, size, "%s, within %ld.%ld\xC2\xB0", level_style_names[digital_level_view_config.level_style % LEVEL_STYLE_COUNT],
              (long) (tenths / 10), (long) (tenths % 10));
 }
 
@@ -396,7 +401,7 @@ settings_page_t * create_digital_level_settings_page(void) {
                                                 .format_value = format_degrees, .format_step = format_tenth_step};
 
     settings_page_t * page = settings_page_create("Level");
-    settings_row_choice(page, "Level style", level_style_names, 2, get_style, set_style, NULL);
+    settings_row_choice(page, "Level style", level_style_names, LEVEL_STYLE_COUNT, get_style, set_style, NULL);
     settings_row_number(page, "Roll display gain", &roll_gain, get_tenths, set_tenths,
                         &digital_level_view_config.roll_display_gain);
     settings_row_shown_when(page, gains_shown);
