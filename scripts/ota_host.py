@@ -4,8 +4,11 @@ After its Wi-Fi connects at boot, the unit asks `owmc_update.local` port 8080 fo
 manifest's version is newer than its own, or `ignore_version` is set, it offers the update, and Install downloads
 `path` from the same host and the manifest's `port`. The unit checks once per boot: start this, then restart it.
 
-This announces `owmc_update.local` on the local network (mDNS) and serves the manifest and the build's firmware
-(only those two paths). Every request is printed, with the bytes sent.
+This announces `owmc_update.local` on the local network (mDNS) and serves the manifest and the firmware (only those
+two paths): the build's, or a release's OTA package. Every request is printed, with the bytes sent.
+
+An OTA package is a zip with the manifest (`manifest.json`) and the firmware (named as the manifest's `path`), so a
+release can be served without building it: write it from the build with --write-package, serve it with --package.
 
 Usage, from the repo root with the repo venv:
     python scripts/ota_host.py                          # the build, offered to units with an older version
@@ -14,6 +17,8 @@ Usage, from the repo root with the repo venv:
     python scripts/ota_host.py --importance 1           # critical: the unit shows the offer at once
     python scripts/ota_host.py --note-file notes.txt    # a release note of several lines
     python scripts/ota_host.py --manifest-file m.json   # a manifest as written (format tests)
+    python scripts/ota_host.py --note-file n.txt --write-package ota.zip   # write the build's OTA package, no serving
+    python scripts/ota_host.py --package ota.zip        # serve an OTA package (a release download)
 Options: --note, --ip (the address announced; default: the one this machine uses on the network), --port.
 
 Plain HTTP and no image signing, as the firmware is built (CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP): run it only on a
@@ -25,6 +30,7 @@ import json
 import socket
 import sys
 import time
+import zipfile
 from enum import Enum
 from pathlib import Path
 
@@ -33,6 +39,7 @@ from zeroconf import ServiceInfo, Zeroconf
 HOSTNAME = "owmc_update.local"
 PORT = 8080
 MANIFEST_PATH = "/p1/manifest.json"
+PACKAGE_MANIFEST = "manifest.json"
 BUILD = Path(__file__).resolve().parents[1] / "build"
 
 
@@ -69,28 +76,44 @@ def main():
     ap.add_argument("--force", action="store_true",
                     help="offered whatever the unit's version (ignore_version); by default only to older units")
     ap.add_argument("--manifest-file", help="serve this file as the manifest, as written")
+    ap.add_argument("--package", help="serve this OTA package (zip) instead of the build")
+    ap.add_argument("--write-package", help="write the build's OTA package (zip) here and exit")
     ap.add_argument("--ip", default=None)
     ap.add_argument("--port", type=int, default=PORT)
     args = ap.parse_args()
 
-    project = json.loads((BUILD / "project_description.json").read_text(encoding="utf-8"))
-    image = (BUILD / project["app_bin"]).read_bytes()
-    image_path = "/build/" + project["app_bin"]
-    version = args.version or project["project_version"]
-    if args.manifest_file:
-        manifest = Path(args.manifest_file).read_bytes()
+    if args.package:
+        with zipfile.ZipFile(args.package) as package:
+            manifest = package.read(PACKAGE_MANIFEST)
+            image_path = json.loads(manifest)["path"]
+            image = package.read(image_path.lstrip("/"))
+        args.port = json.loads(manifest).get("port", PORT)  # the unit downloads from the manifest's port
     else:
-        manifest = json.dumps({
-            "manifest_version": 1,
-            "version": version,
-            "path": image_path,
-            "note": (Path(args.note_file).read_text(encoding="utf-8").strip() if args.note_file else
-                     args.note or f"Local build {project['project_version']}."),
-            "port": args.port,
-            "ignore_version": args.force,
-            "type": OtaPackageType.FIRMWARE.value,
-            "importance": args.importance,
-        }).encode("utf-8")
+        project = json.loads((BUILD / "project_description.json").read_text(encoding="utf-8"))
+        image = (BUILD / project["app_bin"]).read_bytes()
+        image_path = "/build/" + project["app_bin"]
+        version = args.version or project["project_version"]
+        if args.manifest_file:
+            manifest = Path(args.manifest_file).read_bytes()
+        else:
+            manifest = json.dumps({
+                "manifest_version": 1,
+                "version": version,
+                "path": image_path,
+                "note": (Path(args.note_file).read_text(encoding="utf-8").strip() if args.note_file else
+                         args.note or f"Local build {project['project_version']}."),
+                "port": args.port,
+                "ignore_version": args.force,
+                "type": OtaPackageType.FIRMWARE.value,
+                "importance": args.importance,
+            }).encode("utf-8")
+
+    if args.write_package:
+        with zipfile.ZipFile(args.write_package, "w", zipfile.ZIP_DEFLATED) as package:
+            package.writestr(PACKAGE_MANIFEST, manifest)
+            package.writestr(image_path.lstrip("/"), image)
+        log(f"wrote {args.write_package}: {PACKAGE_MANIFEST}, {image_path.lstrip('/')} ({len(image)} bytes)")
+        return 0
 
     class OTARequestHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):

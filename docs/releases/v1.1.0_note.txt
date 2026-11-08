@@ -1,0 +1,6 @@
+Firmware 1.1
+• Sensor calibration replaces Tare: run it once after updating (Settings, Advanced)
+• New level style: Chevrons
+• Longer battery: the unit sleeps between stages
+• Powers off at 5% battery; board temperature on the Power page
+• Moving in the hand keeps the screen on
