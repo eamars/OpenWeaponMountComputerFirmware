@@ -7,7 +7,10 @@
 #include "sdkconfig.h"
 #include "XPowersLib.h"
 
+#include <math.h>
 #include <string.h>
+
+#include "driver/gpio.h"
 
 #include "freertos/FreeRTOS.h"
 
@@ -18,6 +21,26 @@ static XPowersPMU PMU;
 #define TAG "AXP2101"
 
 #define PMIC_EVENT_POST_TIMEOUT_MS  50
+// Readings: every 2 s while in use; while idle nobody sees them, and every wake costs (ADR-009)
+#define PMIC_READ_PERIOD_MS         2000
+#define PMIC_IDLE_READ_PERIOD_MS    30000
+
+// Low battery (ADR-009). The AXP2101's two levels only raise interrupts (datasheet p.20, p.28): nothing powers off by
+// itself until the hard cut-off. The unit powers off cleanly at the shutdown level, on battery, when the voltage
+// agrees (a fuel gauge misreading alone must not switch a unit off)
+#define PMIC_LOW_BATTERY_WARNING_PCT    10
+#define PMIC_LOW_BATTERY_SHUTDOWN_PCT   5
+#define PMIC_LOW_BATTERY_SHUTDOWN_MV    3600
+// Hard cut-off (reg 0x24), a backstop behind the clean power off: the usual floor for a Li-ion cell
+#define PMIC_POWER_DOWN_VOLTAGE_MV      3000
+
+// TS: TH1, a 10 kOhm NTC on the PCB (reads the board, not the cell). Reg 0x50: an input only, not gating the charge,
+// until its reading is checked (bit 4); current source on only while the TS channel is converting (bits 3:2 = 10);
+// 50 uA (bits 1:0 = 10). The ADC reads 0.5 mV a step (datasheet p.25-26, p.45)
+#define PMIC_TS_PIN_CTRL_INPUT_ONLY_50UA  0x1A
+#define PMIC_TS_CURRENT_UA                50.0f
+#define PMIC_TS_ADC_MV_PER_STEP           0.5f
+#define PMIC_TS_ADC_INVALID               0x2000
 
 
 // C Function region
@@ -61,13 +84,46 @@ esp_err_t pmic_request_power_off() {
 }
 
 
+// The datasheet's NTC table (p.26, a 10 kOhm TH11-3H103F at 50 uA): resistance in kOhm every 5 degC from -20 to 60.
+// XPowersLib's getTsTemperature() assumes 50 uA after its enableTSPinMeasure() sets 60 uA, so it read about 5 degC
+// low; we set the current and convert here
+static const float pmic_ts_table_kohm[] = {
+    63.00f, 50.15f, 40.26f, 32.55f, 26.49f, 21.68f, 17.78f, 14.63f, 12.07f,
+    10.00f, 8.320f, 6.954f, 5.839f, 4.924f, 4.171f, 3.549f, 3.032f,
+};
+#define PMIC_TS_TABLE_FIRST_C   -20.0f
+#define PMIC_TS_TABLE_STEP_C    5.0f
+
+
+// Degrees C from the TS reading, NAN when the pin reads open or out of the table
+static float pmic_ts_celsius(uint16_t raw) {
+    if (raw == 0 || raw >= PMIC_TS_ADC_INVALID) {
+        return NAN;
+    }
+    const float kohm = raw * PMIC_TS_ADC_MV_PER_STEP / PMIC_TS_CURRENT_UA;  // mV / uA = kOhm
+    const int n = sizeof(pmic_ts_table_kohm) / sizeof(pmic_ts_table_kohm[0]);
+    if (kohm > pmic_ts_table_kohm[0] || kohm < pmic_ts_table_kohm[n - 1]) {
+        return NAN;
+    }
+    // Interpolated in log resistance, which is close to linear in temperature over one 5 degC step
+    for (int i = 0; i < n - 1; i++) {
+        if (kohm <= pmic_ts_table_kohm[i] && kohm >= pmic_ts_table_kohm[i + 1]) {
+            float f = logf(pmic_ts_table_kohm[i] / kohm) / logf(pmic_ts_table_kohm[i] / pmic_ts_table_kohm[i + 1]);
+            return PMIC_TS_TABLE_FIRST_C + (i + f) * PMIC_TS_TABLE_STEP_C;
+        }
+    }
+    return NAN;
+}
+
+
 // Zeroed first, so a change check with memcmp does not see padding
 static void pmic_read_status(axp2101_status_t *status) {
     memset(status, 0, sizeof(*status));
     status->valid = true;
     status->charge_status = PMU.getChargerStatus();
     status->battery_percentage = PMU.getBatteryPercent();
-    status->ts_temperature = PMU.getTsTemperature();
+    status->ts_raw = PMU.getTsPinValue();
+    status->ts_temperature = pmic_ts_celsius(status->ts_raw);
 
     status->vbus_voltage_mv = PMU.getVbusVoltage();
     status->vbatt_voltage_mv = PMU.getBattVoltage();
@@ -192,13 +248,21 @@ void axp2101_monitor_task(void * args) {
     axp2101_ctx_t *ctx = (axp2101_ctx_t *) args;
 
     ESP_LOGI(TAG, "AXP2101 monitor task started");
+    int low_battery_reads = 0;
 
     while (1) {
         // Wait until the interrupt happens, or the settings page asks for the charge settings to be applied
         EventBits_t bits = xEventGroupWaitBits(ctx->pmic_event_control,
                                                PMIC_INTERRUPT_EVENT_BIT | PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT |
                                                PMIC_POWER_OFF_EVENT_BIT,
-                                               pdTRUE, pdFALSE, pdMS_TO_TICKS(2000));
+                                               pdTRUE, pdFALSE, pdMS_TO_TICKS(is_idle_mode_activated() ?
+                                                   PMIC_IDLE_READ_PERIOD_MS : PMIC_READ_PERIOD_MS));
+        // The IRQ line stays low until its status is cleared (datasheet p.29), and the interrupt is on the falling
+        // edge: a missed edge would leave it low with no further interrupt (the power key dead). A low line is an
+        // interrupt, whatever woke the task
+        if (ctx->interrupt_pin != GPIO_NUM_NC && gpio_get_level(ctx->interrupt_pin) == 0) {
+            bits |= PMIC_INTERRUPT_EVENT_BIT;
+        }
         if (bits & PMIC_POWER_OFF_EVENT_BIT) {
             pmic_power_off();
         }
@@ -207,7 +271,7 @@ void axp2101_monitor_task(void * args) {
         }
         if (bits & PMIC_INTERRUPT_EVENT_BIT) {
             // Handle PMIC interrupt
-            PMU.getIrqStatus();
+            uint32_t irq_status = (uint32_t) PMU.getIrqStatus();
 
             if (PMU.isDropWarningLevel2Irq()) {
                 ESP_LOGI(TAG, "isDropWarningLevel2");
@@ -247,6 +311,7 @@ void axp2101_monitor_task(void * args) {
             if (PMU.isPekeyShortPressIrq()) {
                 update_low_power_mode_last_activity_event();
                 if (is_idle_mode_activated()) {
+                    low_power_mode_note_wake_cause("key");
                     wake_from_idle_mode();
                 }
                 ESP_LOGI(TAG, "isPekeyShortPress");
@@ -254,6 +319,7 @@ void axp2101_monitor_task(void * args) {
             if (PMU.isPekeyLongPressIrq()) {
                 update_low_power_mode_last_activity_event();
                 if (is_idle_mode_activated()) {
+                    low_power_mode_note_wake_cause("key");
                     wake_from_idle_mode();
                 }
 
@@ -290,8 +356,11 @@ void axp2101_monitor_task(void * args) {
             if (PMU.isBatOverVoltageIrq()) {
                 ESP_LOGI(TAG, "isBatOverVoltage");
             }
-            // Clear PMU Interrupt Status Register
-            PMU.clearIrqStatus();
+            // Clear only what was read and handled (write 1 to clear, p.43): an event that came in meanwhile stays
+            // set, keeps the line low and is handled on the next pass
+            PMU.writeRegister(XPOWERS_AXP2101_INTSTS1, (irq_status >> 16) & 0xFF);
+            PMU.writeRegister(XPOWERS_AXP2101_INTSTS2, (irq_status >> 8) & 0xFF);
+            PMU.writeRegister(XPOWERS_AXP2101_INTSTS3, irq_status & 0xFF);
         }
 
         // Read status
@@ -307,10 +376,18 @@ void axp2101_monitor_task(void * args) {
             pmic_publish(PMIC_SERVICE_EVENT_STATUS_CHANGED);
         }
 
-        if (ctx->status.is_usb_connected) {
-            // Prevent entering sleep mode when USB is connected, to ensure the system is responsive for user interactions and avoid unexpected sleep when the device is plugged in
-            // prevent_sleep_mode_enter(true);
+        // Low battery: power off cleanly on battery, after two readings in a row (one bad gauge reading is not enough)
+        bool low = !status.is_usb_connected && status.battery_percentage <= PMIC_LOW_BATTERY_SHUTDOWN_PCT &&
+                   status.vbatt_voltage_mv > 0 && status.vbatt_voltage_mv < PMIC_LOW_BATTERY_SHUTDOWN_MV;
+        low_battery_reads = low ? low_battery_reads + 1 : 0;
+        if (low_battery_reads >= 2) {
+            ESP_LOGW(TAG, "Battery low (%d%%, %u mV): powering off", status.battery_percentage,
+                     (unsigned) status.vbatt_voltage_mv);
+            pmic_power_off();
         }
+
+        // No light sleep while USB power is in (ADR-009); a plug-in raises the interrupt, which wakes the chip
+        low_power_mode_set_usb_power(status.is_usb_connected);
 
         // // Print it out
         // ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",
@@ -386,13 +463,15 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
         return ESP_FAIL;
     }
 
-    // Disable protection settings on unused power outputs
-    PMU.disableDCHighVoltageTurnOff();
+    // Under-voltage power off on the unused DC-DCs off; on DCDC1, which powers the whole board (one +3V3 rail), it
+    // stays on, with the over-voltage power off: a failing rail powers the unit off cleanly instead of brown-out
+    // resets (ADR-009; datasheet p.20, reg 0x23)
+    PMU.enableDCHighVoltageTurnOff();
+    PMU.enableDC1LowVoltageTurnOff();
     PMU.disableDC5LowVoltageTurnOff();
     PMU.disableDC4LowVoltageTurnOff();
     PMU.disableDC3LowVoltageTurnOff();
     PMU.disableDC2LowVoltageTurnOff();
-    PMU.disableDC1LowVoltageTurnOff();
 
     // Disable unused power outputs
     PMU.disableDC2();
@@ -419,11 +498,14 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     // Don't check for PWROK pin
     PMU.disablePwrOk();
 
-    // FIXME: Disable battery temperature protection
-    PMU.disableTSPinMeasure();
+    // TS measured as an input only, not gating the charge yet (ADR-009): TH1 read a constant because the old code
+    // switched the measurement off, and a wrong value because the library set 60 uA and converted as 50 uA
+    PMU.writeRegister(XPOWERS_AXP2101_TS_PIN_CTRL,
+                      (PMU.readRegister(XPOWERS_AXP2101_TS_PIN_CTRL) & 0xE0) | PMIC_TS_PIN_CTRL_INPUT_ONLY_50UA);
+    PMU.writeRegister(XPOWERS_AXP2101_ADC_CHANNEL_CTRL, PMU.readRegister(XPOWERS_AXP2101_ADC_CHANNEL_CTRL) | 0x02);
 
-    // Ease VSYS shutdown voltage
-    PMU.setSysPowerDownVoltage(2600);
+    // Hard cut-off, a backstop behind the clean power off at low battery (was 2.6 V, the lowest setting)
+    PMU.setSysPowerDownVoltage(PMIC_POWER_DOWN_VOLTAGE_MV);
     ESP_LOGI(TAG, "Set VSYS power down voltage to %dmV", PMU.getSysPowerDownVoltage());
 
     // Set the minimum operating VBUS voltage 
@@ -449,17 +531,19 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setPrechargeCurr(XPOWERS_AXP2101_PRECHARGE_100MA);
     ESP_LOGI(TAG, "Set battery pre-charge current to %d", PMU.getPrechargeCurr());
 
-    PMU.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_200MA);
+    // About a tenth of the Vapcell T9's 950 mAh (ADR-009). A higher termination does not charge faster; it stops
+    // short of full. The input limit is what limits the speed
+    PMU.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_100MA);
     ESP_LOGI(TAG, "Set battery charge termination current to %d", PMU.getChargerTerminationCurr());
 
     // VBUS current limit, charge current and charge voltage from the settings page
     axp2101_apply_charge_settings();
 
     // set low battery warning levels
-    PMU.setLowBatWarnThreshold(10);
+    PMU.setLowBatWarnThreshold(PMIC_LOW_BATTERY_WARNING_PCT);
     ESP_LOGI(TAG, "Set low battery warning threshold to %d%%", PMU.getLowBatWarnThreshold());
 
-    PMU.setLowBatShutdownThreshold(5);
+    PMU.setLowBatShutdownThreshold(PMIC_LOW_BATTERY_SHUTDOWN_PCT);
     ESP_LOGI(TAG, "Set low battery shutdown threshold to %d%%", PMU.getLowBatShutdownThreshold());
 
     // Set PWROK output delay
@@ -483,6 +567,11 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
 
     // Populate status
     pmic_read_status(&ctx->status);
+
+    // The protection, cut-off and TS settings as the chip holds them (ADR-009)
+    ESP_LOGI(TAG, "Read back: 0x23 uvp/ovp=0x%02x 0x24 voff=0x%02x 0x30 adc=0x%02x 0x50 ts=0x%02x 0x63 iterm=0x%02x",
+             PMU.readRegister(0x23), PMU.readRegister(0x24), PMU.readRegister(XPOWERS_AXP2101_ADC_CHANNEL_CTRL),
+             PMU.readRegister(XPOWERS_AXP2101_TS_PIN_CTRL), PMU.readRegister(0x63));
 
     // print power on reason
     xpower_power_on_source_t power_on_source = PMU.getPowerOnSource();

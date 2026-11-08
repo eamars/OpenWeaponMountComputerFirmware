@@ -215,6 +215,11 @@ static void wifi_apply_radio() {
     ESP_LOGI(TAG, "%s the radio: %s", want ? "Starting" : "Stopping", esp_err_to_name(ret));
     if (ret == ESP_OK) {
         wifi_radio_on = want;
+        if (!want) {
+            // No network without the radio. mDNS kept its 100 ms timer running, which woke the chip out of light
+            // sleep ten times a second while idle (ADR-009); it starts again with the next address
+            mdns_free();
+        }
     }
 }
 

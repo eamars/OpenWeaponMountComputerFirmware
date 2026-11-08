@@ -102,3 +102,10 @@ CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
 # The BLE controller runs from flash (here, from PSRAM: XiP), not internal RAM: 19 KB more internal RAM, pulls
 # no slower (ADR-007)
 CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY=y
+
+# Automatic light sleep while idle (ADR-009 step 2.3): the wake lines are armed around each sleep from the PM's
+# light-sleep callbacks; the PM's own counters for the rc `sleep` command. No light sleep while USB power is in is
+# the firmware's own lock (low_power_mode.c), not CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION: that one let the chip sleep
+# with the cable in whenever the host paused its frame pulses, and the USB link did not come back
+CONFIG_PM_LIGHT_SLEEP_CALLBACKS=y
+CONFIG_PM_PROFILING=y

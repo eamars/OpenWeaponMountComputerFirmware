@@ -29,6 +29,9 @@
 // and the scan covers all DISP_V_RES_PIXEL rows within one TE period. Row time is taken as period / rows, which can
 // only overstate it. Until the first period is measured, the longest measured period is used.
 #define DISPLAY_FLUSH_TE_PERIOD_DEFAULT_US 16900
+// Longest rise-to-rise time taken as the panel's refresh period. A longer one is a gap in the pulses (the panel asleep
+// while idle, ADR-009), not a period: taken as one, it once made the flush wait seconds for its scan position
+#define DISPLAY_FLUSH_TE_PERIOD_MAX_US (DISPLAY_FLUSH_TE_PERIOD_DEFAULT_US * 3 / 2)
 // Write time per pixel in ns: bounds around the measured 159-183 ns/px (full frames, all four rotations)
 #define DISPLAY_FLUSH_WRITE_NS_PER_PX_MIN 150
 #define DISPLAY_FLUSH_WRITE_NS_PER_PX_MAX 190
@@ -210,6 +213,22 @@ static void display_flush_fill_strip(const uint16_t *src, int32_t src_stride, in
 }
 
 
+// Wake profiling (ADR-009): set by the flush-done ISR for the first frame after arming
+static volatile bool display_flush_first_frame_armed = false;
+static volatile int64_t display_flush_first_frame_done_us = 0;
+
+
+void display_flush_arm_first_frame(void) {
+    display_flush_first_frame_done_us = 0;
+    display_flush_first_frame_armed = true;
+}
+
+
+int64_t display_flush_first_frame_us(void) {
+    return display_flush_first_frame_done_us;
+}
+
+
 // SPI ISR context: no allocation, blocking or logging
 static bool IRAM_ATTR display_flush_trans_done_cb(esp_lcd_panel_io_handle_t panel_io,
                                                   esp_lcd_panel_io_event_data_t *edata, void *user_ctx) {
@@ -238,6 +257,11 @@ static bool IRAM_ATTR display_flush_trans_done_cb(esp_lcd_panel_io_handle_t pane
         }
         portEXIT_CRITICAL_ISR(&display_flush_timing_lock);
 
+        if (display_flush_first_frame_armed) {
+            display_flush_first_frame_done_us = esp_timer_get_time();
+            display_flush_first_frame_armed = false;
+        }
+
         lv_display_flush_ready(disp);
     }
 
@@ -254,8 +278,9 @@ static void IRAM_ATTR display_flush_te_isr(void *arg) {
 
     portENTER_CRITICAL_ISR(&display_flush_timing_lock);
     if (high) {
-        if (display_flush_te_state.last_rise_us != 0) {
-            uint32_t period_us = (uint32_t) (now_us - display_flush_te_state.last_rise_us);
+        const int64_t since_rise_us = now_us - display_flush_te_state.last_rise_us;
+        if (display_flush_te_state.last_rise_us != 0 && since_rise_us <= DISPLAY_FLUSH_TE_PERIOD_MAX_US) {
+            uint32_t period_us = (uint32_t) since_rise_us;
             display_flush_te_state.period_us = period_us;
             if (display_flush_timing_acc.te_period_min_us == 0 || period_us < display_flush_timing_acc.te_period_min_us) {
                 display_flush_timing_acc.te_period_min_us = period_us;

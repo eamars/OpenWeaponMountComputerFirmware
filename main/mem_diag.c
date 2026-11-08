@@ -83,3 +83,45 @@ void mem_diag_start_stack_report(void) {
     }
 #endif  // CONFIG_FREERTOS_USE_TRACE_FACILITY
 }
+
+
+bool mem_diag_cpu_report(uint32_t window_ms) {
+#if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+    UBaseType_t capacity = uxTaskGetNumberOfTasks() + 8;
+    TaskStatus_t *before = heap_caps_malloc(2 * capacity * sizeof(TaskStatus_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+    if (before == NULL) {
+        return false;
+    }
+    TaskStatus_t *after = before + capacity;
+
+    configRUN_TIME_COUNTER_TYPE total_before = 0, total_after = 0;
+    UBaseType_t n_before = uxTaskGetSystemState(before, capacity, &total_before);
+    vTaskDelay(pdMS_TO_TICKS(window_ms));
+    UBaseType_t n_after = uxTaskGetSystemState(after, capacity, &total_after);
+
+    // The total is the run-time clock, so a task's share is of one core; both cores together make 200%
+    uint64_t elapsed = (uint64_t) (total_after - total_before);
+    ESP_LOGI(TAG, "cpu_rpt: begin window_ms=%" PRIu32 " tasks=%u", window_ms, (unsigned) n_after);
+    for (UBaseType_t i = 0; i < n_after && elapsed > 0; i++) {
+        configRUN_TIME_COUNTER_TYPE start = after[i].ulRunTimeCounter;  // a task created in the window: all of it
+        for (UBaseType_t j = 0; j < n_before; j++) {
+            if (before[j].xHandle == after[i].xHandle) {
+                start = before[j].ulRunTimeCounter;
+                break;
+            }
+        }
+        uint64_t used = (uint64_t) (after[i].ulRunTimeCounter - start);
+        uint32_t permille = (uint32_t) ((used * 1000) / elapsed);
+        if (used > 0) {
+            ESP_LOGI(TAG, "cpu_rpt: %s %" PRIu32 ".%" PRIu32 "%%", after[i].pcTaskName, permille / 10, permille % 10);
+        }
+    }
+    ESP_LOGI(TAG, "cpu_rpt: end");
+
+    heap_caps_free(before);
+    return true;
+#else
+    (void) window_ms;
+    return false;
+#endif  // CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+}

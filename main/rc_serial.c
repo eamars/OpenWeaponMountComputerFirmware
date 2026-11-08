@@ -61,9 +61,10 @@ static void rc_serial_task(void *p) {
     while (1) {
         rc_serial_park_if_requested();
 
-        // Console driver read with no wait (installed in app_main): returns 0 when nothing is waiting
+        // Console driver read (installed in app_main): returns as soon as input arrives, 0 when the wait ends.
+        // A wait, not a poll: a 20 ms poll woke the chip out of light sleep 50 times a second (ADR-009)
         int received;
-        while ((received = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), 0)) > 0) {
+        while ((received = usb_serial_jtag_read_bytes(chunk, sizeof(chunk), pdMS_TO_TICKS(RC_SERIAL_READ_WAIT_MS))) > 0) {
             for (int i = 0; i < received; i++) {
                 char c = chunk[i];
 
@@ -98,8 +99,6 @@ static void rc_serial_task(void *p) {
 
             rc_serial_park_if_requested();
         }
-
-        vTaskDelay(pdMS_TO_TICKS(RC_SERIAL_POLL_PERIOD_MS));
     }
 }
 
