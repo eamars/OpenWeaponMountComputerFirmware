@@ -1,6 +1,6 @@
 # ADR-011: factory calibration of the sensor, as a guided routine
 
-Status: **Open** 2026-11-08. Approved by the owner ("Approve and flash to give it a try first"). Step 0 measured, steps 1 and 2 built and run by the owner on the COM13 unit ("Two passes, looks good"). With a placement marker, the accelerometer's dynamic calibration moved the zero by about 0.05 to 0.1° per handling (most of an earlier 0.25° was placement); it is off (gyroscope only), which held it within 0.02°. `state_change` passes. Left: the other units. Details in [progress](progress.md).
+Status: **Built** 2026-11-08, merged as PR #8 and released in v1.1.0. Approved by the owner ("Approve and flash to give it a try first"). Step 0 measured, steps 1 and 2 built and run by the owner on the COM13 unit ("Two passes, looks good"). With a placement marker, the accelerometer's dynamic calibration moved the zero by about 0.05 to 0.1° per handling (most of an earlier 0.25° was placement); it is off (gyroscope only), which held it within 0.02°. `state_change` passes. All three units are calibrated (owner, 2026-11-08). Details in [progress](progress.md).
 
 ## What we want
 

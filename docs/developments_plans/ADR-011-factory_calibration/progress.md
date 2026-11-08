@@ -83,11 +83,11 @@ Cant on the rotation 0 edge, same pose and spot, read with `grav` after the read
   - Handling moved the cant 0.02° at most.
   - After a power cycle it started 0.16° off and came back within 0.04° within 3 minutes, a warm-up after a cold start. The board went from 39.3 to 40.3 °C and back to 38.7 °C while charging.
 
-### Left
+### The other units (2026-11-08, after v1.1.0)
 
-- **The second problem unit, and the owner's own unit:**
-  - This firmware deletes their persisted tare at boot and fixes the accelerometer offset, so each needs the routine once.
-  - Until then the level uses the uncalibrated frame (about 1° off on COM13).
+- **The second problem unit (COM12):** it was on much older firmware. It was flashed over USB with the v1.1.0 release files. At its first boot it found and deleted its persisted tare ("An old persisted tare was found and deleted"), and set the dynamic calibration to gyroscope only (0x02). `grav` showed reports arriving.
+- **The owner's own unit (COM11):** at boot it reports `Calibrated: offset -2.06 deg`.
+- The owner ran the routine on both: "All three units are now calibrated."
 
 ## Clean-up before the PR (owner, 2026-11-08)
 
