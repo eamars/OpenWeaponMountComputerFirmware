@@ -40,11 +40,11 @@ Unit conversion for watch guidance: one watchOS point (2/326 inch) and one Wear 
 - Constants: `DISPLAY_MARGIN_PX` 8, `DISP_CORNER_RADIUS_PX` 30 (DO0164FMST05: R2.30 mm), gap 20 px, cell 122 px (`DOPE_CELL_PX`), editor value row 96 px.
 - Fonts: montserrat 20 (captions), 32 (button labels, names), 40 to 48 (values), `font_dope_digits_64/84` (numbers read at a glance).
 - Layout: grids per rotation (`set_rotation_*`), portrait stacks, landscape side by side; every UI is designed and shown in both orientations.
-- Shared pieces to reuse, not copy: `value_editor` (numbers), the confirmation screen in `dope_config_view.c` (clear), the timer tile's preset buttons.
+- Shared pieces to reuse, not copy: `value_editor` (numbers), the confirmation screen in `main/ui/views/dope_view.c` (clear), the timer tile's preset buttons.
 
 ## Relation to the other project skills
 
-`lvgl-layout` and `lvgl-widget` cover the LVGL mechanics (Flex, Grid, rotation handlers, widget events, text lifetime); `c-style` the code. They point here for how a view looks and behaves. Settings pages are built with `settings_ui` (`main/settings_ui.h`: pages, rows, choice lists, the value editor, confirmations); the old `lv_menu` settings and their `config_view.c` helpers were removed in ADR-008. If any guidance still disagrees, this skill wins.
+`lvgl-layout` and `lvgl-widget` cover the LVGL mechanics (Flex, Grid, rotation handlers, widget events, text lifetime); `c-style` the code. They point here for how a view looks and behaves. Settings pages are built with `settings_ui` (`main/ui/core/settings_ui.h`: pages, rows, choice lists, the value editor, confirmations), one file per page in `main/ui/settings/`; the old `lv_menu` settings and their helpers were removed in ADR-008. If any guidance still disagrees, this skill wins.
 
 ## Process
 

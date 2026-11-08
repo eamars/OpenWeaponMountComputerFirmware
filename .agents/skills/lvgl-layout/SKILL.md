@@ -74,6 +74,8 @@ Use manual alignment only when layout is the wrong abstraction:
 
 When mixing manual alignment with a parent layout, add the right flag and explain why:
 
+Set these with the per-flag setters (`lv_obj_set_ignore_layout()`, `lv_obj_set_hidden()` and so on); `lv_obj_add_flag` / `remove_flag` / `has_flag` are deprecated in LVGL 9.6 and CI fails on the warning.
+
 - `LV_OBJ_FLAG_IGNORE_LAYOUT`: parent layout ignores the child; normal coordinates apply.
 - `LV_OBJ_FLAG_FLOATING`: like ignoring layout, and also ignored by `LV_SIZE_CONTENT` calculations.
 - `LV_OBJ_FLAG_HIDDEN`: hidden children are ignored by layout calculations.
@@ -86,8 +88,8 @@ The firmware builds views imperatively in `main/*.c`:
 - `create_*_view(parent)` creates objects, styles them, attaches callbacks, and returns or stores object pointers.
 - `set_rotation_*` functions mutate layout flow, size, scroll direction, object order, and alignment for the current `system_config.rotation`.
 - `LV_EVENT_SIZE_CHANGED` callbacks reapply rotation-dependent layout.
-- Tile screens are created under `main_tileview.c`; many views need to fill their tile with `lv_pct(100)`.
-- Sizes, gaps, corners and colours follow the `embedded-ui-design` skill (122 px targets, 20 px gaps, 8 px margin, concentric corners, black background). Settings pages use `settings_ui` (`main/settings_ui.h`); the old `lv_menu` settings and `config_view.c` helpers were removed in ADR-008.
+- Tile screens are created under `main/ui/core/main_tileview.c`; many views need to fill their tile with `lv_pct(100)`. To switch tiles from code, use `main_tileview_jump_to()`: it runs the tile change and returns the tile to come back to.
+- Sizes, gaps, corners and colours follow the `embedded-ui-design` skill (122 px targets, 20 px gaps, 8 px margin, concentric corners, black background). Settings pages use `settings_ui` (`main/ui/core/settings_ui.h`); the old `lv_menu` settings and their helpers were removed in ADR-008.
 
 For rotation-aware screens, keep all rotation layout policy in one `set_rotation_*` function and call it both during creation and from the size-change callback. Avoid scattering orientation conditionals through child setup unless the child is itself a separate reusable widget.
 

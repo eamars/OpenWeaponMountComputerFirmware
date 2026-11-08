@@ -143,3 +143,28 @@ A script checks the rule: no other file in `services/` includes a header from `u
   - About: "Running ota_1".
 - **Sensor calibration through the helper:** Advanced, Sensor calibration (tile 0,2, its first screen, "Calibrated, offset -2.1°"); Cancel goes back to the settings tile (3,1).
 - **Snaps against the baseline, rotation 0 and 1:** every page is pixel-identical except About (version) and Power (live readings). The settings hub differs in its scroll position and in an "Update available" row: the unit had restarted while the forced test host still ran.
+
+## Step 5: keep it that way (2026-11-08)
+
+**Built:**
+- **CI warning check** (`.github/workflows/firmware.yml`): the build's output is kept, and the job fails on any compiler warning whose file is in the repo's `main/` or `components/`. Colour codes are stripped first, because ESP-IDF compiles with `-fdiagnostics-color=always`. ESP-IDF's, LVGL's and the other managed components' own warnings do not count.
+  - Tried on real logs: it finds 112 warnings in the v1.2.0 CI log and 104 in step 1's local log, and none in step 4's.
+- **`AGENTS.md`** (new): build, flash and update; where code goes; the dependency rule with its two exceptions and a one-line check; settings in NVS; warnings; style (the skills); proving a change on a unit; the ADR rules, including closing an ADR before its PR; what not to do.
+- **`tools/remote_control/ui_snaps.py`** (new): the capture and compare used in steps 2 to 4, for the next change to the screens.
+- **`requirements.txt`** (new): what the repo's host tools import (pyserial, zeroconf, pillow), for the venv at the repo root.
+- **Skills and docs:**
+  - the skills' file paths follow the new layout;
+  - `c-style` states where a new module goes and the dependency rule;
+  - the LVGL skills name `main_tileview_jump_to()` and the per-flag setters;
+  - the technical brief points at `board_cfg.h`, `ota_host.py`'s docstring at `services/ota_mode.c`, and the README at `AGENTS.md`.
+
+## Closed (2026-11-08)
+
+All five steps are built and checked on COM11. The firmware behaves as v1.2.0 did, and the build prints no warning from our code.
+
+**Left for later ADRs:**
+- splitting `ota_mode` into a service and its screens;
+- the 136 `ESP_ERROR_CHECK` in runtime paths;
+- the decision on the three disabled tiles.
+
+COM11 runs the step 4 build from `ota_1`.

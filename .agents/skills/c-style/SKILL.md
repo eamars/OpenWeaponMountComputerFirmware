@@ -7,7 +7,7 @@ description: Enforce and review this project's C/C++ coding style for ESP-IDF fi
 
 This skill captures the C/C++ style used in this repository. Apply it proactively when writing or reviewing firmware code.
 
-The strongest style signal is tracked history: project-owned code is primarily under `main/`, with locally adapted driver code in `components/bno08x` and `components/esp_lcd_touch_ft3168`. Treat `components/XPowersLib` and other third-party code as external unless the user asks to modify it.
+The strongest style signal is tracked history: project-owned code is under `main/`, in folders by role (`AGENTS.md` lists them and the dependency rule), with our own drivers in `components/bno08x`, `components/esp_lcd_touch_ft3168` and `components/kestrel_link`. Treat `components/XPowersLib` and other third-party code as external unless the user asks to modify it.
 
 The style is direct embedded C with small C++ bridge islands: explicit setup, clear task/event control flow, practical comments, and conservative abstractions.
 
@@ -16,6 +16,8 @@ The style is direct embedded C with small C++ bridge islands: explicit setup, cl
 ## Rule 1 - Match the local module shape
 
 Keep code organized as small module pairs: `feature.c` / `feature.h`, or `feature.cpp` / `feature.h` when C++ is required to bridge a C++ library. Public APIs are declared in the header and implemented in the source file. File-local helpers, callbacks, and state stay in the source file as `static`.
+
+A new module goes in the folder for its role (`main/app`, `board`, `common`, `services`, `ui/core`, `ui/views`, `ui/settings`, `tools`; see `AGENTS.md`), named for what it is: a settings page is `*_page.c`, a tile `*_view.c`. A service never includes LVGL or a header from `ui/`, `tools/` or `board/`: it publishes events for `ui_bridge`, or calls a listener the UI registers. After adding a file, run `idf.py reconfigure` (the build globs `main/`).
 
 Prefer the existing module prefixes:
 
@@ -181,7 +183,7 @@ When writing a new config feature, follow this shape before inventing a separate
 
 LVGL UI code is intentionally direct: create the object, set its style/layout, attach callbacks, and return it. Use small helper functions only when they remove repeated UI setup already present in the module.
 
-What a view looks like and how it behaves follows the `embedded-ui-design` skill. Reuse the shared pieces built for it: `value_editor_create_button` / `value_editor_create_label` (buttons and cells), `value_editor` (editing a number), `display_concentric_radius` / `display_corner_clearance` (corners). The old settings helpers in `config_view.c` (menu rows, drop-downs, spin boxes, colour picker, Save/Reload/Reset buttons, info message box) are what ADR-008 replaces: do not use them in new code.
+What a view looks like and how it behaves follows the `embedded-ui-design` skill. Reuse the shared pieces built for it: `value_editor_create_button` / `value_editor_create_label` (buttons and cells), `value_editor` (editing a number), `display_concentric_radius` / `display_corner_clearance` (corners). Settings pages are built with `settings_ui` (`main/ui/core/settings_ui.h`); the old `lv_menu` settings helpers were removed in ADR-008.
 
 Use LVGL locks when updating UI from tasks:
 

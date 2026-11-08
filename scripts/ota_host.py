@@ -1,4 +1,4 @@
-"""The local OTA host: what the firmware's update check looks for (`main/ota_mode.c`).
+"""The local OTA host: what the firmware's update check looks for (`main/services/ota_mode.c`).
 
 After its Wi-Fi connects at boot, the unit asks `owmc_update.local` port 8080 for `/p1/manifest.json`; when the
 manifest's version is newer than its own, or `ignore_version` is set, it offers the update, and Install downloads

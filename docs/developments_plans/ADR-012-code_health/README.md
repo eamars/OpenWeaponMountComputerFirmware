@@ -1,6 +1,6 @@
 # ADR-012: code health: no warnings, no dead code, one direction of dependency, a layout that says what each file is
 
-Status: **Open** 2026-11-08. Approved by the owner with the two decisions below. Details in [progress](progress.md).
+Status: **Built** 2026-11-08. Approved by the owner with the two decisions below; all five steps built and checked on the COM11 unit (state_change, rotation_sweep, the timer end to end, a real OTA update, snaps of every screen against v1.2.0). No warning from our code; CI fails on any new one. Details in [progress](progress.md).
 
 ## What we want
 

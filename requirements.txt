@@ -1,0 +1,4 @@
+# Host-side tools, for the venv at the repo root (python -m venv venv; venv/Scripts/pip install -r requirements.txt)
+pyserial    # tools/remote_control: the unit's USB console
+zeroconf    # scripts/ota_host.py: announces owmc_update.local
+pillow      # tools/remote_control/ui_snaps.py: compares screen snaps
