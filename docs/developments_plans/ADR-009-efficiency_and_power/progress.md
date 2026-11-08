@@ -85,7 +85,7 @@ The owner, leaving for two hours: "do all your researches first then execute cha
 
 ### Not built, and why
 
-- **Automatic light sleep (step 2, item 3)**: designed, not switched on. It cannot be seen on the bench (USB keeps the unit awake, and must), and a wake that fails on battery would leave a unit that does not come back at the line. To build with the owner: remove the ext1 arming; arm GPIO wake-up on low for GPIO15, 5, 0 and 21 only for each sleep (`esp_pm` light-sleep callbacks, `CONFIG_PM_LIGHT_SLEEP_CALLBACKS`), restoring the edges and checking the four lines on the way out; keep the four pins out of `CONFIG_PM_SLP_DISABLE_GPIO` (`gpio_sleep_sel_dis`); `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION`; `CONFIG_PM_PROFILING` for the sleep share. Test: unplug, idle a few minutes, wake by touch, button, key and movement, plug in, read the counters.
+- **Automatic light sleep (step 2, item 3)**: left for a session with the owner (it cannot be seen on the bench, and a wake that fails on battery would leave a unit that does not come back at the line). Built and proven with the owner later the same day: "Step 2c" below.
 - **Step 3.2, each level row painted once**: step 0 shows both cores 94-97% idle with the level shown, so the gain would be small, and its check needs the owner's eye. Left until a moving level shows the CPU matters.
 - **Step 4**: the 1.2 s is inside the closed Wi-Fi library (`esp_wifi_init()`, 300 ms to 1,510 ms in every boot today). Starting the display first would change the order of internal-RAM allocations the display's DMA buffers depend on, a memory move the owner wants alone; for a boot every few hours at most, not now. The countdown settings write at boot was not traced to its caller (it comes after the first tile change; one NVS write a boot, which NVS wear-levels); the `gpio_install_isr_service` error is the touch component's own and harmless.
 
@@ -109,4 +109,38 @@ The owner, leaving for two hours: "do all your researches first then execute cha
 - Wake by movement: about 500 ms by the owner's feel, longer than before, and acceptable. The 117 ms above starts at the wake request; the time the stability detector takes to report the movement comes before it and was not measured.
 - Wake by touch and by the button: more responsive than before, by the owner's feel.
 - Countdown running: keeps the unit awake. Power key: works.
-- TS: there was no way to read it on the unit. The Power settings page's status now shows `Board` with the TH1 temperature (dashes outside the table), with USB and system on lines of their own (the USB line used to wrap mid-phrase). Seen on the unit: `Board 32.0°C` on USB.
+- TS: there was no way to read it on the unit. The Power settings page's status now shows `Board` with the TH1 temperature (dashes outside the table), with USB and system on lines of their own (the USB line used to wrap mid-phrase). Seen on the unit: `Board 32.0°C` on USB. The owner: about 30 °C reads normal; no finer check possible without a reference thermometer. TS stays an input only (charging not gated).
+
+## Step 2c: automatic light sleep while idle, with the owner (2026-11-08 15:00-16:05)
+
+### What was built
+
+- **Light sleep in idle only** (`idle_pm_config.light_sleep_enable`, `low_power_mode.c`). It is switched on only once the wake set-up below succeeds; active never sleeps.
+- **ext1 arming removed.**
+- **The four wake lines armed around each sleep** (`CONFIG_PM_LIGHT_SLEEP_CALLBACKS`). Touch GPIO15, BNO085 GPIO5, button GPIO0 and PMIC GPIO21 are armed with wake on low, and their CPU interrupts are off while armed, so a line held low cannot run its ISR again and again on the other core. On the way out each line gets its falling-edge interrupt back. A line still low has its interrupt raised again in software (`GPIO.status_w1ts`), so the event that woke the chip reaches its driver. A wake by a line that is high again by then is treated as a touch, since the touch controller is the only one of the four that pulses its line; that costs one I2C read.
+- **Pins held through sleep.** ESP-IDF isolates every pin in light sleep (`CONFIG_ESP_SLEEP_GPIO_RESET_WORKAROUND` selects `CONFIG_PM_SLP_DISABLE_GPIO`): no input, no output, no pull. That would float the reset lines of the panel, the touch controller and the BNO085, the panel's chip select, the BNO085's PS0, the buzzer and both I2C buses, whose pull-ups are internal. These pins are kept as they are while awake (`gpio_sleep_sel_dis`). The wake lines are kept by the wake set-up itself.
+- **No light sleep while USB power is in.** A PM lock (`usb_power`) is held from boot until the PMIC reports no VBUS, and taken again when it reports VBUS. A plug-in raises the PMIC interrupt, which is a wake line. ESP-IDF's own guard (`CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION`) was tried first and is not used; see below.
+- **mDNS freed when the radio stops** (`wifi.c`). Its 100 ms timer kept running with Wi-Fi off and woke the chip ten times a second. It starts again with the next IP address, as it did before.
+- **The serial remote control waits for input** (at most 500 ms) instead of polling every 20 ms (`rc_serial.c`).
+- **rc `sleep`** (observer, `rc_run.py` knows it). It reports USB power, the time idle on battery, the time asleep and its share, the number of sleeps, and what ended each one (a wake line, with which line was low, or a timer). With `CONFIG_PM_PROFILING` it first prints the PM lock table to the console.
+- Bluetooth checked first: NimBLE runs only during a Kestrel pull or search, and the controller is shut down after each (`nimble_port_deinit()`), so nothing of it runs while idle. A pull keeps the unit active.
+
+### On the bench, plugged in
+
+- First build, with `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION` (`rc_ls_bench_20261108_152606.log`). The chip light-slept 3 times with the cable in: that option judges the connection by the host's 1 ms frame pulses, and they pause when the PC leaves the port idle. After that the USB console stopped answering for good. A touch woke the unit (the first touch wake from light sleep), but the console stayed dead until a replug.
+- With the VBUS lock (`rc_ls_bench_20261108_153437.log`): idle on USB for 20 s gave 0 sleeps, and the lock table while idle shows only `usb_power` held. Idle with the port closed for 60 s, then reopened (`rc_ls_portclosed_20261108_153520_a/b.log`): the console answers, 0 sleeps in 91 s of idle.
+- `state_change`: the first run (`rc_state_change_20261108_153627.log`) failed on no IP within 90 s. That was my set-up: I had left the unit idle (Wi-Fi off) before the run, and the scenario's first commands do not end idle. The rerun with the unit awake (`rc_state_change_20261108_154122.log`): PASS at a `largest_dma` floor of 70,000 B. The readings are 81,920 B awake and 73,728 B idle. The 8,192 B drop while idle is ESP-IDF's CPU retention buffer for light sleep with the CPU powered down, allocated when idle turns light sleep on and freed when idle ends (`sleep_cpu_configure()`). The display's staging buffers are allocated once at boot, so nothing that needs this RAM runs while idle. At the usual 80,000 B floor the run fails on the idle readings only.
+
+### The owner's runs, unplugged
+
+1. About 8 minutes, idle timeout 10 s (`rc_send_20261108_155047.log`). Woken 3 times each by touch, button, power key and picking up: every wake worked. Countdown running and held still past 10 s: the screen stayed on. Then 1 minute untouched. Counters: 1,455 sleeps, none refused; 76.6 s asleep; ended by a wake line 10 times, by a timer 1,445 times. The mean sleep was 53 ms, which led to the mDNS timer above. This build's idle counter mixed in the time idle on USB, so its share is not a figure.
+2. With mDNS freed and idle counted on battery only, about 4 minutes (`rc_send_20261108_160213.log`). Left dark 2 minutes, then woken once by touch and once by picking up: both worked. **209.6 s idle on battery, 207.5 s asleep: 99.0%.** 2,179 sleeps; ended by a wake line 4 times (touch 1, BNO085 3), by a timer 2,175 times; about 1 ms awake per wake.
+
+No wake without a cause was seen. The timer wakes are tasks' own deadlines, about 10 a second. Four are known: the LVGL task, the BNO085 driver's wait and the remote control each wake every 500 ms, and the low-power monitor every second. They cost about 1% of idle awake. The rest are not traced.
+
+**Verdict: pass.** Every wake worked, 99% of idle on battery is spent asleep, the screen stays on with the timer running, and the unit stays awake and its console works while plugged in.
+
+### Seen by the owner, not caused by light sleep
+
+- **The timer at 0**: the screen goes dark the idle timeout after the timer ends (10 s in the test), as designed: the timer counts as activity only while it runs. Whether an expired timer should keep the screen on belongs to the countdown view (next ADR).
+- **A short black blink while the unit was being moved (twice)**: the stability detector reports only when the unit changes between still and moving. So continuous movement longer than the idle timeout gives no activity, the unit goes idle, and the next "became still" report wakes it about half a second later. At the real 1 minute timeout this needs a minute of unbroken movement. The owner: fix after light sleep is proven; to be proposed as the next step.

@@ -386,10 +386,8 @@ void axp2101_monitor_task(void * args) {
             pmic_power_off();
         }
 
-        if (ctx->status.is_usb_connected) {
-            // Prevent entering sleep mode when USB is connected, to ensure the system is responsive for user interactions and avoid unexpected sleep when the device is plugged in
-            // prevent_sleep_mode_enter(true);
-        }
+        // No light sleep while USB power is in (ADR-009); a plug-in raises the interrupt, which wakes the chip
+        low_power_mode_set_usb_power(status.is_usb_connected);
 
         // // Print it out
         // ESP_LOGI(TAG, "Charge Status: %d, Battery: %d%%, TS Temp: %.2f C",

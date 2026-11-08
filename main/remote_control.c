@@ -19,6 +19,7 @@
 #include "esp_lvgl_port.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_pm.h"
 #include "lvgl.h"
 
 #include "remote_control.h"
@@ -61,7 +62,7 @@
 #define RC_MAX_ARGS 6   // "settings open How to pair"
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top"
+#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top"
 
 
 typedef struct {
@@ -282,6 +283,27 @@ static bool rc_cmd_state(char *reply, size_t reply_size) {
                     wifi_user_config.wifi_enable ? "on" : "off",
                     wifi_is_sta_connected() ? 1 : 0,
                     is_idle_mode_activated() ? 1 : 0);
+}
+
+
+// Automatic light sleep while idle (ADR-009): the share of idle spent asleep and what ended each sleep, since boot.
+// With CONFIG_PM_PROFILING the PM's own lock table goes to the console first (which lock kept the chip awake)
+static bool rc_cmd_sleep(char *reply, size_t reply_size) {
+#if CONFIG_PM_PROFILING
+    esp_pm_dump_locks(stdout);
+    fflush(stdout);
+#endif  // CONFIG_PM_PROFILING
+    low_power_sleep_stats_t st;
+    low_power_mode_get_sleep_stats(&st);
+    double share = st.idle_battery_us > 0 ? 100.0 * (double) st.slept_us / (double) st.idle_battery_us : 0.0;
+    return rc_reply(reply, reply_size, true,
+                    "@ok sleep usb_power=%d idle=%d idle_battery_s=%.1f idles=%" PRIu32 " slept_s=%.1f share=%.1f sleeps=%" PRIu32
+                    " wake_gpio=%" PRIu32 " touch=%" PRIu32 " bno=%" PRIu32 " button=%" PRIu32 " pmic=%" PRIu32
+                    " no_line=%" PRIu32 " wake_timer=%" PRIu32 " wake_other=%" PRIu32,
+                    st.usb_power ? 1 : 0, is_idle_mode_activated() ? 1 : 0,
+                    st.idle_battery_us / 1e6, st.idle_periods, st.slept_us / 1e6, share, st.sleeps,
+                    st.wake_gpio, st.wake_line[0], st.wake_line[1], st.wake_line[2], st.wake_line[3],
+                    st.wake_gpio_no_line, st.wake_timer, st.wake_other);
 }
 
 
@@ -1022,7 +1044,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
 
     const char *cmd = argv[0];
     bool is_observer = strcmp(cmd, "idle") == 0 || strcmp(cmd, "state") == 0 || strcmp(cmd, "top") == 0 ||
-                       strcmp(cmd, "stats") == 0 || strcmp(cmd, "help") == 0 ||
+                       strcmp(cmd, "stats") == 0 || strcmp(cmd, "sleep") == 0 || strcmp(cmd, "help") == 0 ||
                        strcmp(cmd, "bt") == 0 || strcmp(cmd, "pmic") == 0 || strcmp(cmd, "snap") == 0;
     bool is_known = is_observer ||
                     strcmp(cmd, "tap") == 0 || strcmp(cmd, "swipe") == 0 || strcmp(cmd, "tile") == 0 ||
@@ -1062,6 +1084,12 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
             return rc_reply(reply, reply_size, false, "@err args");
         }
         return rc_cmd_stats(reply, reply_size);
+    }
+    if (strcmp(cmd, "sleep") == 0) {
+        if (argc != 1) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        return rc_cmd_sleep(reply, reply_size);
     }
     if (strcmp(cmd, "bt") == 0) {
         if (argc != 1) {

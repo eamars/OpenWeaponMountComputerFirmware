@@ -1,6 +1,6 @@
 # ADR-009: efficiency, low power and quick wake
 
-Status: **Open** 2026-11-08. Approved by the owner. Built while the owner was away ("execute changes without my decision"), each change checked on the unit: step 0 (measure), step 1 (PMIC), step 2 except automatic light sleep (LVGL, sensor and tasks quiet while idle; the panel's own sleep). Left: automatic light sleep (needs the owner, unplugged), the owner's hands-on checks; steps 3.2 and 4 set aside with reasons ([progress](progress.md)). Nothing committed. The facts below come from the code, the unit's own readings, earlier logs and the datasheets in `OpenWeaponMountComputer/pcb/datasheet` (page numbers are the printed ones).
+Status: **Open** 2026-11-08. Approved by the owner. Built while the owner was away ("execute changes without my decision"), each change checked on the unit: step 0 (measure), step 1 (PMIC), step 2 (LVGL, sensor and tasks quiet while idle; the panel's own sleep), committed daac843 on `adr009_efficiency_power`, not pushed. Automatic light sleep (step 2, item 3) built and proven with the owner, unplugged: every wake works, 99% of idle on battery asleep, committed on the same branch. Left: the blink while the unit is moved continuously (next step), the owner's remaining hands-on checks; steps 3.2 and 4 set aside with reasons ([progress](progress.md)). The facts below come from the code, the unit's own readings, earlier logs and the datasheets in `OpenWeaponMountComputer/pcb/datasheet` (page numbers are the printed ones).
 
 ## What we want
 
@@ -136,7 +136,7 @@ The full-screen colour stays (owner). Within that design:
 
 ## How we prove it without a meter
 
-- **The unit counts its own sleep.** ESP-IDF's power-management profiling (`CONFIG_PM_PROFILING`) reports the time spent in each mode, light sleep included. On battery with USB unplugged the unit sleeps; plugged back in, `stats` shows the share of idle spent asleep and the number of wakes. Kept awake while a USB host is connected (`CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION`), so the bench tools keep working.
+- **The unit counts its own sleep.** The light-sleep callbacks count the time asleep and what ended each sleep; ESP-IDF's power-management profiling (`CONFIG_PM_PROFILING`) adds the PM lock table. On battery with USB unplugged the unit sleeps; plugged back in, rc `sleep` shows the share of idle on battery spent asleep and the number of wakes by cause. Kept awake while USB power is in (a PM lock taken from the PMIC's VBUS reading), so the bench tools keep working.
 - **The battery gauge as a rough check**: the charge before and after a few hours idle on battery, one run, not a soak.
 - **Wake time from the log**: interrupt to first frame, stored and read after reconnecting.
 
@@ -171,7 +171,7 @@ Shown on the unit: the `pmic` readings unchanged except the temperature; the TS 
 
 1. The BNO085: linear acceleration not always-on; nothing but the stability detector runs while the hub sleeps.
 2. Stop what has no work while idle: the level's display loop and the other sensor views' loops, the once-a-second log line, the PMIC's 2 s read (every 30 s while idle).
-3. Automatic light sleep while idle (`light_sleep_enable = true` in `idle_pm_config`): GPIO wake-up on low for the touch (GPIO15), BNO085 (GPIO5), button (GPIO0) and PMIC (GPIO21) pins, their pulls kept through sleep (with `CONFIG_PM_SLP_DISABLE_GPIO`, set today, ESP-IDF may float pins while asleep; checked when built); edge interrupts as now once awake. Kept awake while a USB host is connected.
+3. Automatic light sleep while idle (`light_sleep_enable = true` in `idle_pm_config`): GPIO wake-up on low for the touch (GPIO15), BNO085 (GPIO5), button (GPIO0) and PMIC (GPIO21) pins, their pulls kept through sleep (with `CONFIG_PM_SLP_DISABLE_GPIO`, set today, ESP-IDF may float pins while asleep; checked when built); edge interrupts as now once awake. Kept awake while a USB host is connected. As built: ESP-IDF does float every pin while asleep, so the reset, chip-select and I2C pins are held too; "connected" is USB power (VBUS, from the PMIC), because ESP-IDF's frame-pulse check let the chip sleep with the cable in and the USB link did not come back; mDNS is freed when the radio stops ([progress](progress.md), step 2c).
 4. The panel to sleep-in after display off while idle, sleep-out on wake (50 ms by the datasheet, 80 ms in our init today): it saves milliamps for a wake still well under the time it takes to shoulder a rifle. Measured before and after; dropped if the wake gets noticeably slower.
 5. The automatic power-off default from 1 h of idle to 5 h (an existing choice), once idle really sleeps.
 

@@ -10,7 +10,8 @@ extern "C" {
 
 #define RC_SERIAL_TASK_STACK 4096
 #define RC_SERIAL_TASK_PRIORITY 3
-#define RC_SERIAL_POLL_PERIOD_MS 20
+// Longest wait for input before the task looks for a stop request; well under rc_serial_stop()'s 2 s timeout
+#define RC_SERIAL_READ_WAIT_MS 500
 
 
 /**

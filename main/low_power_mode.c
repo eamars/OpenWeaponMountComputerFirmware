@@ -11,6 +11,7 @@
 #include "esp_timer.h"
 #include "esp_pm.h"
 #include "esp_lcd_panel_ops.h"
+#include "soc/gpio_struct.h"
 #include "src/misc/lv_timer_private.h"  // the paused flag; LVGL 9.6 has no getter for it
 
 #include "low_power_mode.h"
@@ -177,16 +178,193 @@ void wake_from_idle_mode() {
 }
 
 
-static const esp_pm_config_t idle_pm_config = {
+// Idle sleeps between events (ADR-009): automatic light sleep whenever every task waits and no PM lock is held
+// (USB power holds one: low_power_mode_set_usb_power()). Switched on by light_sleep_wake_init()
+// once the wake lines are set up; without them a sleeping unit would not wake. Active never sleeps: the unit must
+// stay responsive on the line and never sleep while shooting
+static esp_pm_config_t idle_pm_config = {
     .max_freq_mhz = 80,
     .min_freq_mhz = 80,
-    .light_sleep_enable = false  // do not automatically enter light sleep, we will handle it in the low power mode task
+    .light_sleep_enable = false
 };
 static const esp_pm_config_t active_pm_config = {
     .max_freq_mhz = 240,
     .min_freq_mhz = 80,
-    .light_sleep_enable = false  // do not automatically enter light sleep, we will handle it in the low power mode task
+    .light_sleep_enable = false
 };
+
+
+/*
+ * Light sleep wake-up (ADR-009). Edge interrupts do not wake the S3 from light sleep; the GPIO wake-up is
+ * level-only, and it sets the pin's interrupt type to that level. So the four lines are armed (wake on low) only
+ * around each sleep, from the PM's light-sleep callbacks, and given back their falling-edge interrupts on the way
+ * out. Their CPU interrupts are off while armed: a line held low would otherwise run its ISR again and again on the
+ * other core. A line still low on the way out is raised again in software, so the event that woke the chip reaches
+ * its ISR. (The earlier ext1 arming moved the pads to the RTC domain and never back, which stops their digital
+ * interrupts after the first sleep.)
+ */
+static const gpio_num_t light_sleep_wake_pins[] = {
+    TOUCHSCREEN_INT_PIN,
+#if USE_BNO085
+    BNO085_INT_PIN,
+#endif  // USE_BNO085
+#if USE_EXT_BUTTON
+    EXT_BUTTON_PIN,
+#endif  // USE_EXT_BUTTON
+#if USE_PMIC
+    PMIC_AXP2101_INT_PIN,
+#endif  // USE_PMIC
+};
+#define LIGHT_SLEEP_WAKE_PIN_COUNT (sizeof(light_sleep_wake_pins) / sizeof(light_sleep_wake_pins[0]))
+
+// Pins that must keep their level while asleep. ESP-IDF isolates every pin in light sleep
+// (CONFIG_ESP_SLEEP_GPIO_RESET_WORKAROUND selects CONFIG_PM_SLP_DISABLE_GPIO: no input, no output, no pull), which
+// would float the reset lines of the panel, touch and BNO085, the panel's chip select and the I2C buses (internal
+// pull-ups). The wake pins are kept by gpio_wakeup_enable() while armed
+static const gpio_num_t light_sleep_held_pins[] = {
+    LCD_CS, LCD_RST, TOUCHSCREEN_RST_PIN,
+#if USE_BNO085
+    BNO085_RESET_PIN, BNO085_BOOT_PIN,
+#endif  // USE_BNO085
+#if USE_BUZZER
+    BUZZER_OUT_PIN,
+#endif  // USE_BUZZER
+    I2C0_MASTER_SDA, I2C0_MASTER_SCL, I2C1_MASTER_SDA, I2C1_MASTER_SCL,
+};
+
+// No light sleep while USB power is present (ADR-009). The USB console does not survive light sleep on the S3, and
+// its link did not come back afterwards even with the unit awake. ESP-IDF's own guard
+// (CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION) judges the connection by the host's 1 ms frame pulses, so a pause in them
+// (a host idling its port) counted as unplugged and let the chip sleep with the cable in. VBUS, read by the PMIC, is
+// what plugged in means. Held from boot until the PMIC first reports no USB power; without a PMIC, never released
+static esp_pm_lock_handle_t usb_power_pm_lock;
+static bool usb_power_present = true;
+
+// Counted by the light-sleep exit callback; read by low_power_mode_get_sleep_stats()
+static portMUX_TYPE sleep_stats_lock = portMUX_INITIALIZER_UNLOCKED;
+static low_power_sleep_stats_t sleep_stats;
+// Idle on battery, the only time light sleep may run: counted from each change of idle or USB power
+static bool sleep_acct_idle;
+static bool sleep_acct_running;
+static int64_t sleep_acct_mark_us;
+
+
+// sleep_stats_lock held
+static void sleep_acct_update(void) {
+    int64_t now = esp_timer_get_time();
+    if (sleep_acct_running) {
+        sleep_stats.idle_battery_us += now - sleep_acct_mark_us;
+    }
+    sleep_acct_running = sleep_acct_idle && !usb_power_present;
+    sleep_acct_mark_us = now;
+}
+
+
+static esp_err_t IRAM_ATTR light_sleep_enter_cb(int64_t sleep_time_us, void *arg) {
+    (void) sleep_time_us;
+    (void) arg;
+    // Called with the scheduler's sleep lock held and interrupts off on this core, with the flash cache on
+    for (size_t i = 0; i < LIGHT_SLEEP_WAKE_PIN_COUNT; i++) {
+        gpio_intr_disable(light_sleep_wake_pins[i]);
+        gpio_wakeup_enable(light_sleep_wake_pins[i], GPIO_INTR_LOW_LEVEL);
+    }
+    return ESP_OK;
+}
+
+
+static esp_err_t IRAM_ATTR light_sleep_exit_cb(int64_t slept_us, void *arg) {
+    (void) arg;
+    uint32_t low_mask = 0;
+    uint32_t low_index_mask = 0;
+    for (size_t i = 0; i < LIGHT_SLEEP_WAKE_PIN_COUNT; i++) {
+        gpio_num_t pin = light_sleep_wake_pins[i];
+        gpio_wakeup_disable(pin);
+        gpio_set_intr_type(pin, GPIO_INTR_NEGEDGE);
+        if (gpio_get_level(pin) == 0) {
+            low_mask |= BIT(pin);
+            low_index_mask |= BIT(i);
+        }
+        gpio_intr_enable(pin);
+    }
+
+    // Called also when the sleep was too short to start (slept_us 0)
+    if (slept_us <= 0) {
+        return ESP_OK;
+    }
+
+    uint32_t causes = esp_sleep_get_wakeup_causes();
+    bool by_gpio = causes & BIT(ESP_SLEEP_WAKEUP_GPIO);
+    if (by_gpio && low_mask == 0) {
+        // A line that pulsed and went high again before this point; the touch controller is the only one that
+        // pulses (the others hold their line low until serviced), and a spare touch read costs one I2C read
+        low_mask = BIT(TOUCHSCREEN_INT_PIN);
+    }
+    // The ISRs run for the lines still low: their falling edge came while they were armed as levels
+    GPIO.status_w1ts = low_mask;
+
+    portENTER_CRITICAL_SAFE(&sleep_stats_lock);
+    sleep_stats.sleeps++;
+    sleep_stats.slept_us += slept_us;
+    if (by_gpio) {
+        sleep_stats.wake_gpio++;
+        if (low_index_mask == 0) {
+            sleep_stats.wake_gpio_no_line++;
+        }
+        for (size_t i = 0; i < LIGHT_SLEEP_WAKE_PIN_COUNT && i < LOW_POWER_SLEEP_STATS_LINES; i++) {
+            if (low_index_mask & BIT(i)) {
+                sleep_stats.wake_line[i]++;
+            }
+        }
+    }
+    else if (causes & BIT(ESP_SLEEP_WAKEUP_TIMER)) {
+        sleep_stats.wake_timer++;
+    }
+    else {
+        sleep_stats.wake_other++;
+    }
+    portEXIT_CRITICAL_SAFE(&sleep_stats_lock);
+    return ESP_OK;
+}
+
+
+// Once, before the first idle
+static esp_err_t light_sleep_wake_init(void) {
+    for (size_t i = 0; i < sizeof(light_sleep_held_pins) / sizeof(light_sleep_held_pins[0]); i++) {
+        ESP_RETURN_ON_ERROR(gpio_sleep_sel_dis(light_sleep_held_pins[i]), TAG, "hold pin %d", light_sleep_held_pins[i]);
+    }
+    ESP_RETURN_ON_ERROR(esp_sleep_enable_gpio_wakeup(), TAG, "GPIO wake-up");
+    esp_pm_sleep_cbs_register_config_t cbs = {
+        .enter_cb = light_sleep_enter_cb,
+        .exit_cb = light_sleep_exit_cb,
+    };
+    ESP_RETURN_ON_ERROR(esp_pm_light_sleep_register_cbs(&cbs), TAG, "light sleep callbacks");
+    idle_pm_config.light_sleep_enable = true;
+    return ESP_OK;
+}
+
+
+void low_power_mode_set_usb_power(bool present) {
+    // The PMIC monitor task only, so the flag and the lock change together
+    if (present == usb_power_present || usb_power_pm_lock == NULL) {
+        return;
+    }
+    portENTER_CRITICAL(&sleep_stats_lock);
+    usb_power_present = present;
+    sleep_acct_update();
+    portEXIT_CRITICAL(&sleep_stats_lock);
+    ESP_ERROR_CHECK_WITHOUT_ABORT(present ? esp_pm_lock_acquire(usb_power_pm_lock)
+                                          : esp_pm_lock_release(usb_power_pm_lock));
+    ESP_LOGI(TAG, "USB power %s: light sleep while idle %s", present ? "in" : "out", present ? "off" : "on");
+}
+
+
+void low_power_mode_get_sleep_stats(low_power_sleep_stats_t *out) {
+    portENTER_CRITICAL(&sleep_stats_lock);
+    sleep_acct_update();
+    *out = sleep_stats;
+    out->usb_power = usb_power_present;
+    portEXIT_CRITICAL(&sleep_stats_lock);
+}
 
 
 // Low power monitor task only. No display DMA may be in flight while Wi-Fi stops or the clock config changes
@@ -253,6 +431,11 @@ static void enter_idle_mode() {
     // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler). A failure
     // is logged and the unit idles at the active clock (ADR-005 C1)
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_configure(&idle_pm_config));
+    portENTER_CRITICAL(&sleep_stats_lock);
+    sleep_acct_idle = true;
+    sleep_acct_update();
+    sleep_stats.idle_periods++;
+    portEXIT_CRITICAL(&sleep_stats_lock);
 }
 
 
@@ -270,6 +453,10 @@ static void exit_idle_mode() {
     wake_prof.idle_te_pulses = te_idle.te_pulses;
 #endif  // WAKE_PROFILING_ENABLED
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_pm_configure(&active_pm_config));  // logged; the wake goes on
+    portENTER_CRITICAL(&sleep_stats_lock);
+    sleep_acct_idle = false;
+    sleep_acct_update();
+    portEXIT_CRITICAL(&sleep_stats_lock);
 
     lvgl_port_lock(0);
 
@@ -445,18 +632,6 @@ void low_power_mode_request_idle() {
 void low_power_monitor_task(void *p) {
     TickType_t last_poll_tick = xTaskGetTickCount();
 
-    // Configure the wakeup sources. This includes
-    // 1) Touch interrupt: to wake up the system when there is a touch event
-    // 2) BNO085 interrupt: to wake up the system when there is a sensor event, which indicates the user is interacting with the system
-    // Only light sleep uses them, so a failure is logged and idle/wake carry on (ADR-005 C1)
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_sleep_enable_ext1_wakeup_io(
-            (1 << TOUCHSCREEN_INT_PIN) |
-            // (1 << GPIO_NUM_0) | 
-            (1 << BNO085_INT_PIN) 
-            // (1 << PMIC_AXP2101_INT_PIN)  // PMIC interrupt, to wake up the system when there is a change in power status, e.g. USB plugged in, battery low, etc.
-            ,
-        ESP_EXT1_WAKEUP_ANY_LOW)); 
-
 
     while (1) {
         // Idle and wake requests run at once; the poll below keeps its period
@@ -570,6 +745,10 @@ esp_err_t low_power_mode_init() {
         ESP_LOGE(TAG, "Failed to create low_power_control_event");
         return ESP_ERR_NO_MEM;
     }
+    // Before any PMIC report: awake until it says USB power is out
+    ESP_RETURN_ON_ERROR(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "usb_power", &usb_power_pm_lock), TAG,
+                        "usb_power lock");
+    ESP_RETURN_ON_ERROR(esp_pm_lock_acquire(usb_power_pm_lock), TAG, "usb_power lock");
     return ESP_OK;
 }
 
@@ -595,6 +774,9 @@ esp_err_t low_power_mode_start() {
     lv_indev_set_read_cb(lvgl_touch_handle, touchpad_read_cb_wrapper);
     lvgl_port_unlock();
 
+
+    // Light sleep while idle only once its wake lines work; a failure is logged and idle stays awake (ADR-009)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(light_sleep_wake_init());
 
     // Create event poller task
     BaseType_t rtos_return = xTaskCreate(
