@@ -69,14 +69,10 @@ void sensor_frame_up_from_quaternion(const float quat[4], float up[3]) {
 
 
 void sensor_frame_cant_pitch(const float up[3], float * cant_rad, float * pitch_rad) {
-    if (cant_rad != NULL) {
-        *cant_rad = atan2f(dot3(up, basis_x), dot3(up, basis_y));
-    }
-    if (pitch_rad != NULL) {
-        float s = dot3(up, basis_b);
-        s = s > 1.0f ? 1.0f : (s < -1.0f ? -1.0f : s);
-        *pitch_rad = asinf(s);
-    }
+    *cant_rad = atan2f(dot3(up, basis_x), dot3(up, basis_y));
+    float s = dot3(up, basis_b);
+    s = s > 1.0f ? 1.0f : (s < -1.0f ? -1.0f : s);
+    *pitch_rad = asinf(s);
 }
 
 

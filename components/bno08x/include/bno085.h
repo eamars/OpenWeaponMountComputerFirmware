@@ -159,14 +159,9 @@ uint32_t bno085_get_reset_count(bno085_ctx_t *ctx);
 uint32_t bno085_get_game_rotation_quaternion(bno085_ctx_t *ctx, float quat[4]);
 
 /**
- * @brief Clear any tare: the run-time reorientation, and the persisted one (the master sensor orientation record,
- * FRS 0x2D3E, SH-2 6.4.3.3) (ADR-011)
- */
-esp_err_t bno085_clear_tare(bno085_ctx_t *ctx);
-
-/**
- * @brief If a tare is persisted (the master sensor orientation record holds data), clear it as bno085_clear_tare
- * does; *cleared says whether there was one. Nothing is written when there is none (ADR-011)
+ * @brief If a tare is persisted (the master sensor orientation record, FRS 0x2D3E, holds data), clear it: the
+ * run-time reorientation and the record (SH-2 6.4.3.3). *cleared says whether there was one; nothing is written when
+ * there is none. The level does not use tares (ADR-011)
  */
 esp_err_t bno085_clear_persisted_tare(bno085_ctx_t *ctx, bool *cleared);
 
@@ -187,16 +182,6 @@ esp_err_t bno085_set_report_always_on(bno085_ctx_t *ctx, sh2_SensorId_t sensor_i
  * For tests of the reset recovery; returns ESP_ERR_NOT_SUPPORTED without a reset pin.
  */
 esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx);
-
-/**
- * @brief Tare the given axes now (sh2_setTareNow)
- */
-esp_err_t bno085_tare_now(bno085_ctx_t *ctx, uint8_t axes, sh2_TareBasis_t basis);
-
-/**
- * @brief Persist the current tare in the sensor (sh2_persistTare)
- */
-esp_err_t bno085_persist_tare(bno085_ctx_t *ctx);
 
 
 /**

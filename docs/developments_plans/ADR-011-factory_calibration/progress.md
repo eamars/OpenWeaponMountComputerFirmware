@@ -88,8 +88,22 @@ Cant on the rotation 0 edge, same pose and spot, read with `grav` after the read
 - **The second problem unit, and the owner's own unit:**
   - This firmware deletes their persisted tare at boot and fixes the accelerometer offset, so each needs the routine once.
   - Until then the level uses the uncalibrated frame (about 1° off on COM13).
-- Captures of the routine's screens, before closing.
+
+## Clean-up before the PR (owner, 2026-11-08)
+
+- **Removed:**
+  - The one-off debug commands `bno tare clear` (the boot clears a persisted tare) and `bno cal` (the A/B is done).
+  - `bno085_tare_now()` and `bno085_persist_tare()`: the level must not use tares; only the old Tare page called them.
+  - The old page's rotation vector periods in `app_cfg.h`.
+  - The routine's once-a-second tuning log.
+- **Changed:**
+  - `bno085_clear_tare()` is folded into `bno085_clear_persisted_tare()`.
+  - `grav` uses `sensor_frame_up_from_quaternion()` and reports `cant=`.
+  - The routine's file is ordered as directions, capture window, result, screen, steps, buttons and entry. Its duplicate mean function is gone and its layout numbers are named.
+- **Unchanged:** the magnetic rotation vector stays. It serves the disabled point-of-aim tile and its Advanced toggle, which predate this ADR.
 
 ## Checks
 
+- The routine's first screen on the unit (`logs/rc/snaps/snap_20261108_201150.png`): "Sensor calibration", "Calibrated, offset 0.7°", Start, Cancel.
+- After the clean-up, `state_change --min-largest-dma 70000` (`rc_state_change_20261108_201158.log`): PASS, `largest_dma` 77,824 B at least. The boot log shows `Calibrated: offset 0.70 deg` and `Dynamic calibration: 0x02`.
 - `state_change --min-largest-dma 70000` on COM13 (`rc_state_change_20261108_200156.log`): PASS, `largest_dma` 77,824 B at least. Its tile tour enters and leaves the routine's tile (entered, left; the rotation comes back).

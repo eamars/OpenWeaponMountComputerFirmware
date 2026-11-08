@@ -29,7 +29,8 @@
 #include "ota_mode.h"
 #include "common.h"
 #include "bno085.h"
-#include "digital_level_view_controller.h"  // the level's raw roll and pitch (grav)
+#include "digital_level_view_controller.h"  // the level's raw cant and pitch (grav)
+#include "sensor_frame.h"
 #include "low_power_mode.h"
 #include "pmic_axp2101.h"
 #include "ui_bridge.h"
@@ -975,24 +976,22 @@ static bool rc_cmd_hang(char *reply, size_t reply_size) {
 }
 
 
-// Debug (ADR-011 step 0): `grav` gives "up" in the sensor's frame from the newest game rotation vector (the third
-// row of its rotation matrix), the level's raw roll and pitch (the Z-Y-X Euler angles) in degrees, and the report
-// count. Needs the level tile, whose loop runs the game rotation vector
+// Debug (ADR-011): `grav` gives "up" in the sensor's own frame from the newest game rotation vector, the level's
+// raw cant and pitch in degrees (against the factory calibration, before the rotation term and the rifle zero), and
+// the report count. Needs a tile that runs the game rotation vector (the level, the calibration)
 static bool rc_cmd_grav(int argc, char **argv, char *reply, size_t reply_size) {
     if (argc != 1) {
         return rc_reply(reply, reply_size, false, "@err args");
     }
-    float q[4];
-    const uint32_t count = bno085_get_game_rotation_quaternion(bno085_dev, q);
+    float quat[4];
+    float up[3];
+    const uint32_t count = bno085_get_game_rotation_quaternion(bno085_dev, quat);
     if (count == 0) {
         return rc_reply(reply, reply_size, false, "@err no game rotation vector yet");
     }
-    const float w = q[0], x = q[1], y = q[2], z = q[3];
-    const float ux = 2.0f * (x * z - w * y);
-    const float uy = 2.0f * (y * z + w * x);
-    const float uz = 1.0f - 2.0f * (x * x + y * y);
-    return rc_reply(reply, reply_size, true, "@ok grav up=%.4f,%.4f,%.4f roll=%.2f pitch=%.2f n=%" PRIu32,
-                    (double) ux, (double) uy, (double) uz, (double) RAD_TO_DEG(sensor_roll_thread_unsafe),
+    sensor_frame_up_from_quaternion(quat, up);
+    return rc_reply(reply, reply_size, true, "@ok grav up=%.4f,%.4f,%.4f cant=%.2f pitch=%.2f n=%" PRIu32,
+                    (double) up[0], (double) up[1], (double) up[2], (double) RAD_TO_DEG(sensor_roll_thread_unsafe),
                     (double) RAD_TO_DEG(sensor_pitch_thread_unsafe), count);
 }
 
@@ -1016,24 +1015,6 @@ static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
 // Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
 // keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
 static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
-    // `bno cal <bits>` (ADR-011 A/B): which sensors calibrate dynamically, SH2_CAL_ACCEL 1 | GYRO 2 | MAG 4. RAM only:
-    // the boot sets the gyroscope only again
-    long cal_bits = 0;
-    if (argc == 3 && strcmp(argv[1], "cal") == 0 && rc_parse_long(argv[2], &cal_bits) && cal_bits >= 0 && cal_bits <= 7) {
-        esp_err_t err = bno085_set_dynamic_calibration(bno085_dev, (uint8_t) cal_bits);
-        if (err != ESP_OK) {
-            return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(err));
-        }
-        return rc_reply(reply, reply_size, true, "@ok bno cal %ld", cal_bits);
-    }
-    // `bno tare clear` (ADR-011): drop any tare, run-time and persisted
-    if (argc == 3 && strcmp(argv[1], "tare") == 0 && strcmp(argv[2], "clear") == 0) {
-        esp_err_t err = bno085_clear_tare(bno085_dev);
-        if (err != ESP_OK) {
-            return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(err));
-        }
-        return rc_reply(reply, reply_size, true, "@ok bno tare cleared");
-    }
     if (argc != 4 || strcmp(argv[1], "alwayson") != 0 || (strcmp(argv[3], "0") != 0 && strcmp(argv[3], "1") != 0)) {
         return rc_reply(reply, reply_size, false, "@err args");
     }

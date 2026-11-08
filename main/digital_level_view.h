@@ -50,8 +50,8 @@ esp_err_t load_digital_level_view_config();
 esp_err_t save_digital_level_view_config();
 
 /**
- * @brief Call after a successful sensor tare: sets and saves the level's zero so the tare pose reads 0 at the
- * current screen rotation (ADR-005 B25).
+ * @brief Clear and save the rifle zero (the angle pill's hold): a new factory calibration changes what it was taken
+ * against (ADR-011)
  */
 void digital_level_view_clear_zero();
 

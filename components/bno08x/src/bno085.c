@@ -461,29 +461,19 @@ esp_err_t bno085_set_dynamic_calibration(bno085_ctx_t *ctx, uint8_t sensors) {
 esp_err_t bno085_clear_persisted_tare(bno085_ctx_t *ctx, bool *cleared) {
     uint32_t record[16];
     uint16_t words = sizeof(record) / sizeof(record[0]);
+    *cleared = false;
     sh2_lock(ctx);
     int ret = sh2_getFrs(SYSTEM_ORIENTATION, record, &words);
+    if (ret == SH2_OK && words > 0) {
+        *cleared = true;
+        ret = sh2_clearTare();
+        if (ret == SH2_OK) {
+            ret = sh2_setFrs(SYSTEM_ORIENTATION, NULL, 0);  // no data: deletes the record
+        }
+    }
     sh2_unlock(ctx);
-    *cleared = false;
     if (ret != SH2_OK) {
-        ESP_LOGE(TAG, "Failed to read the sensor orientation record: %d", ret);
-        return ESP_FAIL;
-    }
-    if (words == 0) {
-        return ESP_OK;
-    }
-    *cleared = true;
-    return bno085_clear_tare(ctx);
-}
-
-
-esp_err_t bno085_clear_tare(bno085_ctx_t *ctx) {
-    sh2_lock(ctx);
-    int ret = sh2_clearTare();
-    int frs_ret = sh2_setFrs(SYSTEM_ORIENTATION, NULL, 0);  // no data: deletes the record
-    sh2_unlock(ctx);
-    if (ret != SH2_OK || frs_ret != SH2_OK) {
-        ESP_LOGE(TAG, "Failed to clear the tare: %d, FRS %d", ret, frs_ret);
+        ESP_LOGE(TAG, "Failed to read or clear the persisted tare: %d", ret);
         return ESP_FAIL;
     }
     return ESP_OK;
@@ -529,30 +519,6 @@ esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx) {
     sh2_unlock(ctx);
 
     ESP_LOGW(TAG, "Hardware reset pulsed on pin %d", ctx->reset_pin);
-    return ESP_OK;
-}
-
-
-esp_err_t bno085_tare_now(bno085_ctx_t *ctx, uint8_t axes, sh2_TareBasis_t basis) {
-    sh2_lock(ctx);
-    int ret = sh2_setTareNow(axes, basis);
-    sh2_unlock(ctx);
-    if (ret != SH2_OK) {
-        ESP_LOGE(TAG, "Failed to tare: %d", ret);
-        return ESP_FAIL;
-    }
-    return ESP_OK;
-}
-
-
-esp_err_t bno085_persist_tare(bno085_ctx_t *ctx) {
-    sh2_lock(ctx);
-    int ret = sh2_persistTare();
-    sh2_unlock(ctx);
-    if (ret != SH2_OK) {
-        ESP_LOGE(TAG, "Failed to persist tare: %d", ret);
-        return ESP_FAIL;
-    }
     return ESP_OK;
 }
 

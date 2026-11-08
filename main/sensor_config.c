@@ -100,7 +100,7 @@ static bool recoil_level_shown(void) {
 }
 
 
-static void start_tare_calibration(void * ctx) {
+static void start_sensor_calibration(void * ctx) {
     last_tile_before_enter_calibration = lv_tileview_get_tile_active(main_tileview);
     lv_tileview_set_tile(main_tileview, tile_sensor_calibration_view, LV_ANIM_OFF);
     lv_obj_send_event(main_tileview, LV_EVENT_VALUE_CHANGED, (void *) main_tileview);
@@ -120,7 +120,7 @@ void sensor_settings_add_advanced_rows(settings_page_t * page) {
     settings_row_toggle(page, "Rotation vector", get_report, set_report,
                         &sensor_config.enable_rotation_vector_report);
     // The factory calibration routine (ADR-011); it asks nothing here: its first screen has Start and Cancel
-    settings_row_action(page, NULL, "Sensor calibration", NULL, NULL, start_tare_calibration, NULL, NULL, false);
+    settings_row_action(page, NULL, "Sensor calibration", NULL, NULL, start_sensor_calibration, NULL, NULL, false);
 }
 
 
