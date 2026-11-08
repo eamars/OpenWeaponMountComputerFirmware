@@ -86,7 +86,7 @@ The owner, leaving for two hours: "do all your researches first then execute cha
 ### Not built, and why
 
 - **Automatic light sleep (step 2, item 3)**: left for a session with the owner (it cannot be seen on the bench, and a wake that fails on battery would leave a unit that does not come back at the line). Built and proven with the owner later the same day: "Step 2c" below.
-- **Step 3.2, each level row painted once**: step 0 shows both cores 94-97% idle with the level shown, so the gain would be small, and its check needs the owner's eye. Left until a moving level shows the CPU matters.
+- **Step 3.2, each level row painted once**: set aside on step 0's figure (both cores 94-97% idle), which was taken with the unit still, where almost nothing redraws. Measured while moving in step 3 below: still set aside, for the reason given there.
 - **Step 4**: the 1.2 s is inside the closed Wi-Fi library (`esp_wifi_init()`, 300 ms to 1,510 ms in every boot today). Starting the display first would change the order of internal-RAM allocations the display's DMA buffers depend on, a memory move the owner wants alone; for a boot every few hours at most, not now. The countdown settings write at boot was not traced to its caller (it comes after the first tile change; one NVS write a boot, which NVS wear-levels); the `gpio_install_isr_service` error is the touch component's own and harmless.
 
 ### Checks on the step 2 build, and the final build
@@ -143,4 +143,60 @@ No wake without a cause was seen. The timer wakes are tasks' own deadlines, abou
 ### Seen by the owner, not caused by light sleep
 
 - **The timer at 0**: the screen goes dark the idle timeout after the timer ends (10 s in the test), as designed: the timer counts as activity only while it runs. Whether an expired timer should keep the screen on belongs to the countdown view (next ADR).
-- **A short black blink while the unit was being moved (twice)**: the stability detector reports only when the unit changes between still and moving. So continuous movement longer than the idle timeout gives no activity, the unit goes idle, and the next "became still" report wakes it about half a second later. At the real 1 minute timeout this needs a minute of unbroken movement. The owner: fix after light sleep is proven; to be proposed as the next step.
+- **A short black blink while the unit was being moved (twice)**: the stability detector reports only when the unit changes between still and moving. So continuous movement longer than the idle timeout gives no activity, the unit goes idle, and the next "became still" report wakes it about half a second later. At the real 1 minute timeout this needs a minute of unbroken movement. The owner: fix after light sleep is proven. Fixed in step 2d.
+
+## Step 2d: moving counts as in use (2026-11-08 16:10-16:30)
+
+The blink from step 2c. The owner chose that a moving unit stays awake, knowing that carrying the rifle then keeps the screen on too; the idle timeout counts from when the unit is set down still. The alternative, telling handling from walking by the level's rotation reports, needs more design, and those reports stop while idle.
+
+### What was built
+
+- **The stability detector's last report is kept** (`low_power_mode.c`): "left the still state" (bit 1, SH-2 manual 6.5.35) means moving; "entered it" (bit 0) means still, and still wins if both bits are set. While moving, the low-power monitor counts activity on every 1 s poll. No new sensor and no extra current: the reports already arrive.
+- **The state is tied to the detector's run.** A hub reset restarts the detector without a report, so a remembered "moving" could keep the unit awake for good. The driver now counts the resets the hub announces (`bno085_get_reset_count()`), and a "moving" seen before the last reset no longer counts.
+
+### On the unit (owner, plugged in, idle timeout 10 s; `rc_moving_20261108_162143.log`)
+
+- Moved in the hand without a pause for 23.7 s, from "moving" to "still": no idle. Before the fix it went dark after 10 s.
+- Put down: idle 10.9 s after the "still" report (the timeout plus up to 1 s for the poll). Picked up: woke at once.
+- Sensor reset (`bnoreset`, RAM only) while handled: the detector reported again 0.6 s after the reset, and the next 29 s of continuous movement kept the unit on; idle 10.4 s after it was put down.
+- The owner: the screen stayed on the whole time while moving, no blink.
+- Not exercised: a reset that leaves a stale "moving" with no report after it. This hub reported straight after its reset, so the reset check never had to act.
+- `state_change --min-largest-dma 70000` (`rc_state_change_20261108_162457.log`): PASS, `largest_dma` 81,920 B at least.
+
+## Step 3: the level's drawing while moving, before and after ADR-009 (2026-11-08 16:30-16:37)
+
+Step 3.2 was set aside on step 0's figure (both cores 94-97% idle), but that was taken with the unit still, where almost nothing redraws. This measures the case that matters: the unit moving in the hand.
+
+### Method
+
+- `rc_run.py scenario level_motion` (new): wakes the unit, gives the owner 8 s to pick it up, then reads 30 s of the device's `display_prof:` and `digital_level_prof:` lines while the owner rocks it. Windows with no redraw are left out.
+- Both builds with `DISPLAY_PROFILING_ENABLED 1` and nothing else changed: `main` (ce4dd4a, before ADR-009), built in a separate worktree, and this branch (f5f14ff plus step 2d, uncommitted).
+- Logs: branch `rc_level_motion_20261108_163325.log`, `main` `rc_level_motion_20261108_163455.log`. Each run's 30 windows of 1 s.
+- Rocked by hand, so the two runs did not move the same: `main`'s moved more pixels a second. The cost per pixel does not depend on that; the rates only roughly do.
+- "Drawing" is the render time less the flush callback's time. The flush callback mostly sleeps until the panel's scan passes (ADR-002's tear-free start) and copies to the DMA staging buffers; the split between the two was not measured.
+
+### Results (totals over the 30 windows; frames a second as the median)
+
+| | Branch | `main` |
+|---|---:|---:|
+| Frames a second (median, lowest) | 24.5, 15 | 21.0, 17 |
+| Pixels sent a second | 826,000 | 936,000 |
+| Drawing cost a pixel | 197 ns | 191 ns |
+| Share of time drawing | 16.2% | 17.9% |
+| Share of time rendering, LVGL lock held (drawing plus flush callbacks) | 61.1% | 65.1% |
+| Sensor reports a second | 50.1 | 50.0 |
+| Reports shown a second (median) | 25.6 | 21.1 |
+| Reports skipped, LVGL lock busy, a second (median) | 24.6 | 26.9 |
+| Level update under the lock, average | 2.7 ms | 4.0 ms |
+
+**Verdict: no regression.** The drawing costs the same a pixel (within 3%) and the branch shows at least as many reports. ADR-009 changed nothing in the drawing itself; the level loop and the flush's TE rule are the only changes on this path.
+
+### Found, in both builds
+
+- **While moving, about half the sensor's reports are never shown.** The level's update waits at most 1 ms for the LVGL lock (`LVGL_UNLOCK_WAIT_TIME_MS`), and the LVGL task holds the lock about 61-65% of the time while the level moves. A skipped report is not stale data (the next one, 20 ms later, carries the newest angle), but the level moves at about 21-26 updates a second, not 50.
+- **The flush, not the drawing, holds the lock most of that time:** drawing is 16-18% of the time, the flush callbacks about 45%. So painting each row once (step 3.2) would cut part of the smaller share only.
+- **Still on the desk** (branch, first try `rc_level_motion_20261108_163122.log`, unit not yet moved): about 20 redraws a second of a 4,480-pixel strip, about 1.2 ms of drawing each, with one report a second skipped on the lock. Sensor noise moving the display by a step; not measured on `main`.
+
+### Decision
+
+Step 3.2 stays set aside, now on the right figure: the drawing is 16-18% of the time while moving. The larger lever is the time the flush holds the LVGL lock while it waits for the panel. Whether 21-26 updates a second while moving is visibly short of 50 is for the owner's eye; any change there touches ADR-002's tear-free flush and is a design to propose, not a fix.

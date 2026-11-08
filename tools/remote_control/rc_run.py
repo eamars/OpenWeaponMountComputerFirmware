@@ -691,6 +691,79 @@ def scenario_watchdog(session: Session):
         session.failures.append(f"no '{CORE_DUMP_SAVED_MARKER}' during the crash")
 
 
+# Level motion (ADR-009 step 3): the level's drawing while the owner rocks the unit, from the device's
+# `display_prof:` and `digital_level_prof:` lines (a build with DISPLAY_PROFILING_ENABLED). The scenario wakes the
+# unit, gives the owner LEVEL_MOTION_START_S to pick it up, then records LEVEL_MOTION_RECORD_S. Windows with no
+# redraw (idle) are left out. The per-frame figures do not depend on how hard the unit is rocked, so two runs by
+# hand compare between builds
+LEVEL_MOTION_START_S = 8.0
+LEVEL_MOTION_RECORD_S = 30.0
+LEVEL_MOTION_MIN_WINDOWS = 20
+
+
+def prof_pair(line: str, name: str):
+    """The `avg/max_name=a/b` field of a profiling line as (avg, max), or None."""
+    match = re.search(rf" avg/max_{name}=(\d+)/(\d+)", line)
+    return (float(match.group(1)), float(match.group(2))) if match else None
+
+
+def prof_value(line: str, name: str) -> float:
+    """A plain ` name=value` field of a profiling line (0 when missing)."""
+    match = re.search(rf" {name}=(\d+)", line)
+    return float(match.group(1)) if match else 0.0
+
+
+def level_motion_summary(lines):
+    """Medians over the windows in which the level redrew; max = the worst window.
+
+    draw_us is a frame's render time less its flush callback: the flush mostly sleeps until the panel's scan
+    passes, so what is left is the CPU's drawing. draw_pct is that as a share of the window.
+    """
+    display = [l for l in lines if "display_prof:" in l and prof_value(l, "flush") > 0]
+    level = [l for l in lines if "digital_level_prof:" in l and prof_value(l, "ui_try") > 0]
+
+    def med(values):
+        return statistics.median(values) if values else None
+
+    def per_s(line, name):
+        return prof_value(line, name) * 1000.0 / prof_value(line, "window")
+
+    draw_us = [prof_pair(l, "render")[0] - prof_pair(l, "flush_cb")[0] for l in display]
+    return {
+        "windows": len(display),
+        "flush_per_s": med([per_s(l, "flush") for l in display]),
+        "flush_px_avg": med([prof_pair(l, "flush_px")[0] for l in display]),
+        "flush_px_max": max([prof_pair(l, "flush_px")[1] for l in display], default=None),
+        "render_avg_us": med([prof_pair(l, "render")[0] for l in display]),
+        "render_max_us": max([prof_pair(l, "render")[1] for l in display], default=None),
+        "flush_cb_avg_us": med([prof_pair(l, "flush_cb")[0] for l in display]),
+        "draw_us": med(draw_us),
+        "draw_pct": med([d * prof_value(l, "render") / prof_value(l, "window") / 10.0
+                         for d, l in zip(draw_us, display)]),
+        "wait_max_us": max([prof_pair(l, "wait")[1] for l in display], default=None),
+        "game_per_s": med([per_s(l, "game") for l in level]),
+        "ui_ok_per_s": med([per_s(l, "ui_ok") for l in level]),
+        "lock_fail_per_s": med([per_s(l, "lock_fail") for l in level]),
+        "update_avg_us": med([prof_pair(l, "update")[0] for l in level]),
+        "update_max_us": max([prof_pair(l, "update")[1] for l in level], default=None),
+    }
+
+
+def scenario_level_motion(session: Session):
+    """The level's drawing while the owner rocks the unit by hand. Needs DISPLAY_PROFILING_ENABLED."""
+    session.command("wake")
+    session.command(f"tile {HOME_TILE[0]} {HOME_TILE[1]}")
+    print(f"Pick the unit up and rock it now; recording starts in {LEVEL_MOTION_START_S:.0f} s and lasts "
+          f"{LEVEL_MOTION_RECORD_S:.0f} s.", flush=True)
+    session.dwell(LEVEL_MOTION_START_S)
+    record_index = len(session.lines)
+    session.dwell(LEVEL_MOTION_RECORD_S)
+    summary = level_motion_summary(session.lines[record_index:])
+    print("level motion (medians over redrawing windows; max = worst window):")
+    print("  " + " ".join(f"{k}={'-' if v is None else f'{v:.1f}'}" for k, v in summary.items()))
+    if summary["windows"] < LEVEL_MOTION_MIN_WINDOWS:
+        session.failures.append(f"only {summary['windows']} redrawing windows in {LEVEL_MOTION_RECORD_S:.0f} s")
+
 SCENARIOS = {
     "state_change": scenario_state_change,
     "rotation_sweep": scenario_rotation_sweep,
@@ -698,6 +771,7 @@ SCENARIOS = {
     "watchdog": scenario_watchdog,
     "wake_profile": scenario_wake_profile,
     "idle_cycles": scenario_idle_cycles,
+    "level_motion": scenario_level_motion,
 }
 
 

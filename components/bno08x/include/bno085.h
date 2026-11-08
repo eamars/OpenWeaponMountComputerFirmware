@@ -76,6 +76,9 @@ typedef struct {
     uint32_t wake_cmd_us;
     int64_t wake_first_report_us[BNO085_REPORT_TABLE_LEN];
     uint16_t wake_burst_reports[BNO085_REPORT_TABLE_LEN];
+
+    // Resets the hub announced (SH2_RESET): each restarts its sensors, which drops state built from their reports
+    volatile uint32_t reset_count;
 } bno085_ctx_t;
 
 
@@ -130,6 +133,12 @@ esp_err_t bno085_wake_up(bno085_ctx_t *ctx);
  */
 void bno085_get_wake_profile(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t *first_report_us,
                              uint32_t *burst_reports, uint32_t *wake_cmd_us);
+
+/**
+ * @brief How many resets the hub has announced since init. A reset restarts every sensor without a report, so
+ * state built from a sensor's earlier reports (for example the stability detector's still or moving) no longer holds
+ */
+uint32_t bno085_get_reset_count(bno085_ctx_t *ctx);
 
 /**
  * @brief Set whether a report keeps running while the hub sleeps (always-on), and send that to the sensor if the

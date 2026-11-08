@@ -166,6 +166,7 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
     switch (pEvent->eventId) {
         case SH2_RESET: {
             ESP_LOGW(TAG, "BNO085 Reset Unexpectedly");
+            ctx->reset_count++;
         
             // Go over saved configurations
             for (uint8_t i = 0; i < BNO085_REPORT_TABLE_LEN; i += 1) {
@@ -405,6 +406,11 @@ esp_err_t bno085_wake_up(bno085_ctx_t *ctx) {
         return ESP_FAIL;
     }
     return ESP_OK;
+}
+
+
+uint32_t bno085_get_reset_count(bno085_ctx_t *ctx) {
+    return ctx->reset_count;
 }
 
 

@@ -1,6 +1,6 @@
 # ADR-009: efficiency, low power and quick wake
 
-Status: **Open** 2026-11-08. Approved by the owner. Built while the owner was away ("execute changes without my decision"), each change checked on the unit: step 0 (measure), step 1 (PMIC), step 2 (LVGL, sensor and tasks quiet while idle; the panel's own sleep), committed daac843 on `adr009_efficiency_power`, not pushed. Automatic light sleep (step 2, item 3) built and proven with the owner, unplugged: every wake works, 99% of idle on battery asleep, committed on the same branch. Left: the blink while the unit is moved continuously (next step), the owner's remaining hands-on checks; steps 3.2 and 4 set aside with reasons ([progress](progress.md)). The facts below come from the code, the unit's own readings, earlier logs and the datasheets in `OpenWeaponMountComputer/pcb/datasheet` (page numbers are the printed ones).
+Status: **Open** 2026-11-08. Approved by the owner. Built while the owner was away ("execute changes without my decision"), each change checked on the unit: step 0 (measure), step 1 (PMIC), step 2 (LVGL, sensor and tasks quiet while idle; the panel's own sleep), committed daac843 on `adr009_efficiency_power`, not pushed. Automatic light sleep (step 2, item 3) built and proven with the owner, unplugged: every wake works, 99% of idle on battery asleep, committed on the same branch. A moving unit now counts as in use, so it no longer blinks dark in the hand (built and checked with the owner, not committed yet). The level's drawing measured while moving against `main`: no regression (not committed yet). Left: the owner's remaining hands-on checks; steps 3.2 and 4 set aside with reasons ([progress](progress.md)). The facts below come from the code, the unit's own readings, earlier logs and the datasheets in `OpenWeaponMountComputer/pcb/datasheet` (page numbers are the printed ones).
 
 ## What we want
 
@@ -41,7 +41,7 @@ Standing rules: performance changes are risky, so they go in one at a time, each
 
 ### What keeps the unit awake while shooting (checked in the code)
 
-- Activity is a touch, the button, the power key, USB in or out, and each stability-detector report ("became stable", "stopped being stable"). Linear acceleration and the level's own reports do not count.
+- Activity is a touch, the button, the power key, USB in or out, and each stability-detector report ("became stable", "stopped being stable"). Linear acceleration and the level's own reports do not count. Since step 2d, a unit the detector last reported as moving also counts as active on every 1 s poll, until it reports still.
 - The update and the sensor calibration block idle (`prevent_idle_mode_enter`), and **the running countdown timer counts as activity on every tick** (`countdown_timer.c`), so the screen cannot go dark during a timed stage. In practice the idle timeout is 1 min (owner; 10 s is a test setting, listed last for that reason; the code's default is 5 min), counted from the timer's end, the last touch or the last movement. (A first reading of the code missed the timer's activity; corrected 2026-11-08, nothing to change.)
 - The timeouts are counted by a 1 s poll, so idle comes up to 1 s after the timeout.
 
@@ -177,7 +177,7 @@ Shown on the unit: the `pmic` readings unchanged except the temperature; the TS 
 
 Shown on the unit: the light-sleep share of idle near 100%; wakes by touch, button, power key and movement each work; the wake time from the first movement to the first frame, before and after; no wake without a cause; with the timer running and the unit held still past a 10 s idle timeout, the screen stays on; `state_change` passes, and one idle/wake cycle test of at most 10 minutes with no stall.
 
-### Step 3: the level's drawing (3.1 built with step 2; 3.2 set aside: the CPU is 94-97% idle)
+### Step 3: the level's drawing (3.1 built with step 2; measured while moving 2026-11-08, no regression; 3.2 set aside: drawing is 16-18% of the time while moving, the flush holds the lock most of the rest; see progress)
 
 1. The display loop waits for each report instead of polling every 20 ms.
 2. Each row painted once in its final colour.

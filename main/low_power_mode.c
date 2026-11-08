@@ -49,6 +49,13 @@ TaskHandle_t sensor_stability_detector_poller_task_handle;
 uint32_t wakeup_cause;
 
 TickType_t last_activity_tick = 0;
+
+// Moving counts as in use (ADR-009, owner 2026-11-08). The stability detector reports only when the unit enters or
+// leaves a still state, so continuous movement longer than the idle timeout gave no activity: the screen went dark
+// in the hand and came back at the next still report. Written by the stability task only. The state belongs to the
+// detector's run: a hub reset restarts it without a report, so a "moving" from before the last reset does not count
+static volatile bool unit_moving = false;
+static volatile uint32_t unit_moving_reset_count;
 TickType_t last_idle_tick = 0;
 static EventGroupHandle_t low_power_control_event;
 static lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
@@ -667,6 +674,13 @@ void low_power_monitor_task(void *p) {
         // LVGL stopped on purpose (idle): keep its lock-up watchdog fed; no-op otherwise
         lvgl_watchdog_feed_while_paused();
 
+#if USE_BNO085
+        // Still moving since the detector last said so: the unit is in use
+        if (unit_moving && unit_moving_reset_count == bno085_get_reset_count(bno085_dev)) {
+            update_low_power_mode_last_activity_event();
+        }
+#endif  // USE_BNO085
+
 #if WAKE_PROFILING_ENABLED
         wake_profile_report_if_due();
 #endif  // WAKE_PROFILING_ENABLED
@@ -730,6 +744,14 @@ void sensor_stability_detector_poller_task(void *p) {
 
         if (err == ESP_OK) {
             update_low_power_mode_last_activity_event();
+            // Bit 0: entered the still state; bit 1: left it (SH-2 manual 6.5.35). Still wins if both are set
+            if (stability & STABILITY_ENTERED) {
+                unit_moving = false;
+            }
+            else if (stability & STABILITY_EXITED) {
+                unit_moving_reset_count = bno085_get_reset_count(bno085_dev);
+                unit_moving = true;
+            }
 
             if (is_idle_mode_activated()) {
                 low_power_mode_note_wake_cause("motion");
