@@ -81,6 +81,20 @@ typedef struct {
 } display_flush_timing_acc_t;
 
 static display_flush_ctx_t display_flush_ctx;
+
+// Anti-tearing (ADR-002): each write starts where the panel's scan cannot cross it. Off (ADR-010 step 2, RAM only,
+// for the owner's trial): writes start at once, for more frames a second and a possible tear line
+static volatile bool display_flush_tear_free = true;
+
+
+void display_flush_set_tear_free(bool on) {
+    display_flush_tear_free = on;
+}
+
+
+bool display_flush_get_tear_free(void) {
+    return display_flush_tear_free;
+}
 static portMUX_TYPE display_flush_strip_lock = portMUX_INITIALIZER_UNLOCKED;
 static display_flush_timing_acc_t display_flush_timing_acc;
 static display_flush_te_state_t display_flush_te_state;
@@ -547,7 +561,9 @@ static void display_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t 
     display_flush_fill_strip(src, src_stride, w, h, rotation, display_flush_ctx.staging[0], pw, 0,
                              (rows < ph) ? rows : ph);
 
-    display_flush_wait_scan(py1, ph, pw);
+    if (display_flush_tear_free) {
+        display_flush_wait_scan(py1, ph, pw);
+    }
 
     portENTER_CRITICAL(&display_flush_strip_lock);
     display_flush_ctx.strips_total = strips;

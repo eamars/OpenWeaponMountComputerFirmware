@@ -58,6 +58,7 @@ REPLY_PREFIXES = {
     "state": "@ok tile=",
     "stats": "@ok free_int=",
     "sleep": "@ok sleep",
+    "tear": "@ok tear",
     "bt": "@ok bt",
     "pmic": "@ok pmic",
     "snap": "@ok snap",

@@ -42,6 +42,10 @@ void display_flush_take_timing(display_flush_timing_t *timing);
 
 /** @brief Wake profiling (ADR-009): arm, then read when the first frame sent after arming finished (0 until then) */
 void display_flush_arm_first_frame(void);
+
+// Anti-tearing: on (the default), each write waits for the panel's scan to pass its window; off, writes start at once
+void display_flush_set_tear_free(bool on);
+bool display_flush_get_tear_free(void);
 int64_t display_flush_first_frame_us(void);
 
 #ifdef __cplusplus

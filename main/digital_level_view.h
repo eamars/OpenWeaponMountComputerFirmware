@@ -56,6 +56,8 @@ esp_err_t save_digital_level_view_config();
 void digital_level_view_zero_after_tare();
 
 void update_digital_level_view(float roll_rad, float pitch_rad);
+// The angle in the top pill; redraws only when the whole-degree value changes. LVGL lock held
+void update_roll_deg_indicator(float roll_rad);
 
 void digital_level_view_rotation_event_callback(lv_event_t * e);
 
