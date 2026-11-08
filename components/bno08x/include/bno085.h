@@ -84,6 +84,13 @@ typedef struct {
     // read under sh2_lock (ADR-011)
     float grv_quat[4];
     uint32_t grv_count;
+
+    // Which sensors may calibrate themselves (SH2_CAL_* bits) once the host has set it, and whether it still has to
+    // be sent: the setting does not persist across the hub's resets (datasheet 3.1.1), so each reset sets it pending
+    // again and the poller task sends it (ADR-011)
+    bool cal_config_set;
+    uint8_t cal_config;
+    volatile bool cal_config_pending;
 } bno085_ctx_t;
 
 
@@ -162,6 +169,12 @@ esp_err_t bno085_clear_tare(bno085_ctx_t *ctx);
  * does; *cleared says whether there was one. Nothing is written when there is none (ADR-011)
  */
 esp_err_t bno085_clear_persisted_tare(bno085_ctx_t *ctx, bool *cleared);
+
+/**
+ * @brief Which sensors' dynamic calibration runs (SH2_CAL_ACCEL | SH2_CAL_GYRO | SH2_CAL_MAG). Sent now and again
+ * after every reset of the hub (ADR-011)
+ */
+esp_err_t bno085_set_dynamic_calibration(bno085_ctx_t *ctx, uint8_t sensors);
 
 /**
  * @brief Set whether a report keeps running while the hub sleeps (always-on), and send that to the sensor if the

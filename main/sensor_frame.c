@@ -112,11 +112,17 @@ esp_err_t sensor_frame_init(bno085_ctx_t * dev) {
     ESP_LOGI(TAG, "%s: offset %.2f deg", sensor_frame.calibrated ? "Calibrated" : "Not calibrated",
              (double) sensor_frame.offset_deg);
 
+    // The accelerometer's zero-g offset is the level's zero: its dynamic calibration moved the reading by about 0.25
+    // degrees after handling the unit, and a power cycle by as much again, while lifting and replacing it moved it
+    // 0.04 (ADR-011 step 0, COM13 unit). It is held fixed; the gyroscope still calibrates (it matters while moving,
+    // not for the tilt at rest), and the magnetometer is not used
+    esp_err_t cal_ret = bno085_set_dynamic_calibration(dev, SH2_CAL_GYRO);
+
     // The old Tare page persisted a tare that reorients the game rotation vector; the frame above is the sensor's own
     bool cleared = false;
     esp_err_t tare_ret = bno085_clear_persisted_tare(dev, &cleared);
     if (cleared) {
         ESP_LOGW(TAG, "An old persisted tare was found and deleted");
     }
-    return tare_ret;
+    return tare_ret != ESP_OK ? tare_ret : cal_ret;
 }

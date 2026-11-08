@@ -147,6 +147,16 @@ void sensor_poller_task(void *self) {
         if (_bno085_wait_for_interrupt(ctx) == ESP_OK) {
             sh2_lock(ctx);
             sh2_service();
+            if (ctx->cal_config_pending) {
+                ctx->cal_config_pending = false;
+                int status = sh2_setCalConfig(ctx->cal_config);
+                if (status != SH2_OK) {
+                    ESP_LOGE(TAG, "Failed to set the dynamic calibration after a reset: %d", status);
+                }
+                else {
+                    ESP_LOGI(TAG, "Dynamic calibration set again after a reset: 0x%02x", ctx->cal_config);
+                }
+            }
             sh2_unlock(ctx);
         }
     }
@@ -175,6 +185,7 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
         case SH2_RESET: {
             ESP_LOGW(TAG, "BNO085 Reset Unexpectedly");
             ctx->reset_count++;
+            ctx->cal_config_pending = ctx->cal_config_set;  // sent by the poller task, not from this callback
         
             // Go over saved configurations
             for (uint8_t i = 0; i < BNO085_REPORT_TABLE_LEN; i += 1) {
@@ -428,6 +439,22 @@ uint32_t bno085_get_game_rotation_quaternion(bno085_ctx_t *ctx, float quat[4]) {
     const uint32_t count = ctx->grv_count;
     sh2_unlock(ctx);
     return count;
+}
+
+
+esp_err_t bno085_set_dynamic_calibration(bno085_ctx_t *ctx, uint8_t sensors) {
+    sh2_lock(ctx);
+    ctx->cal_config = sensors;
+    ctx->cal_config_set = true;
+    ctx->cal_config_pending = false;
+    int status = sh2_setCalConfig(sensors);
+    sh2_unlock(ctx);
+    if (status != SH2_OK) {
+        ESP_LOGE(TAG, "Failed to set the dynamic calibration: %d", status);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "Dynamic calibration: 0x%02x", sensors);
+    return ESP_OK;
 }
 
 
