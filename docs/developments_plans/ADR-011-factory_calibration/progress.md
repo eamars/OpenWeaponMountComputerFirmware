@@ -60,18 +60,28 @@ Cant on the rotation 0 edge, same pose and spot, read with `grav` after the read
 | Left untouched 1.5 min | -0.79° | |
 | Lifted and put back (control) | -0.75° | |
 
-- **With the defaults:**
-  - Handling and a power cycle each moved the zero by about 0.25°, in the same direction.
-  - Lifting and replacing moved it 0.04°, and time alone nothing.
-  - So the sensor moved it: it re-estimated the accelerometer's zero-g offset while handled, and reloaded an older one from its flash after the power cycle.
-- **Fix** (`sensor_frame_init`, `bno085_set_dynamic_calibration`):
-  - Only the gyroscope calibrates dynamically (`sh2_setCalConfig(SH2_CAL_GYRO)`). It is set at boot and again by the poller task after every reset of the hub, because the setting does not persist across resets (datasheet 3.1.1).
+- **The first round was confounded:**
+  - The unit was put back by eye, and its only same-spot control (lifted and put back) moved 0.04°.
+  - The owner suspected placement, a desk's tilt varying over a few centimetres. Later rounds used a marker on the desk.
+- **A/B with the marker** (`bno cal`, RAM only), cant after each handling in five or six orientations:
+
+  | Dynamic calibration | Baseline | After handling 1 | After handling 2 |
+  |---|---:|---:|---:|
+  | Accelerometer and gyroscope (the default) | +0.07° | -0.04° (0.11) | -0.08° (0.04 more) |
+  | Gyroscope only | -0.04° | -0.04 to -0.06° (≤0.02) | |
+
+- **Verdict:**
+  - Most of the first round's 0.25° steps were placement.
+  - The accelerometer's dynamic calibration adds a smaller drift, about 0.05 to 0.1° per handling, in the same direction each time here.
+  - Holding the offset fixed removes it at no cost, because the routine calibrates out a constant offset. Gyroscope only stays.
+  - One unit and two rounds: a small sample.
+- **What was built** (`sensor_frame_init`, `bno085_set_dynamic_calibration`):
+  - Only the gyroscope calibrates dynamically (`sh2_setCalConfig(SH2_CAL_GYRO)`). It is set at boot and again after every reset of the hub, because the setting does not persist across resets (datasheet 3.1.1).
   - The boot log shows `Dynamic calibration: 0x02`.
   - A unit needs one calibration run after this change.
-- **With the fix:**
+- **With the marker and the gyroscope only:**
   - Handling moved the cant 0.02° at most.
-  - After a power cycle it started 0.16° off and came back within 0.04° of the baseline within 3 minutes. That is a warm-up after a cold start; the board went from 39.3 to 40.3 °C and back to 38.7 °C while charging.
-  - The pitch kept a 0.28° difference after the power cycle. That is within the unit's rocking on its edge out of the screen's plane, which the routine also does not judge.
+  - After a power cycle it started 0.16° off and came back within 0.04° within 3 minutes, a warm-up after a cold start. The board went from 39.3 to 40.3 °C and back to 38.7 °C while charging.
 
 ### Left
 

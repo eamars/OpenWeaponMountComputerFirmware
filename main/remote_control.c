@@ -1016,6 +1016,16 @@ static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
 // Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
 // keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
 static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
+    // `bno cal <bits>` (ADR-011 A/B): which sensors calibrate dynamically, SH2_CAL_ACCEL 1 | GYRO 2 | MAG 4. RAM only:
+    // the boot sets the gyroscope only again
+    long cal_bits = 0;
+    if (argc == 3 && strcmp(argv[1], "cal") == 0 && rc_parse_long(argv[2], &cal_bits) && cal_bits >= 0 && cal_bits <= 7) {
+        esp_err_t err = bno085_set_dynamic_calibration(bno085_dev, (uint8_t) cal_bits);
+        if (err != ESP_OK) {
+            return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(err));
+        }
+        return rc_reply(reply, reply_size, true, "@ok bno cal %ld", cal_bits);
+    }
     // `bno tare clear` (ADR-011): drop any tare, run-time and persisted
     if (argc == 3 && strcmp(argv[1], "tare") == 0 && strcmp(argv[2], "clear") == 0) {
         esp_err_t err = bno085_clear_tare(bno085_dev);
