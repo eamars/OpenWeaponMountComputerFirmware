@@ -107,7 +107,7 @@ void tilt_angle_button_event_cb(lv_event_t * e) {
     }
 
     // Take a snapshot of current roll and use that as offset (take account of the screen rotation). The zero is a
-    // calibration, so it is saved, as after a tare
+    // calibration (the rifle's mount), so it is saved
     digital_level_view_config.user_roll_rad_offset = -1 * (sensor_roll_thread_unsafe - system_config.rotation * M_PI_2);
     ESP_LOGI(TAG, "user_roll_rad_offset := %f", digital_level_view_config.user_roll_rad_offset);
 
@@ -125,17 +125,13 @@ static void overlay_clicked_cb(lv_event_t * e) {
     }
 }
 
-void digital_level_view_zero_after_tare() {
-    // After a tare the sensor reads roll 0 in the tare pose, but the level subtracts rotation x 90 deg, which
-    // assumes the untared sensor; so at rotation 2 the tare pose read 180. The offset cancels that term, so the
-    // tare pose reads 0 at the current rotation. Saved with the level's settings, as the tare is saved in the
-    // sensor, so the two stay together across reboots (ADR-005 B25)
-    digital_level_view_config.user_roll_rad_offset = system_config.rotation * M_PI_2;
-    ESP_LOGI(TAG, "user_roll_rad_offset := %f (after tare)", digital_level_view_config.user_roll_rad_offset);
-
+void digital_level_view_clear_zero() {
+    // A new factory calibration changes what the raw cant counts from, so the rifle zero taken against the old one
+    // no longer holds (ADR-011). Saved with the level's settings
+    digital_level_view_config.user_roll_rad_offset = 0.0f;
     esp_err_t ret = save_digital_level_view_config();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to save the level zero after tare: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to save the cleared level zero: %s", esp_err_to_name(ret));
     }
 }
 
@@ -374,8 +370,8 @@ static void set_colour(int index, void * ctx) {
 }
 
 
-// Reset restores the preferences, not the calibration: the zero (the mounting offset, and after a tare the rotation
-// it was taken at) stays, as the tare stays in the sensor (owner, ADR-005)
+// Reset restores the preferences, not the calibration: the zero (the rifle's mounting offset) stays (owner, ADR-005);
+// a new factory calibration clears it (ADR-011)
 static void reset_level(void * ctx) {
     float zero_rad = digital_level_view_config.user_roll_rad_offset;
     memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));

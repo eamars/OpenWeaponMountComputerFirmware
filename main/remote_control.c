@@ -29,6 +29,8 @@
 #include "ota_mode.h"
 #include "common.h"
 #include "bno085.h"
+#include "digital_level_view_controller.h"  // the level's raw cant and pitch (grav)
+#include "sensor_frame.h"
 #include "low_power_mode.h"
 #include "pmic_axp2101.h"
 #include "ui_bridge.h"
@@ -63,7 +65,7 @@
 #define RC_MAX_ARGS 6   // "settings open How to pair"
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top tear"
+#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top tear grav"
 
 
 typedef struct {
@@ -974,6 +976,26 @@ static bool rc_cmd_hang(char *reply, size_t reply_size) {
 }
 
 
+// Debug (ADR-011): `grav` gives "up" in the sensor's own frame from the newest game rotation vector, the level's
+// raw cant and pitch in degrees (against the factory calibration, before the rotation term and the rifle zero), and
+// the report count. Needs a tile that runs the game rotation vector (the level, the calibration)
+static bool rc_cmd_grav(int argc, char **argv, char *reply, size_t reply_size) {
+    if (argc != 1) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    float quat[4];
+    float up[3];
+    const uint32_t count = bno085_get_game_rotation_quaternion(bno085_dev, quat);
+    if (count == 0) {
+        return rc_reply(reply, reply_size, false, "@err no game rotation vector yet");
+    }
+    sensor_frame_up_from_quaternion(quat, up);
+    return rc_reply(reply, reply_size, true, "@ok grav up=%.4f,%.4f,%.4f cant=%.2f pitch=%.2f n=%" PRIu32,
+                    (double) up[0], (double) up[1], (double) up[2], (double) RAD_TO_DEG(sensor_roll_thread_unsafe),
+                    (double) RAD_TO_DEG(sensor_pitch_thread_unsafe), count);
+}
+
+
 // Trial (ADR-010 step 2): `tear [free|off]` shows or sets anti-tearing (the flush's wait for the panel's scan).
 // RAM only: a reboot restores it
 static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
@@ -1069,7 +1091,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
                     strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0 ||
                     strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0 || strcmp(cmd, "bno") == 0 ||
-                    strcmp(cmd, "top") == 0 || strcmp(cmd, "tear") == 0;
+                    strcmp(cmd, "top") == 0 || strcmp(cmd, "tear") == 0 || strcmp(cmd, "grav") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -1188,6 +1210,9 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     }
     if (strcmp(cmd, "tear") == 0) {
         return rc_cmd_tear(argc, argv, reply, reply_size);
+    }
+    if (strcmp(cmd, "grav") == 0) {
+        return rc_cmd_grav(argc, argv, reply, reply_size);
     }
     if (strcmp(cmd, "ota") == 0) {
         return rc_cmd_ota(argc, argv, reply, reply_size);

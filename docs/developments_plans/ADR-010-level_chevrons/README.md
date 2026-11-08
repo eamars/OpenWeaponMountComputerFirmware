@@ -1,6 +1,6 @@
 # ADR-010: a third level style, chevrons that point the way to turn
 
-Status: **Open** 2026-11-08. The owner chose the design from mock-ups drawn on the unit's own screen captures: "Let's build it first and try to see if that works." Step 1 built and changed with the owner on the unit (full screen, hazard-tape chevrons, level in full colour); step 2 tried and rejected (tearing visible). Left: the owner's check that the chevrons point the way to turn in both directions. Details in [progress](progress.md).
+Status: **Built** 2026-11-08, merged as PR #7; the owner confirmed it works on the unit ("ADR-010 is proven to work"). Step 1 built and changed with the owner on the unit (full screen, hazard-tape chevrons, level in full colour); step 2 tried and rejected (tearing visible). Details in [progress](progress.md).
 
 ## What we want
 

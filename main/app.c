@@ -15,6 +15,7 @@
 #include "nvs_flash.h"
 
 #include "app.h"
+#include "sensor_frame.h"
 #include "digital_level_view.h"
 #include "countdown_timer_config_view.h"
 #include "dope_config_view.h"
@@ -202,6 +203,9 @@ void app_main(void)
     memset(bno085_i2c_dev, 0, sizeof(bno085_i2c_ctx_t));
     ESP_ERROR_CHECK(bno085_init_i2c(bno085_i2c_dev, i2c1_bus_handle, BNO085_INT_PIN, BNO085_RESET_PIN, BNO085_BOOT_PIN));
     bno085_dev = (bno085_ctx_t *) bno085_i2c_dev;
+
+    // The factory calibration, and no old tare left in the sensor (ADR-011)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(sensor_frame_init(bno085_dev));
 #endif  // USE_BNO085
 
     // Initialize WiFi before the display: the Wi-Fi service needs no UI; the UI reads its state through the

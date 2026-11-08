@@ -79,6 +79,18 @@ typedef struct {
 
     // Resets the hub announced (SH2_RESET): each restarts its sensors, which drops state built from their reports
     volatile uint32_t reset_count;
+
+    // The newest game rotation vector (real, i, j, k) and how many have arrived; written by the sensor callback,
+    // read under sh2_lock (ADR-011)
+    float grv_quat[4];
+    uint32_t grv_count;
+
+    // Which sensors may calibrate themselves (SH2_CAL_* bits) once the host has set it, and whether it still has to
+    // be sent: the setting does not persist across the hub's resets (datasheet 3.1.1), so each reset sets it pending
+    // again and the poller task sends it (ADR-011)
+    bool cal_config_set;
+    uint8_t cal_config;
+    volatile bool cal_config_pending;
 } bno085_ctx_t;
 
 
@@ -141,6 +153,25 @@ void bno085_get_wake_profile(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32
 uint32_t bno085_get_reset_count(bno085_ctx_t *ctx);
 
 /**
+ * @brief The newest game rotation vector as a quaternion (real, i, j, k) and how many have arrived since init
+ * (ADR-011). Returns 0 before the first report
+ */
+uint32_t bno085_get_game_rotation_quaternion(bno085_ctx_t *ctx, float quat[4]);
+
+/**
+ * @brief If a tare is persisted (the master sensor orientation record, FRS 0x2D3E, holds data), clear it: the
+ * run-time reorientation and the record (SH-2 6.4.3.3). *cleared says whether there was one; nothing is written when
+ * there is none. The level does not use tares (ADR-011)
+ */
+esp_err_t bno085_clear_persisted_tare(bno085_ctx_t *ctx, bool *cleared);
+
+/**
+ * @brief Which sensors' dynamic calibration runs (SH2_CAL_ACCEL | SH2_CAL_GYRO | SH2_CAL_MAG). Sent now and again
+ * after every reset of the hub (ADR-011)
+ */
+esp_err_t bno085_set_dynamic_calibration(bno085_ctx_t *ctx, uint8_t sensors);
+
+/**
  * @brief Set whether a report keeps running while the hub sleeps (always-on), and send that to the sensor if the
  * report is on. Kept for the sensor's reset recovery; the report's enable function sets it back to its default
  */
@@ -151,16 +182,6 @@ esp_err_t bno085_set_report_always_on(bno085_ctx_t *ctx, sh2_SensorId_t sensor_i
  * For tests of the reset recovery; returns ESP_ERR_NOT_SUPPORTED without a reset pin.
  */
 esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx);
-
-/**
- * @brief Tare the given axes now (sh2_setTareNow)
- */
-esp_err_t bno085_tare_now(bno085_ctx_t *ctx, uint8_t axes, sh2_TareBasis_t basis);
-
-/**
- * @brief Persist the current tare in the sensor (sh2_persistTare)
- */
-esp_err_t bno085_persist_tare(bno085_ctx_t *ctx);
 
 
 /**

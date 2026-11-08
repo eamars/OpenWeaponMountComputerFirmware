@@ -9,6 +9,7 @@
 #include <inttypes.h>
 
 #include "digital_level_view_controller.h"
+#include "sensor_frame.h"
 #include "digital_level_view.h"
 #include "countdown_timer_config_view.h"
 #include "app_cfg.h"
@@ -132,7 +133,13 @@ void unified_sensor_poller_task(void *p) {
             // Game rotation vectors
             // Wait for the next report (ADR-009): each one is shown as it arrives, and the loop sleeps while there
             // are none (idle, the sensor asleep). The timeout only rechecks the run flag
-            if (bno085_wait_for_game_rotation_vector_roll_pitch_yaw_ticks(bno085_dev, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe, NULL, pdMS_TO_TICKS(LEVEL_REPORT_WAIT_MS)) == ESP_OK) {
+            if (bno085_wait_for_game_rotation_vector_roll_pitch_yaw_ticks(bno085_dev, NULL, NULL, NULL, pdMS_TO_TICKS(LEVEL_REPORT_WAIT_MS)) == ESP_OK) {
+                // Cant and pitch from gravity in the sensor's own frame, against the factory calibration (ADR-011)
+                float quat[4];
+                float up[3];
+                bno085_get_game_rotation_quaternion(bno085_dev, quat);
+                sensor_frame_up_from_quaternion(quat, up);
+                sensor_frame_cant_pitch(up, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe);
 #if DISPLAY_PROFILING_ENABLED
                 digital_level_profile.game_reports++;
                 digital_level_profile.ui_update_attempts++;
