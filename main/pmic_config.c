@@ -166,17 +166,17 @@ void power_menu_show(bool show) {
     }
     if (show) {
         layout_power_menu();
-        lv_obj_remove_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(power_menu, false);
         lv_obj_move_foreground(power_menu);
     }
     else {
-        lv_obj_add_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(power_menu, true);
     }
 }
 
 
 bool power_menu_shown(void) {
-    return power_menu != NULL && !lv_obj_has_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+    return power_menu != NULL && !lv_obj_is_hidden(power_menu);
 }
 
 
@@ -191,8 +191,8 @@ void create_power_menu_overlay(void) {
     lv_obj_set_style_pad_all(power_menu, DISPLAY_MARGIN_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_row(power_menu, POWER_MENU_GAP_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_column(power_menu, POWER_MENU_GAP_PX, LV_PART_MAIN);
-    lv_obj_remove_flag(power_menu, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(power_menu, LV_OBJ_FLAG_CLICKABLE);       // nothing behind it takes a tap
+    lv_obj_set_scrollable(power_menu, false);
+    lv_obj_set_clickable(power_menu, true);       // nothing behind it takes a tap
     lv_obj_add_event_cb(power_menu, power_menu_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
 
     power_menu_title = value_editor_create_label(power_menu, &lv_font_montserrat_24);
@@ -206,7 +206,7 @@ void create_power_menu_overlay(void) {
     power_cancel_button = create_power_menu_button("Cancel", lv_palette_darken(LV_PALETTE_GREY, 3), power_cancel_cb);
 
     layout_power_menu();
-    lv_obj_add_flag(power_menu, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(power_menu, true);
 }
 
 
@@ -262,7 +262,7 @@ static void set_sleep_timeout(int index, void * ctx) {
 
 
 static void power_status_text(char * buf, size_t size, void * ctx) {
-    const axp2101_status_t * status = (const axp2101_status_t *) lv_subject_get_pointer(&ui_pmic_status);
+    const axp2101_status_t * status = (const axp2101_status_t *) lv_subject_get_pointer(ui_pmic_status);
     if (status == NULL) {
         snprintf(buf, size, "Battery: no reading yet");
         return;

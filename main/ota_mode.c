@@ -194,11 +194,11 @@ static bool is_portrait(lv_obj_t * obj) {
 
 static void set_ota_prompt_view_visibility(bool is_visible) {
     if (is_visible) {
-        lv_obj_remove_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(ota_prompt_view, false);
         lv_obj_move_foreground(ota_prompt_view);
         lv_obj_scroll_to_y(offer_text, 0, LV_ANIM_OFF);
     } else {
-        lv_obj_add_flag(ota_prompt_view, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(ota_prompt_view, true);
     }
 }
 
@@ -249,8 +249,8 @@ static void show_ota_result(bool ok, const char * reason, esp_err_t err) {
     else {
         lv_label_set_text_fmt(ota_detail_label, "%s\n%s\nThe unit keeps its firmware.", reason, esp_err_to_name(err));
     }
-    lv_obj_remove_flag(ota_detail_label, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(ota_detail_label, false);
+    lv_obj_set_hidden(reboot_button, false);
     layout_ota_view(ota_view);
 }
 
@@ -753,7 +753,7 @@ static lv_obj_t * create_black_screen(lv_obj_t * parent) {
     lv_obj_set_style_pad_all(screen, DISPLAY_MARGIN_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_row(screen, OTA_GAP_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_column(screen, OTA_GAP_PX, LV_PART_MAIN);
-    lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(screen, false);
     return screen;
 }
 
@@ -775,7 +775,7 @@ static void layout_ota_view(lv_obj_t * view) {
     static const int32_t landscape_rows[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
 
     lv_obj_t * middle = lv_obj_get_child(view, 0);
-    bool done = !lv_obj_has_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
+    bool done = !lv_obj_is_hidden(reboot_button);
     if (is_portrait(view)) {
         lv_obj_set_grid_dsc_array(view, portrait_cols, portrait_rows);
         lv_obj_set_grid_cell(middle, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
@@ -807,7 +807,7 @@ void create_ota_mode_view(lv_obj_t * parent) {
     lv_obj_set_flex_flow(middle, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(middle, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(middle, OTA_MIDDLE_GAP_PX, LV_PART_MAIN);
-    lv_obj_remove_flag(middle, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(middle, false);
 
     ota_title_label = create_wrapped_label(middle, &lv_font_montserrat_28);
     lv_obj_set_style_text_align(ota_title_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -829,14 +829,14 @@ void create_ota_mode_view(lv_obj_t * parent) {
 
     ota_detail_label = create_wrapped_label(middle, &lv_font_montserrat_20);
     lv_obj_set_style_text_align(ota_detail_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_add_flag(ota_detail_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(ota_detail_label, true);
 
     // Restart, once the update ended either way
     reboot_button = value_editor_create_button(view, LV_PALETTE_ORANGE);
     lv_obj_set_style_bg_color(reboot_button, lv_palette_darken(LV_PALETTE_ORANGE, 2), LV_PART_MAIN);
     lv_label_set_text(value_editor_create_label(reboot_button, &lv_font_montserrat_32), "Restart");
     lv_obj_add_event_cb(reboot_button, on_reboot_button_pressed, LV_EVENT_SHORT_CLICKED, NULL);
-    lv_obj_add_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(reboot_button, true);
 
     layout_ota_view(view);
 
@@ -927,7 +927,7 @@ static void offer_size_changed_cb(lv_event_t * e) {
 
 void create_ota_prompt_view(lv_obj_t * parent) {
     ota_prompt_view = create_black_screen(parent);
-    lv_obj_add_flag(ota_prompt_view, LV_OBJ_FLAG_CLICKABLE);       // nothing behind it takes a tap
+    lv_obj_set_clickable(ota_prompt_view, true);       // nothing behind it takes a tap
     lv_obj_add_event_cb(ota_prompt_view, offer_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
 
     // The title, the version and the release note; scrolls when the note is long
@@ -1002,8 +1002,8 @@ void ota_mode_test_offer_end(void) {
 // without starting the update task (a tap on its Restart would restart the unit)
 bool ota_mode_test_view(const char * state) {
     lv_obj_set_style_text_color(ota_title_label, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_MAIN);
-    lv_obj_add_flag(ota_detail_label, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(reboot_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(ota_detail_label, true);
+    lv_obj_set_hidden(reboot_button, true);
     layout_ota_view(ota_view);
     lv_label_set_text(progress_label, "");
     lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);

@@ -225,7 +225,7 @@ void create_point_of_aim_view(lv_obj_t * parent) {
 
 
     // Make it touchable so I can zero my POI by touching the screen
-    lv_obj_add_flag(chart, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_clickable(chart, true);
     lv_obj_add_event_cb(chart, chart_touch_event_cb, LV_EVENT_SHORT_CLICKED, NULL);
 
     // Hook to some drawing functions to override drawing the background and lines

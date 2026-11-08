@@ -130,18 +130,20 @@ value_editor_t * value_editor_create(lv_obj_t * parent) {
     lv_obj_set_style_pad_all(screen, DISPLAY_MARGIN_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_row(screen, VALUE_EDITOR_GAP_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_column(screen, VALUE_EDITOR_GAP_PX, LV_PART_MAIN);
-    lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(screen, false);
     // A drag on the editor's buttons must not swipe the tile away
-    lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLL_CHAIN_HOR | LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-    lv_obj_add_flag(screen, LV_OBJ_FLAG_CLICKABLE);  // taps between the buttons stay in the editor
-    lv_obj_add_flag(screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_scroll_chain_hor(screen, false);
+    lv_obj_set_scroll_chain_ver(screen, false);
+    lv_obj_set_clickable(screen, true);  // taps between the buttons stay in the editor
+    lv_obj_set_hidden(screen, true);
 
     // The value, with an optional title over it
     editor->value_box = lv_obj_create(screen);
     lv_obj_remove_style_all(editor->value_box);
     lv_obj_set_flex_flow(editor->value_box, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(editor->value_box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_remove_flag(editor->value_box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_scrollable(editor->value_box, false);
+    lv_obj_set_clickable(editor->value_box, false);
     editor->title_label = value_editor_create_label(editor->value_box, &lv_font_montserrat_20);
     lv_obj_set_style_text_color(editor->title_label, lv_palette_lighten(LV_PALETTE_GREY, 1), LV_PART_MAIN);
     editor->value_label = value_editor_create_label(editor->value_box, &lv_font_montserrat_48);
@@ -175,10 +177,10 @@ void value_editor_open(value_editor_t * editor, const value_editor_params_t * pa
 
     if (params->title != NULL) {
         lv_label_set_text(editor->title_label, params->title);
-        lv_obj_remove_flag(editor->title_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(editor->title_label, false);
     }
     else {
-        lv_obj_add_flag(editor->title_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(editor->title_label, true);
     }
 
     char text[16];
@@ -188,7 +190,7 @@ void value_editor_open(value_editor_t * editor, const value_editor_params_t * pa
     lv_label_set_text(editor->plus_label, text);
     show_value(editor);
 
-    lv_obj_remove_flag(editor->screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(editor->screen, false);
     lv_obj_move_foreground(editor->screen);
 }
 
@@ -198,7 +200,7 @@ void value_editor_close(value_editor_t * editor) {
         return;
     }
     editor->open = false;
-    lv_obj_add_flag(editor->screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(editor->screen, true);
 
     if (editor->params.closed != NULL) {
         editor->params.closed(editor->value, editor->params.ctx);
@@ -211,7 +213,7 @@ void value_editor_cancel(value_editor_t * editor) {
         return;
     }
     editor->open = false;
-    lv_obj_add_flag(editor->screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(editor->screen, true);
 }
 
 

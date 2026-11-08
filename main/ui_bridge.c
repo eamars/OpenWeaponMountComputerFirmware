@@ -12,12 +12,12 @@
 
 #define TAG "UIBridge"
 
-lv_subject_t ui_wifi_state;
-lv_subject_t ui_wifi_enabled;
-lv_subject_t ui_wifi_expired;
-lv_subject_t ui_wifi_provisioned;
-lv_subject_t ui_battery_level;
-lv_subject_t ui_pmic_status;
+lv_subject_t * ui_wifi_state;
+lv_subject_t * ui_wifi_enabled;
+lv_subject_t * ui_wifi_expired;
+lv_subject_t * ui_wifi_provisioned;
+lv_subject_t * ui_battery_level;
+lv_subject_t * ui_pmic_status;
 
 // The bridge's copy of the PMIC readings, which ui_pmic_status points to; changed only with the LVGL lock held
 static axp2101_status_t ui_pmic_status_copy;
@@ -29,10 +29,10 @@ static void ui_bridge_show_wifi_status() {
     wifi_status_t status = wifi_get_status();
 
     // Each set notifies the bound widgets only when the value changes
-    lv_subject_set_int(&ui_wifi_state, status.state);
-    lv_subject_set_int(&ui_wifi_enabled, status.enabled);
-    lv_subject_set_int(&ui_wifi_expired, status.expired);
-    lv_subject_set_int(&ui_wifi_provisioned, status.provisioned);
+    lv_subject_set_int(ui_wifi_state, status.state);
+    lv_subject_set_int(ui_wifi_enabled, status.enabled);
+    lv_subject_set_int(ui_wifi_expired, status.expired);
+    lv_subject_set_int(ui_wifi_provisioned, status.provisioned);
 }
 
 
@@ -60,10 +60,10 @@ static int32_t ui_bridge_battery_level(const axp2101_status_t * status) {
 static void ui_bridge_show_pmic_status() {
     axp2101_status_t status = pmic_get_status();
 
-    lv_subject_set_int(&ui_battery_level, ui_bridge_battery_level(&status));
+    lv_subject_set_int(ui_battery_level, ui_bridge_battery_level(&status));
     if (memcmp(&status, &ui_pmic_status_copy, sizeof(status)) != 0) {
         ui_pmic_status_copy = status;
-        lv_subject_notify(&ui_pmic_status);  // same pointer, new contents
+        lv_subject_notify(ui_pmic_status);  // same pointer, new contents
     }
 }
 
@@ -85,14 +85,20 @@ static void ui_bridge_pmic_event_handler(void *arg, esp_event_base_t event_base,
 
 void ui_bridge_init() {
     wifi_status_t status = wifi_get_status();
-    lv_subject_init_int(&ui_wifi_state, status.state);
-    lv_subject_init_int(&ui_wifi_enabled, status.enabled);
-    lv_subject_init_int(&ui_wifi_expired, status.expired);
-    lv_subject_init_int(&ui_wifi_provisioned, status.provisioned);
+    ui_wifi_state = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_set_int(ui_wifi_state, status.state);
+    ui_wifi_enabled = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_set_int(ui_wifi_enabled, status.enabled);
+    ui_wifi_expired = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_set_int(ui_wifi_expired, status.expired);
+    ui_wifi_provisioned = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_set_int(ui_wifi_provisioned, status.provisioned);
 
     ui_pmic_status_copy = pmic_get_status();
-    lv_subject_init_int(&ui_battery_level, ui_bridge_battery_level(&ui_pmic_status_copy));
-    lv_subject_init_pointer(&ui_pmic_status, &ui_pmic_status_copy);
+    ui_battery_level = lv_subject_create(LV_SUBJECT_TYPE_INT);
+    lv_subject_set_int(ui_battery_level, ui_bridge_battery_level(&ui_pmic_status_copy));
+    ui_pmic_status = lv_subject_create(LV_SUBJECT_TYPE_POINTER);
+    lv_subject_set_pointer(ui_pmic_status, &ui_pmic_status_copy);
 
     // A change between the reads above and these registrations is still shown: the handlers read the status anew
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_SERVICE_EVENT, ESP_EVENT_ANY_ID, ui_bridge_wifi_event_handler, NULL));

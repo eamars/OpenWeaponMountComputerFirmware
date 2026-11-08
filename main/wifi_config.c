@@ -48,8 +48,8 @@ static void create_provision_qr_code() {
 // a provisioning reset; its data, with the new proof of possession, is set when it is opened), a note otherwise
 // (the page's row is shown only while the code is useful; the note is for a change while the page is open)
 static void wifi_provision_panel_observer_cb(lv_observer_t * observer, lv_subject_t * subject) {
-    bool provisioned = lv_subject_get_int(&ui_wifi_provisioned);
-    bool expired = lv_subject_get_int(&ui_wifi_expired);
+    bool provisioned = lv_subject_get_int(ui_wifi_provisioned);
+    bool expired = lv_subject_get_int(ui_wifi_expired);
 
     if (!provisioned && !expired) {
         if (provision_note) {
@@ -98,13 +98,13 @@ static void open_qr_page(void * ctx) {
 
 
 static void wifi_status_text(char * buf, size_t size, void * ctx) {
-    snprintf(buf, size, "Status: %s", wifi_state_name((wireless_state_e) lv_subject_get_int(&ui_wifi_state)));
+    snprintf(buf, size, "Status: %s", wifi_state_name((wireless_state_e) lv_subject_get_int(ui_wifi_state)));
 }
 
 
 // After the expiry the radio is off, so Wi-Fi shows off; switching it on starts a new Wi-Fi window
 static bool get_wifi_on(void * ctx) {
-    return lv_subject_get_int(&ui_wifi_enabled) && !lv_subject_get_int(&ui_wifi_expired);
+    return lv_subject_get_int(ui_wifi_enabled) && !lv_subject_get_int(ui_wifi_expired);
 }
 
 
@@ -123,17 +123,17 @@ static void forget_network(void * ctx) {
 // Set-up only while the unit waits for its network with the radio on (the set-up network runs); Forget only once
 // it has one. Shown otherwise, each did nothing
 static bool setup_shown(void) {
-    return !lv_subject_get_int(&ui_wifi_provisioned) && get_wifi_on(NULL);
+    return !lv_subject_get_int(ui_wifi_provisioned) && get_wifi_on(NULL);
 }
 
 
 static bool forget_shown(void) {
-    return lv_subject_get_int(&ui_wifi_provisioned);
+    return lv_subject_get_int(ui_wifi_provisioned);
 }
 
 
 void wifi_settings_summary(char * buf, size_t size, void * ctx) {
-    snprintf(buf, size, "%s", wifi_state_name((wireless_state_e) lv_subject_get_int(&ui_wifi_state)));
+    snprintf(buf, size, "%s", wifi_state_name((wireless_state_e) lv_subject_get_int(ui_wifi_state)));
 }
 
 
@@ -143,11 +143,11 @@ settings_page_t * create_wifi_settings_page(void) {
     qr_container = lv_obj_create(settings_page_body(qr_page));
     lv_obj_remove_style_all(qr_container);
     lv_obj_set_size(qr_container, lv_pct(100), lv_pct(100));
-    lv_obj_remove_flag(qr_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(qr_container, false);
     lv_obj_set_flex_flow(qr_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(qr_container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_subject_add_observer_obj(&ui_wifi_provisioned, wifi_provision_panel_observer_cb, qr_container, NULL);
-    lv_subject_add_observer_obj(&ui_wifi_expired, wifi_provision_panel_observer_cb, qr_container, NULL);
+    lv_subject_add_observer_obj(ui_wifi_provisioned, wifi_provision_panel_observer_cb, qr_container, NULL);
+    lv_subject_add_observer_obj(ui_wifi_expired, wifi_provision_panel_observer_cb, qr_container, NULL);
 
     settings_page_t * page = settings_page_create("Wi-Fi");
     settings_row_status(page, wifi_status_text, NULL);

@@ -8,14 +8,14 @@
 // they are created, and are updated in LVGL context from then on. Services never call LVGL.
 
 // Wi-Fi service (wifi.h), all int subjects
-extern lv_subject_t ui_wifi_state;          // wireless_state_e
-extern lv_subject_t ui_wifi_enabled;        // 0 / 1: the user's Wi-Fi setting
-extern lv_subject_t ui_wifi_expired;        // 0 / 1: Wi-Fi is off until the next boot
-extern lv_subject_t ui_wifi_provisioned;    // 0 / 1
+extern lv_subject_t * ui_wifi_state;        // wireless_state_e
+extern lv_subject_t * ui_wifi_enabled;      // 0 / 1: the user's Wi-Fi setting
+extern lv_subject_t * ui_wifi_expired;      // 0 / 1: Wi-Fi is off until the next boot
+extern lv_subject_t * ui_wifi_provisioned;  // 0 / 1
 
 // PMIC service (pmic_axp2101.h)
-extern lv_subject_t ui_battery_level;       // int: 0-100 %, 101 on USB power or before the first reading
-extern lv_subject_t ui_pmic_status;         // pointer to the bridge's copy of axp2101_status_t; notified when
+extern lv_subject_t * ui_battery_level;     // int: 0-100 %, 101 on USB power or before the first reading
+extern lv_subject_t * ui_pmic_status;       // pointer to the bridge's copy of axp2101_status_t; notified when
                                             // a reading changes
 
 /**

@@ -235,7 +235,7 @@ void create_countdown_timer_config_view(lv_obj_t * parent) {
     lv_obj_set_style_pad_all(parent_container, DISPLAY_MARGIN_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_row(parent_container, TIMER_TILE_GAP_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_column(parent_container, TIMER_TILE_GAP_PX, LV_PART_MAIN);
-    lv_obj_remove_flag(parent_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(parent_container, false);
     lv_obj_set_flex_flow(parent_container, LV_FLEX_FLOW_COLUMN);
 
     for (int i = 0; i < TIMER_PRESET_COUNT; i++) {

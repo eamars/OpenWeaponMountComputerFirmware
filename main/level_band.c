@@ -59,21 +59,21 @@ static void update_visibility() {
         return;
     }
     if (timer_shown || current_target >= 0) {
-        lv_obj_remove_flag(band, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(band, false);
     }
     else {
-        lv_obj_add_flag(band, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(band, true);
     }
 
     // The bar keeps its place while hidden, so the dope does not move when the timer comes and goes
     lv_obj_set_style_opa(timer_bar, timer_shown ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
     if (timer_shown) {
-        lv_obj_add_flag(timer_bar, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_flag(time_label, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_clickable(timer_bar, true);
+        lv_obj_set_clickable(time_label, true);
     }
     else {
-        lv_obj_remove_flag(timer_bar, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_remove_flag(time_label, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_clickable(timer_bar, false);
+        lv_obj_set_clickable(time_label, false);
         lv_label_set_text(time_label, "");
     }
 }
@@ -87,7 +87,7 @@ static void show_target() {
     if (current_target < 0) {
         lv_label_set_text(name_label, "");
         lv_label_set_text(info_label, "");
-        lv_obj_add_flag(value_row, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(value_row, true);
         update_visibility();
         return;
     }
@@ -131,7 +131,7 @@ static void show_target() {
         lv_label_set_text(gust_label, "");
     }
 
-    lv_obj_remove_flag(value_row, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(value_row, false);
     update_visibility();
 }
 
@@ -226,7 +226,8 @@ static lv_obj_t * create_row(lv_obj_t * parent) {
     lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
-    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_scrollable(row, false);
+    lv_obj_set_clickable(row, false);
     return row;
 }
 
@@ -250,8 +251,8 @@ void level_band_create(lv_obj_t * overlay, countdown_timer_t * timer) {
     lv_obj_set_style_pad_top(band, BAND_PAD_TOP_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(band, BAND_PAD_BOTTOM_PX, LV_PART_MAIN);
     lv_obj_set_flex_flow(band, LV_FLEX_FLOW_COLUMN);
-    lv_obj_remove_flag(band, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(band, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_scrollable(band, false);
+    lv_obj_set_clickable(band, true);
     lv_obj_add_event_cb(band, band_event_cb, LV_EVENT_SHORT_CLICKED, NULL);
     lv_obj_add_event_cb(band, band_event_cb, LV_EVENT_LONG_PRESSED, NULL);
 
@@ -327,7 +328,7 @@ void level_band_set_rotation(lv_display_rotation_t rotation) {
         lv_obj_set_style_text_font(elevation_label, &font_dope_digits_84, LV_PART_MAIN);
         lv_obj_set_style_text_font(wind_label, &lv_font_montserrat_48, LV_PART_MAIN);
         lv_obj_set_style_pad_row(value_row, 6, LV_PART_MAIN);
-        lv_obj_add_flag(wind_group, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+        lv_obj_set_flex_in_new_track(wind_group, true);
     }
     else {
         // Bar, name and time, then elevation and wind side by side: three rows
@@ -335,6 +336,6 @@ void level_band_set_rotation(lv_display_rotation_t rotation) {
         lv_obj_set_style_text_font(time_label, &lv_font_montserrat_28, LV_PART_MAIN);
         lv_obj_set_style_text_font(elevation_label, &font_dope_digits_64, LV_PART_MAIN);
         lv_obj_set_style_text_font(wind_label, &lv_font_montserrat_40, LV_PART_MAIN);
-        lv_obj_remove_flag(wind_group, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+        lv_obj_set_flex_in_new_track(wind_group, false);
     }
 }

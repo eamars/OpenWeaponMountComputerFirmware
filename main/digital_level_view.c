@@ -68,13 +68,13 @@ static lv_obj_t * hint_label = NULL;
 static lv_timer_t * hint_timer = NULL;
 
 static void hint_timeout_cb(lv_timer_t * timer) {
-    lv_obj_add_flag(hint_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(hint_label, true);
     lv_timer_pause(timer);
 }
 
 static void show_hint(const char * text) {
     lv_label_set_text(hint_label, text);
-    lv_obj_remove_flag(hint_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(hint_label, false);
     lv_obj_move_foreground(hint_label);
     lv_timer_reset(hint_timer);
     lv_timer_resume(hint_timer);
@@ -90,7 +90,7 @@ static void create_hint(lv_obj_t * parent) {
     lv_obj_set_style_pad_ver(hint_label, 10, LV_PART_MAIN);
     lv_obj_set_style_radius(hint_label, 12, LV_PART_MAIN);
     lv_obj_align(hint_label, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_add_flag(hint_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(hint_label, true);
 
     hint_timer = lv_timer_create(hint_timeout_cb, HINT_SHOW_MS, NULL);
     lv_timer_set_auto_delete(hint_timer, false);

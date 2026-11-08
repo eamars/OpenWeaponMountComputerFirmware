@@ -399,7 +399,7 @@ void create_opentrickler_remote_controller_view(lv_obj_t * parent) {
     lv_obj_set_style_arc_color(load_weight_arc, lv_palette_main(LV_PALETTE_INDIGO), LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(load_weight_arc, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
     lv_obj_remove_style(load_weight_arc, NULL, LV_PART_KNOB);   /*Be sure the knob is not displayed*/
-    lv_obj_remove_flag(load_weight_arc, LV_OBJ_FLAG_CLICKABLE);  /*To not allow adjusting by click*/
+    lv_obj_set_clickable(load_weight_arc, false);  /*To not allow adjusting by click*/
     lv_obj_align(load_weight_arc, LV_ALIGN_CENTER, 0, 0);  // put to the middle
     lv_obj_set_size(load_weight_arc, lv_pct(100), lv_pct(100));
 

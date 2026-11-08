@@ -46,15 +46,15 @@ void display_locked_list_snap(lv_obj_t * list, int32_t rows_per_screen) {
     int32_t tail = rows_per_screen - 1;   // shown rows from the end that are no snap points
     for (int32_t i = (int32_t) lv_obj_get_child_count(list) - 1; i >= 0; i--) {
         lv_obj_t * child = lv_obj_get_child(list, i);
-        if (lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
+        if (lv_obj_is_hidden(child)) {
             continue;
         }
         if (tail > 0) {
-            lv_obj_remove_flag(child, LV_OBJ_FLAG_SNAPPABLE);
+            lv_obj_set_snappable(child, false);
             tail--;
         }
         else {
-            lv_obj_add_flag(child, LV_OBJ_FLAG_SNAPPABLE);
+            lv_obj_set_snappable(child, true);
         }
     }
 }
@@ -80,5 +80,5 @@ void display_shape_show_outline(bool show) {
     lv_obj_set_style_border_width(display_outline, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(display_outline, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN);
     lv_obj_set_style_border_opa(display_outline, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_remove_flag(display_outline, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_clickable(display_outline, false);
 }

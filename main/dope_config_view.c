@@ -199,10 +199,10 @@ static void refresh_target(int index) {
 
     if (w->row != NULL) {
         if (index < dope_target_count()) {
-            lv_obj_remove_flag(w->row, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(w->row, false);
         }
         else {
-            lv_obj_add_flag(w->row, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(w->row, true);
         }
         lv_label_set_text(w->letter_label, name);
         if (set && target->range_m > 0) {
@@ -397,13 +397,13 @@ static void open_confirm(int target) {
     else {
         lv_label_set_text(confirm_label, "Clear all targets?");
     }
-    lv_obj_remove_flag(confirm_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(confirm_screen, false);
     lv_obj_move_foreground(confirm_screen);
 }
 
 
 static void close_confirm() {
-    lv_obj_add_flag(confirm_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(confirm_screen, true);
 }
 
 
@@ -460,10 +460,11 @@ static lv_obj_t * create_screen(lv_obj_t * parent) {
 
 static void create_confirm(lv_obj_t * parent) {
     confirm_screen = create_screen(parent);
-    lv_obj_remove_flag(confirm_screen, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_remove_flag(confirm_screen, LV_OBJ_FLAG_SCROLL_CHAIN_HOR | LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-    lv_obj_add_flag(confirm_screen, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_flag(confirm_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_scrollable(confirm_screen, false);
+    lv_obj_set_scroll_chain_hor(confirm_screen, false);
+    lv_obj_set_scroll_chain_ver(confirm_screen, false);
+    lv_obj_set_clickable(confirm_screen, true);
+    lv_obj_set_hidden(confirm_screen, true);
 
     confirm_label = value_editor_create_label(confirm_screen, &lv_font_montserrat_32);
     lv_label_set_long_mode(confirm_label, LV_LABEL_LONG_MODE_WRAP);
@@ -550,10 +551,10 @@ static void kestrel_timer_cb(lv_timer_t * timer) {
         return;
     }
     if (kestrel_settings.mode == KESTREL_MODE_OFF) {
-        lv_obj_add_flag(kestrel_row, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(kestrel_row, true);
     }
     else {
-        lv_obj_remove_flag(kestrel_row, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(kestrel_row, false);
     }
 
     kestrel_status_t s = kestrel_get_status();
@@ -627,8 +628,8 @@ static void create_kestrel_row(lv_obj_t * parent) {
     lv_obj_set_size(kestrel_row, lv_pct(100), DOPE_CELL_PX);  // the rotation sets the locked height
     lv_obj_set_style_pad_row(kestrel_row, DOPE_ROW_INNER_GAP_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_column(kestrel_row, DOPE_TILE_GAP_PX, LV_PART_MAIN);
-    lv_obj_remove_flag(kestrel_row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(kestrel_row, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_scrollable(kestrel_row, false);
+    lv_obj_set_hidden(kestrel_row, true);
 
     kestrel_label = value_editor_create_label(kestrel_row, &lv_font_montserrat_20);
     lv_obj_set_style_text_color(kestrel_label, lv_palette_lighten(LV_PALETTE_GREY, 1), LV_PART_MAIN);
@@ -700,14 +701,14 @@ static void create_target_row(lv_obj_t * parent, int index) {
     lv_obj_set_size(w->row, lv_pct(100), DOPE_CELL_PX);   // the rotation sets the locked height
     lv_obj_set_style_pad_row(w->row, DOPE_ROW_INNER_GAP_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_column(w->row, DOPE_TILE_GAP_PX, LV_PART_MAIN);
-    lv_obj_remove_flag(w->row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(w->row, false);
 
     // The letter and the range; a long press here clears the target, as on the cells
     w->header = lv_obj_create(w->row);
     lv_obj_remove_style_all(w->header);
     lv_obj_set_style_pad_column(w->header, 12, LV_PART_MAIN);
-    lv_obj_remove_flag(w->header, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(w->header, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_scrollable(w->header, false);
+    lv_obj_set_clickable(w->header, true);
     lv_obj_set_user_data(w->header, (void *) (intptr_t) index);
     lv_obj_add_event_cb(w->header, target_long_pressed_cb, LV_EVENT_LONG_PRESSED, NULL);
 

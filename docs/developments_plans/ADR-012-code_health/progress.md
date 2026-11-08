@@ -40,3 +40,24 @@
 
   The LVGL assert warning (587 lines) and the unused-code warnings are gone.
 - **`state_change --min-largest-dma 70000` on COM11:** PASS (`rc_state_change_20261108_225213.log`). The smallest `largest_dma` was 81,920 B, against 77,824 B in ADR-011's runs.
+
+## Step 2: the LVGL 9.6 calls (2026-11-08)
+
+**Built:**
+- **Flag calls (98, in 12 files plus the kept OpenTrickler tile):** `lv_obj_add_flag`, `lv_obj_remove_flag` and `lv_obj_has_flag` became the per-flag setters, `lv_obj_set_<flag>(obj, true/false)` and `lv_obj_is_<flag>(obj)`. Two flags in one call became two setter calls.
+  - This is exactly equivalent: in LVGL 9.6 the old calls are wrappers that call these same setters (`lv_obj.c`).
+  - A script did the rewrite and listed anything it could not map; one call had a `/* */` comment and was done by hand.
+- **The UI bridge's six subjects:** they are created with `lv_subject_create` and set to the services' state straight after, instead of `lv_subject_init_*`. The globals became pointers.
+  - They are created in `ui_bridge_init()`, inside `lvgl_display_init()`. That is before the remote control starts and before any widget binds to them, so nothing reads one before it exists.
+
+**Checks:**
+- **Clean build:** no warning from our code. The 16 left are ESP-IDF's and FreeRTOS's.
+- **On COM11:**
+  - `state_change`: PASS (`rc_state_change_20261108_225858.log`, `largest_dma` at least 81,920 B).
+  - `rotation_sweep`: PASS (`rc_rotation_sweep_20261108_230125.log`, `largest_dma` at least 90,112 B).
+- **Snaps against the baseline, rotation 0:** 10 of the 13 screens are pixel-identical. The other three differ only in:
+  - the version string on About;
+  - the live readings on Power;
+  - the settings hub's scroll position and the Wi-Fi icon, which is live state.
+
+  `rotation_sweep` leaves the unit in rotation 3 (RAM only), so this capture took rotations 3 and 0. Rotation 1 is compared in step 3.

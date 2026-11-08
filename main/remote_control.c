@@ -788,8 +788,8 @@ static bool rc_cmd_pmic(char *reply, size_t reply_size) {
     if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
         return rc_reply(reply, reply_size, false, "@err busy");
     }
-    int32_t icon = lv_subject_get_int(&ui_battery_level);
-    const axp2101_status_t *shown = (const axp2101_status_t *) lv_subject_get_pointer(&ui_pmic_status);
+    int32_t icon = lv_subject_get_int(ui_battery_level);
+    const axp2101_status_t *shown = (const axp2101_status_t *) lv_subject_get_pointer(ui_pmic_status);
     unsigned shown_vbat = shown->vbatt_voltage_mv;
     lvgl_port_unlock();
 

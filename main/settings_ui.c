@@ -120,8 +120,8 @@ Status: Wi-Fi and battery, on every page's header
 */
 
 static void format_status(char * buf, size_t size) {
-    int32_t wifi_state = lv_subject_get_int(&ui_wifi_state);
-    int32_t level = lv_subject_get_int(&ui_battery_level);
+    int32_t wifi_state = lv_subject_get_int(ui_wifi_state);
+    int32_t level = lv_subject_get_int(ui_battery_level);
 
     const char * wifi = "";
     if (wifi_state == WIRELESS_STATE_CONNECTED) {
@@ -179,7 +179,7 @@ static void realign_lists_async(void * p) {
     settings_page_t * page = stack[depth - 1];
     int32_t shown = 0;
     for (uint32_t i = 0; i < lv_obj_get_child_count(page->list); i++) {
-        shown += !lv_obj_has_flag(lv_obj_get_child(page->list, i), LV_OBJ_FLAG_HIDDEN);
+        shown += !lv_obj_is_hidden(lv_obj_get_child(page->list, i));
     }
     int32_t pitch = page->row_h + SET_GAP_PX;
     int32_t content = shown > 0 ? shown * pitch - SET_GAP_PX : 0;
@@ -395,10 +395,10 @@ static void refresh_row(row_t * row) {
         set_label_if_changed(target, text);
         if (row->kind != ROW_STATUS) {
             if (text[0] == '\0') {
-                lv_obj_add_flag(target, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_set_hidden(target, true);
             }
             else {
-                lv_obj_remove_flag(target, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_set_hidden(target, false);
             }
         }
     }
@@ -414,12 +414,12 @@ static bool apply_shown(settings_page_t * page) {
             continue;
         }
         bool want = row->shown();
-        if (want == lv_obj_has_flag(row->button, LV_OBJ_FLAG_HIDDEN)) {
+        if (want == lv_obj_is_hidden(row->button)) {
             if (want) {
-                lv_obj_remove_flag(row->button, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_set_hidden(row->button, false);
             }
             else {
-                lv_obj_add_flag(row->button, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_set_hidden(row->button, true);
             }
             changed = true;
         }
@@ -447,7 +447,7 @@ static void refresh_top(void) {
 
 
 static void refresh_timer_cb(lv_timer_t * timer) {
-    if (!lv_obj_has_flag(root, LV_OBJ_FLAG_HIDDEN)) {
+    if (!lv_obj_is_hidden(root)) {
         refresh_top();
     }
 }
@@ -456,10 +456,10 @@ static void refresh_timer_cb(lv_timer_t * timer) {
 static void show_top(void) {
     for (int i = 0; i < page_count; i++) {
         if (pages[i] == stack[depth - 1]) {
-            lv_obj_remove_flag(pages[i]->obj, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(pages[i]->obj, false);
         }
         else {
-            lv_obj_add_flag(pages[i]->obj, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(pages[i]->obj, true);
         }
     }
     settings_page_t * top = stack[depth - 1];
@@ -577,7 +577,8 @@ static void row_clicked_cb(lv_event_t * e) {
 static lv_obj_t * create_swatch(lv_obj_t * parent) {
     lv_obj_t * swatch = lv_obj_create(parent);
     lv_obj_remove_style_all(swatch);
-    lv_obj_remove_flag(swatch, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_clickable(swatch, false);
+    lv_obj_set_scrollable(swatch, false);
     lv_obj_set_size(swatch, SET_SWATCH_PX, SET_SWATCH_PX);
     lv_obj_set_style_radius(swatch, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(swatch, LV_OPA_COVER, LV_PART_MAIN);
@@ -593,7 +594,8 @@ static row_t * add_row(settings_page_t * page, row_t * row, const char * symbol,
         // Text to read: no panel, so it does not look like a button
         row->button = lv_obj_create(page->list);
         lv_obj_remove_style_all(row->button);
-        lv_obj_remove_flag(row->button, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_clickable(row->button, false);
+        lv_obj_set_scrollable(row->button, false);
         lv_obj_set_width(row->button, lv_pct(100));
         lv_obj_set_style_pad_hor(row->button, SET_ROW_PAD_PX, LV_PART_MAIN);  // in line with the row labels
         lv_obj_set_flex_flow(row->button, LV_FLEX_FLOW_ROW);
@@ -609,7 +611,7 @@ static row_t * add_row(settings_page_t * page, row_t * row, const char * symbol,
     }
 
     row->button = value_editor_create_button(page->list, LV_PALETTE_ORANGE);
-    lv_obj_remove_flag(row->button, LV_OBJ_FLAG_SCROLL_ON_FOCUS);   // the list's position is the grid's
+    lv_obj_set_scroll_on_focus(row->button, false);   // the list's position is the grid's
     lv_obj_set_width(row->button, lv_pct(100));
     lv_obj_set_style_pad_hor(row->button, SET_ROW_PAD_PX, LV_PART_MAIN);
     lv_obj_set_flex_flow(row->button, LV_FLEX_FLOW_ROW);
@@ -625,7 +627,8 @@ static row_t * add_row(settings_page_t * page, row_t * row, const char * symbol,
 
     lv_obj_t * column = lv_obj_create(row->button);
     lv_obj_remove_style_all(column);
-    lv_obj_remove_flag(column, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_clickable(column, false);
+    lv_obj_set_scrollable(column, false);
     lv_obj_set_flex_grow(column, 1);
     lv_obj_set_height(column, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(column, LV_FLEX_FLOW_COLUMN);
@@ -720,7 +723,7 @@ void settings_row_toggle(settings_page_t * page, const char * label, bool (*get)
 
     // The switch only shows the state: the row takes the tap
     row->sw = lv_switch_create(row->button);
-    lv_obj_remove_flag(row->sw, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_clickable(row->sw, false);
     lv_obj_set_size(row->sw, SET_SWITCH_W_PX, SET_SWITCH_H_PX);
     lv_obj_set_style_bg_color(row->sw, lv_palette_darken(LV_PALETTE_GREY, 2), LV_PART_MAIN);
     lv_obj_set_style_bg_color(row->sw, lv_palette_main(LV_PALETTE_ORANGE), LV_PART_INDICATOR | LV_STATE_CHECKED);
@@ -813,7 +816,7 @@ void settings_row_shown_when(settings_page_t * page, bool (*shown)(void)) {
     row_t * row = page->rows[page->row_count - 1];
     row->shown = shown;
     if (!shown()) {
-        lv_obj_add_flag(row->button, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(row->button, true);
     }
 }
 
@@ -864,7 +867,7 @@ static void open_choice(row_t * source) {
 
 
 static void close_confirm(void) {
-    lv_obj_add_flag(confirm_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(confirm_screen, true);
     confirm_row = NULL;
 }
 
@@ -876,7 +879,7 @@ static void open_confirm(row_t * row) {
     lv_obj_set_style_bg_color(confirm_action_button, row->destructive ? lv_palette_darken(LV_PALETTE_RED, 2) :
                               lv_palette_darken(LV_PALETTE_ORANGE, 2), LV_PART_MAIN);
     layout_confirm();
-    lv_obj_remove_flag(confirm_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(confirm_screen, false);
     lv_obj_move_foreground(confirm_screen);
 }
 
@@ -905,9 +908,9 @@ static void create_confirm(void) {
     lv_obj_set_style_pad_all(confirm_screen, DISPLAY_MARGIN_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_row(confirm_screen, SET_GAP_PX, LV_PART_MAIN);
     lv_obj_set_style_pad_column(confirm_screen, SET_GAP_PX, LV_PART_MAIN);
-    lv_obj_remove_flag(confirm_screen, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(confirm_screen, LV_OBJ_FLAG_CLICKABLE);     // nothing behind it takes a tap
-    lv_obj_add_flag(confirm_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_scrollable(confirm_screen, false);
+    lv_obj_set_clickable(confirm_screen, true);     // nothing behind it takes a tap
+    lv_obj_set_hidden(confirm_screen, true);
 
     confirm_label = value_editor_create_label(confirm_screen, &lv_font_montserrat_24);
     lv_label_set_long_mode(confirm_label, LV_LABEL_LONG_MODE_WRAP);
@@ -942,12 +945,13 @@ static settings_page_t * page_create(const char * title, bool with_back) {
     page->obj = lv_obj_create(root);
     lv_obj_remove_style_all(page->obj);
     lv_obj_set_size(page->obj, lv_pct(100), lv_pct(100));
-    lv_obj_remove_flag(page->obj, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(page->obj, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_scrollable(page->obj, false);
+    lv_obj_set_hidden(page->obj, true);
 
     page->header = lv_obj_create(page->obj);
     lv_obj_remove_style_all(page->header);
-    lv_obj_remove_flag(page->header, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_scrollable(page->header, false);
+    lv_obj_set_clickable(page->header, false);
 
     if (with_back) {
         page->back = value_editor_create_button(page->header, LV_PALETTE_ORANGE);
@@ -985,8 +989,8 @@ static settings_page_t * page_create(const char * title, bool with_back) {
 
     page->body = lv_obj_create(page->obj);
     lv_obj_remove_style_all(page->body);
-    lv_obj_remove_flag(page->body, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(page->body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_scrollable(page->body, false);
+    lv_obj_set_hidden(page->body, true);
 
     pages[page_count++] = page;
     return page;
@@ -999,8 +1003,8 @@ settings_page_t * settings_page_create(const char * title) {
 
 
 lv_obj_t * settings_page_body(settings_page_t * page) {
-    lv_obj_add_flag(page->list, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(page->body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(page->list, true);
+    lv_obj_set_hidden(page->body, false);
     return page->body;
 }
 
@@ -1011,15 +1015,15 @@ settings_page_t * settings_ui_create(lv_obj_t * tile) {
     lv_obj_set_size(root, lv_pct(100), lv_pct(100));
     lv_obj_set_style_bg_color(root, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(root, false);
 
     settings_page_t * hub = page_create("Settings", false);
     choice_page = page_create("", true);
     create_confirm();
     editor = value_editor_create(root);
 
-    lv_subject_add_observer_obj(&ui_wifi_state, status_observer_cb, root, NULL);
-    lv_subject_add_observer_obj(&ui_battery_level, status_observer_cb, root, NULL);
+    lv_subject_add_observer_obj(ui_wifi_state, status_observer_cb, root, NULL);
+    lv_subject_add_observer_obj(ui_battery_level, status_observer_cb, root, NULL);
     lv_obj_add_event_cb(root, root_size_changed_cb, LV_EVENT_SIZE_CHANGED, NULL);
     lv_timer_create(refresh_timer_cb, SET_REFRESH_MS, NULL);
 
@@ -1083,7 +1087,7 @@ bool settings_ui_test_row(int index) {
         return false;
     }
     row_t * row = page->rows[index];
-    if (lv_obj_has_flag(row->button, LV_OBJ_FLAG_HIDDEN)) {
+    if (lv_obj_is_hidden(row->button)) {
         return false;       // not on screen
     }
     switch (row->kind) {
@@ -1116,7 +1120,7 @@ bool settings_ui_test_row(int index) {
 
 
 void settings_ui_test_back(void) {
-    if (!lv_obj_has_flag(confirm_screen, LV_OBJ_FLAG_HIDDEN)) {
+    if (!lv_obj_is_hidden(confirm_screen)) {
         close_confirm();
     }
     else if (value_editor_is_open(editor)) {
@@ -1136,7 +1140,7 @@ void settings_ui_test_scroll(int index) {
 
 
 const char * settings_ui_test_title(void) {
-    if (!lv_obj_has_flag(confirm_screen, LV_OBJ_FLAG_HIDDEN)) {
+    if (!lv_obj_is_hidden(confirm_screen)) {
         return "confirm";
     }
     if (value_editor_is_open(editor)) {
