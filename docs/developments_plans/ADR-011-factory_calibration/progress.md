@@ -88,4 +88,8 @@ Cant on the rotation 0 edge, same pose and spot, read with `grav` after the read
 - **The second problem unit, and the owner's own unit:**
   - This firmware deletes their persisted tare at boot and fixes the accelerometer offset, so each needs the routine once.
   - Until then the level uses the uncalibrated frame (about 1° off on COM13).
-- `state_change` and captures of the routine's screens, before closing.
+- Captures of the routine's screens, before closing.
+
+## Checks
+
+- `state_change --min-largest-dma 70000` on COM13 (`rc_state_change_20261108_200156.log`): PASS, `largest_dma` 77,824 B at least. Its tile tour enters and leaves the routine's tile (entered, left; the rotation comes back).
