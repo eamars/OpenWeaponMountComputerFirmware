@@ -22,7 +22,7 @@ How the unit is used, which the low-power design serves (owner, 2026-11-08):
 - The level is in normal use at the stage, and in the moments before it. Between waiting and shooting on the line the unit must not switch itself off; it must be responsive.
 - **Sleeping during shooting must be strictly avoided.**
 - The power key's long hold stays a restart.
-- The cell is a Vapcell T9 (16340, 950 mAh, unprotected, 4.20 V, not below 2.5 V, by the retailers' listings). The termination current was set to the highest because some units charged slowly.
+- The cell is a Vapcell T9 (16340, 950 mAh, unprotected). Vapcell's page (antifake.vapcelltech.com/h-pd-252.html, read 2026-11-08): 950 mAh typical, 820 mAh minimum; 3.60 V nominal; charge to 4.20 V, standard charge 500 mA CC-CV with a 100 mA cut-off, quick charge 1000 mA; discharge to 2.5 V, 3 A continuous; about 65 mΩ. No temperature limits are given. The termination current was set to the highest because some units charged slowly.
 - TS was switched off because TH1 seemed to read a constant temperature, far from right.
 
 Standing rules: performance changes are risky, so they go in one at a time, each proven on the unit before the next. The code around tearing is deliberate (ADR-002). No long soaks; cycle tests of at most 10 minutes. No flash encryption.
@@ -194,7 +194,7 @@ Shown on the unit: boot to first frame from the log.
 ## Still open
 
 - **The earlier BNO085 wake attempt**: what went wrong (woke at once, never woke, lost reports after the wake)? It tells step 2 where to look first.
-- The T9's maximum charge current is not in the retailers' listings; 500 mA (about 0.5 C) is a safe rate for most cells of this size. A Vapcell datasheet would settle it.
+- Settled by Vapcell's page: the firmware's default (500 mA, 4.2 V, 100 mA termination) is the T9's standard charge, and the settings page's highest current, 1000 mA, is its quick charge. The settings page also offers 4.35 V and 4.4 V, above the T9's 4.20 V; on this unprotected cell those overcharge it. Not changed: limiting the choices is the owner's call.
 
 ## Set aside
 
