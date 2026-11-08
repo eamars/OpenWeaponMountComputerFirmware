@@ -1,151 +1,65 @@
-# Open Weapon Mounted Computer
+# Open Weapon Mount Computer
 
-An ESP32-S3 based embedded firmware for precision digital level applications, featuring real-time IMU sensor fusion and touchscreen interface.
+The Open Weapon Mount Computer (OWMC) is a small open-source computer that mounts on a rifle. It is built for precision rifle shooting such as PRS matches: a digital level you read at a glance, a stage timer and a dope card, all on a bright touch screen that works in portrait or landscape.
 
-## Overview
+This repository holds its firmware.
 
-This firmware implements a digital level with integrated shot preparation tools. It uses the Bosch BNO085 inertial measurement unit for real-time sensor fusion, providing instant roll and pitch readings through an LVGL-based touchscreen interface.
+## What it does
 
-## Key Features
+**Digital level**
+- Shows the rifle's cant, and turns the whole screen the level colour when the rifle is level.
+- Three styles to pick from:
+  - Level;
+  - Block;
+  - Chevrons: moving arrows that point the way to turn the rifle, faster the more it cants.
+- A rifle zero sets the level to how the rifle sits.
 
-- **Real-time IMU Sensor Fusion**: Bosch BNO085 providing instant roll/pitch readings via 9-axis sensor fusion
-- **Two Digital Level Styles**: Type 1 (block-level) and Type 2 (alternative layout) interfaces
-- **Recoil Detection**: Automatic linear acceleration monitoring that triggers countdown timer
-- **Countdown Timer**: Auto-starts on recoil, manages shot preparation
-- **DOPE Cards**: Maintains and auto-updates hold-off calculations for long-range shooting
-- **Touchscreen GUI**: LVGL-based interface with tileview navigation and configuration menus
+**Stage timer**
+- A countdown started from the button at the beep.
+- Can also start on the first shot, when that is switched on.
+- Stays awake while it runs, so the screen never goes dark on the line.
 
-## System Architecture
+**Dope card**
+- A card of 10, 12 or 15 targets, with elevation and windage for each.
+- The current target shows on the level view.
+- With a Kestrel weather meter, a single Pull over Bluetooth fills the card from the Kestrel's target card.
 
-The firmware uses a modular architecture with sensor, display, and UI layers:
+**Sensor calibration**
+- A guided routine run once per unit on any flat, firm surface: no level table or compass needed.
+- Stand the unit on its edge, turn it around, then turn it back. Beeps tell you when each placement is taken.
 
-```
-┌─────────────────────────────────────────────────────┐
-│         Touchscreen Display (LVGL + FT3168)          │
-├─────────────────────────────────────────────────────┤
-│     Digital Level View • Timer • DOPE Cards        │
-├─────────────────────────────────────────────────────┤
-│           Sensor Fusion & Processing                │
-├─────────────────────────────────────────────────────┤
-│   BNO085 IMU → Game Rotation Vector → Roll/Pitch    │
-│   Linear Acceleration → Recoil Detection            │
-├─────────────────────────────────────────────────────┤
-│              Communication Interfaces               │
-├─────────────────────────────────────────────────────┤
-│     I²C: BNO085, AXP2101 PMIC, Touch Controller    │
-│     SPI: LCD Display (QSPI, 280×456px)             │
-└─────────────────────────────────────────────────────┘
-                    ↓
-           ESP32-S3 Core with PSRAM
-                    ↓
-        Power Management (AXP2101)
-                    ↓
-          Battery & Low Power Modes
-```
+**Power**
+- Between stages the unit sleeps.
+- It wakes on a touch, the button or picking it up.
+- It switches itself off after a long idle and before the battery runs flat.
 
-### Sensor Integration Layer
+**Updates**
+- New firmware installs over Wi-Fi from a computer on the same network, or over USB.
 
-- Game rotation vector reports for orientation (20ms update rate)
-- Linear acceleration sensor for recoil detection
-- Interrupt-driven data acquisition
-- Stability classification integration
+## Getting the firmware
 
-### Processing Engine
+Each release on the [releases page](https://github.com/eamars/OpenWeaponMountComputerFirmware/releases) has:
+- the firmware;
+- an update package for installing over Wi-Fi;
+- the files for flashing over USB;
+- notes saying what changed and anything to do after updating.
 
-- Continuous coordinate calculation from sensor inputs
-- Roll/pitch angle extraction and display
-- Recoil event detection and timer management
-- DOPÉ card value auto-updates during shots
+The notes are also kept in [docs/releases](docs/releases).
 
-### User Interface
+## The hardware
 
-- LVGL-based touchscreen interface with tileview navigation
-- Multiple functional views with swipe interactions
-- Real-time sensor data visualization
-- Configuration menus with persistent storage
+The unit is built around an ESP32-S3, an AMOLED touch screen, a BNO085 motion sensor and an AXP2101 power manager, and runs on a single 16340 cell. The [technical brief](docs/technical_brief.md) describes the parts, how they are wired and how the sensor sits in the unit.
 
-### Power Management
+## Working on the firmware
 
-- AXP2101 PMIC with interrupt handling
-- Three operational modes: active, idle, sleep
-- Battery voltage monitoring and optimization
-- Display power control based on system state
+The firmware is an ESP-IDF project. Clone it with its submodules (`git clone --recursive`), then build and flash it with `idf.py build` and `idf.py -p <port> flash`. The ESP-IDF version it is built with is the one the [build workflow](.github/workflows/firmware.yml) uses.
 
-## Hardware Requirements
+How the firmware got to where it is, and the reasons behind each design, are in the architecture decision records under [docs/developments_plans](docs/developments_plans/README.md).
 
-### Core Components
-- ESP32-S3 microcontroller with PSRAM (minimum 8MB)
-- Bosch BNO085 IMU sensor module via I²C
-- AXP2101 PMIC sensor module via I²C  
-- TFT LCD display (280×456 pixels) with touchscreen
-- Rechargeable battery
-
-### Pin Connections
-
-#### I²C Interfaces
-| Peripheral | Bus | SDA Pin | SCL Pin |
-|-----------|-----|---------|---------|
-| BNO085 IMU | I2C0 | GPIO40 | GPIO39 |
-| AXP2101 PMIC | I2C0 | GPIO40 | GPIO39 |
-| Touchscreen | I2C1 | GPIO7 | GPIO6 |
-
-#### SPI Interfaces
-| Peripheral | Host | MOSI Pin | MISO Pin | SCLK Pin | CS Pin |
-|-----------|------|----------|----------|----------|--------|
-| Display | SPI2 | GPIO13 | GPIO11 | GPIO12 | GPIO10 |
-
-#### GPIO Connections
-| Function | Pin |
-|----------|-----|
-| BNO085 Interrupt | GPIO5 │
-| BNO085 Boot/Start | GPIO1 │
-| BNO085 Reset | GPIO8 │
-| PMIC Interrupt | GPIO21 │
-| Touchscreen Interrupt | GPIO15 │
-| Touchscreen Reset | GPIO16 │
-| External Button | GPIO0 │
-| Buzzer Output | GPIO47 │
-
-#### Power Management
-| Function | Pin |
-|----------|-----|
-| Display Reset | GPIO17 │
-| Display TE/IRQ | GPIO18 │
-| VSYS Output | 3.3V (from AXP2101) │
-
-## Target Applications
-
-This firmware serves two primary purposes:
-
-**Digital Level Application:**
-- Real-time sensor fusion providing instant roll/pitch corrections
-- Shooters can verify level alignment within degrees during matches
-- Eliminates need for external physical levels
-
-**Competitive Shooting Training Tool:**
-- Integrated countdown timer with auto-start on 'recoil'
-- DOPÉ card management for hold-off calculations
-- Touchscreen interface for rapid configuration changes
-
-## Technology Stack
-
-- **ESP-IDF**: Framework with ESP32-S3 support and PSRAM
-- **LVGL**: Lightweight graphics library with touchscreen support
-- **FreeRTOS**: Real-time operating system with task management
-- **BNO085 Sensor Library**: SH2 sensor fusion stack
-- **XPowersLib**: AXP2101 power management interface
-
-## Project Structure
-
-The firmware includes these major modules:
-
-| Module | Purpose |
-|-------|---------|
-| Digital Level View | Primary sensor display with roll/pitch indicators |
-| Countdown Timer | Shot preparation and timing |
-| DOPE Cards | Maintains range/angle calculations |
-| Sensor Calibration | Aligns sensor to physical level |
-| Configuration | UI menus for system settings |
+Tools:
+- `scripts/ota_host.py` serves an update to units on the local network.
+- `tools/remote_control/rc_run.py` drives a unit over USB for tests on the device.
 
 ## License
-GPLv3
+
+GPLv3. See [LICENSE](LICENSE).

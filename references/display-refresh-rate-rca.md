@@ -1,5 +1,7 @@
 # Display Refresh Rate RCA Notes
 
+> A record of the investigation in June 2026. ADR-001 and ADR-002 acted on it, so the code, memory layout and open items it calls current are as they were then, not as the firmware is now. It stays because ADR-001 cites it.
+
 ## Scope
 
 This reference records the root-cause candidates investigated for slow display response on the ESP32-S3 firmware using an SH8601 QSPI display, LVGL, and `esp_lcd`.

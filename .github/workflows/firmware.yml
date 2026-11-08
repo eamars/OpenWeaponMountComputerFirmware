@@ -1,0 +1,108 @@
+# Builds the firmware on every push to main and every pull request, and keeps the release files as a download.
+# A version tag (v*) also creates a draft release from docs/releases/<tag>.md; it is published by hand after the
+# update has been tried on a unit (docs/releases/README.md).
+name: Firmware
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # The ESP-IDF this project is built with
+    container: espressif/idf:v6.1
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0  # the version comes from git describe, which needs the history and tags
+
+      - name: Build
+        run: |
+          # The checkout belongs to another user in the container; without this git refuses it and the version is lost
+          git config --global --add safe.directory '*'
+          . "$IDF_PATH/export.sh"
+          idf.py build
+
+      - name: Check the version
+        id: version
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('build/project_description.json'))['project_version'])")
+          echo "Firmware version: $version"
+          # A build that changes tracked files (a re-resolved dependencies.lock) gives a -dirty version
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            git status --short --untracked-files=no
+            echo "::error::The build changed tracked files"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            if [ "$version" != "$GITHUB_REF_NAME" ]; then
+              echo "::error::The firmware reports $version, not the tag $GITHUB_REF_NAME"
+              exit 1
+            fi
+            for notes in "docs/releases/$version.md" "docs/releases/${version}_note.txt"; do
+              [ -f "$notes" ] || { echo "::error::$notes is missing"; exit 1; }
+            done
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          . "$IDF_PATH/export.sh"
+          pip install --quiet zeroconf  # scripts/ota_host.py imports it
+          mkdir dist
+          name="OpenWeaponMountComputerFirmware-$VERSION"
+          cp build/OpenWeaponMountComputerFirmware.bin "dist/$name.bin"
+          cp build/bootloader/bootloader.bin build/partition_table/partition-table.bin build/ota_data_initial.bin dist/
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            python scripts/ota_host.py --note-file "docs/releases/${VERSION}_note.txt" --write-package "dist/$name-ota.zip"
+          else
+            python scripts/ota_host.py --note "Build $VERSION." --write-package "dist/$name-ota.zip"
+          fi
+          cd dist
+          sha256sum "$name.bin" "$name-ota.zip" bootloader.bin partition-table.bin ota_data_initial.bin > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ steps.version.outputs.version }}
+          path: dist/
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The notes without their title (the release has its own), with links into the repo pinned to the tag
+          tail -n +2 "docs/releases/$TAG.md" | sed -e '1{/^$/d}' \
+            -e "s#](\.\./#](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/docs/#g" > body.md
+          printf '\nSHA-256:\n\n```\n%s\n```\n' "$(cat dist/SHA256SUMS)" >> body.md
+          gh release create "$TAG" --draft --verify-tag --title "Firmware $TAG" --notes-file body.md \
+            dist/*.bin dist/*.zip
