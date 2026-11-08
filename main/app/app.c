@@ -1,0 +1,252 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "freertos/event_groups.h"
+
+#include "esp_check.h"
+#include "esp_err.h"
+#include "esp_pm.h"
+#include "esp_sleep.h"
+
+#include "driver/i2c_master.h"
+
+#include "nvs_flash.h"
+
+#include "app.h"
+#include "sensor_frame.h"
+#include "digital_level_view.h"
+#include "timer_view.h"
+#include "dope_view.h"
+#include "kestrel_service.h"
+#include "main_tileview.h"
+#include "app_cfg.h"
+#include "bno085.h"
+#include "system_config.h"
+#include "sensor_config.h"
+#include "bsp.h"
+#include "wifi.h"
+#include "wifi_provision.h"
+#include "pmic_axp2101.h"
+#include "buzzer.h"
+#include "lvgl_display.h"
+#include "low_power_mode.h"
+#include "mem_diag.h"
+#include "crash_report.h"
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
+#include "remote_control.h"
+#include "rc_serial.h"
+
+#define TAG "App"
+
+
+bno085_ctx_t * bno085_dev;
+axp2101_ctx_t * axp2101_dev;
+
+
+i2c_master_bus_handle_t i2c0_master_init() {
+    i2c_master_bus_handle_t i2c_bus_handle;
+    i2c_master_bus_config_t i2c_mst_config = {};
+    i2c_mst_config.clk_source = I2C_CLK_SRC_DEFAULT;
+    i2c_mst_config.i2c_port = (i2c_port_num_t) I2C0_PORT_NUM;
+    i2c_mst_config.scl_io_num = I2C0_MASTER_SCL;
+    i2c_mst_config.sda_io_num = I2C0_MASTER_SDA;
+    i2c_mst_config.glitch_ignore_cnt = 7;
+    i2c_mst_config.flags.enable_internal_pullup = 1;
+
+    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &i2c_bus_handle));
+    return i2c_bus_handle;
+}
+
+i2c_master_bus_handle_t i2c1_master_init() {
+    i2c_master_bus_handle_t i2c_bus_handle;
+    i2c_master_bus_config_t i2c_mst_config = {};
+    i2c_mst_config.clk_source = I2C_CLK_SRC_DEFAULT;
+    i2c_mst_config.i2c_port = (i2c_port_num_t) I2C1_PORT_NUM;
+    i2c_mst_config.scl_io_num = I2C1_MASTER_SCL;
+    i2c_mst_config.sda_io_num = I2C1_MASTER_SDA;
+    i2c_mst_config.glitch_ignore_cnt = 7;
+    i2c_mst_config.flags.enable_internal_pullup = 1;
+
+    ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &i2c_bus_handle));
+    return i2c_bus_handle;
+}
+
+
+esp_err_t storage_init() {
+    mem_diag_log_checkpoint("nvs_init begin");
+
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was truncated and needs to be erased
+        mem_diag_log_checkpoint("nvs_erase begin");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        mem_diag_log_checkpoint("nvs_erase end");
+        ret = nvs_flash_init();
+    }
+
+    mem_diag_log_checkpoint("nvs_init end");
+
+    return ret;
+}
+
+void app_main(void)
+{
+    esp_err_t ret;
+
+    // Report failed allocations and the previous reset before anything else runs
+    mem_diag_install_alloc_failure_hook();
+
+    // Buffer the USB Serial/JTAG console. Without the driver a host pause of over 50 ms drops output.
+    usb_serial_jtag_driver_config_t console_cfg = {
+        .tx_buffer_size = CONSOLE_TX_BUFFER_SIZE,
+        .rx_buffer_size = CONSOLE_RX_BUFFER_SIZE,
+    };
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&console_cfg));
+    usb_serial_jtag_vfs_use_driver();
+
+    crash_report_log_last_reset();
+
+    // Start event loop
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+    // Low-power state first: the PMIC's power key and the remote control ask whether the unit is idle
+    ESP_ERROR_CHECK(low_power_mode_init());
+
+    // Install interrupt service (so each module don't need to run again)
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+
+    //Initialize NVS storage
+    ESP_ERROR_CHECK(storage_init());
+
+    // Read system configurations
+    ESP_ERROR_CHECK(load_system_config());
+
+    // Configure global log level
+    esp_log_level_set("*", system_config.global_log_level);
+
+    // Read before the UI is created: the System page's Remote control switch shows this flag
+    ESP_ERROR_CHECK(load_remote_control_config());
+
+    ESP_ERROR_CHECK(load_sensor_config());
+
+#if USE_BNO085
+    // Read before the UI is created: the level view and the level's settings page both show these, so neither
+    // has to be created first (ADR-005 step 3)
+    ESP_ERROR_CHECK(load_digital_level_view_config());
+
+    // The timer tile and the Timer settings page both show these (ADR-006)
+    ESP_ERROR_CHECK(load_countdown_timer_config());
+
+    // The dope tile and the level's dope strip both show the card and name its targets (ADR-007)
+    ESP_ERROR_CHECK(load_dope_config());
+    ESP_ERROR_CHECK(load_dope_settings());
+
+    // The Kestrel page and the pull (ADR-007)
+    ESP_ERROR_CHECK(load_kestrel_settings());
+#endif  // USE_BNO085
+
+    // Set buzzer
+    ESP_ERROR_CHECK(buzzer_init());
+
+    // Initialize I2C
+    i2c_master_bus_handle_t i2c0_bus_handle;
+    i2c_master_bus_handle_t i2c1_bus_handle;
+
+    // Initialize shared I2C bus
+    i2c0_bus_handle = i2c0_master_init();
+    i2c1_bus_handle = i2c1_master_init();
+
+#if USE_PMIC
+    // Initialize PMIC
+    axp2101_dev = heap_caps_malloc(sizeof(axp2101_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+    ESP_ERROR_CHECK(axp2101_init(axp2101_dev, i2c0_bus_handle, PMIC_AXP2101_INT_PIN));
+
+    ESP_LOGI(TAG, "PMIC AXP2101 initialized");
+
+#endif  // USE_PMIC
+
+
+#if USE_BNO085
+    // Initialize BNO085 sensor
+    bno085_i2c_ctx_t * bno085_i2c_dev = heap_caps_malloc(sizeof(bno085_i2c_ctx_t), HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);    
+    if (bno085_i2c_dev == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for BNO085 I2C device");
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
+    memset(bno085_i2c_dev, 0, sizeof(bno085_i2c_ctx_t));
+    ESP_ERROR_CHECK(bno085_init_i2c(bno085_i2c_dev, i2c1_bus_handle, BNO085_INT_PIN, BNO085_RESET_PIN, BNO085_BOOT_PIN));
+    bno085_dev = (bno085_ctx_t *) bno085_i2c_dev;
+
+    // The factory calibration, and no old tare left in the sensor (ADR-011)
+    ESP_ERROR_CHECK_WITHOUT_ABORT(sensor_frame_init(bno085_dev));
+#endif  // USE_BNO085
+
+    // Initialize WiFi before the display: the Wi-Fi service needs no UI; the UI reads its state through the
+    // UI bridge whenever it is created (ADR-005 step 3)
+    ESP_ERROR_CHECK(wifi_init());
+
+#if USE_BNO085
+    // The Kestrel pull's task; Bluetooth stays off until a pull (ADR-007)
+    ESP_ERROR_CHECK(kestrel_service_init());
+#endif  // USE_BNO085
+
+    // Initialize Display
+    ESP_ERROR_CHECK(lvgl_display_init(i2c0_bus_handle));
+
+    // Idle and sleep timeouts, once the display they blank and the touch that wakes it exist
+    ESP_ERROR_CHECK(low_power_mode_start());
+
+    // Remote control driver (virtual pointer for scripted taps and swipes)
+    ESP_ERROR_CHECK(remote_control_init());
+
+    // Serial remote control on the console, when enabled in System settings
+    if (remote_control_config.serial_enable) {
+        ret = rc_serial_start();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to start serial remote control: %s", esp_err_to_name(ret));
+        }
+    }
+
+    // Print task stack headroom periodically (verification builds only)
+    mem_diag_start_stack_report();
+
+    // Enable ESP32 power management module (automatically adjust CPU frequency based on RTOS scheduler)
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 240,
+        .min_freq_mhz = 80,
+        .light_sleep_enable = false  // do not automatically enter light sleep, we will handle it in the low power mode task
+    };
+    ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
+
+    // Beep the buzzer to indicate the success of initialization
+    buzzer_run(100, 50, 2, false);
+}
+
+
+/**
+ * Moves LVGL memory to PSRAM
+ */
+
+void lv_mem_init(void) {
+    // do nothing
+}
+
+void lv_mem_deinit(void) {
+    // do nothing
+}
+
+void *lv_malloc_core(size_t size) {
+    return heap_caps_malloc(size, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+}
+
+void *lv_realloc_core(void *p, size_t new_size) {
+    return heap_caps_realloc(p, new_size, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+}
+
+void lv_free_core(void *p) {
+    heap_caps_free(p);
+}
+

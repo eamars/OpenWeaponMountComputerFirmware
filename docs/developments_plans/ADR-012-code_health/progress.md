@@ -88,3 +88,58 @@
   - paused: the bar turned grey at once, through the new callback path, and stayed at 0:57 two seconds later;
   - disarmed: the timer hidden.
 - **Snaps against the baseline, rotation 0 and 1:** every page is pixel-identical except About (version) and Power (live readings). The level tile differs in the live tilt and the settings hub in its scroll position. The Power page shows the stored timeouts after the reboot, now loaded from `pmic_settings.c`.
+
+## Step 4: layout and names (2026-11-08)
+
+**Built.** `main/` is now in folders by role, moved with `git mv` so `git log --follow` keeps each file's history:
+
+| Folder | What | Files |
+|---|---|---|
+| `app/` | Start-up and wiring, the app's build settings | `app`, `app_cfg.h` |
+| `board/` | Bring-up of the board: panel, touch, LVGL port, flush; pins and panel in `board_cfg.h` | `bsp`, `lvgl_display`, `display_flush`, `board_cfg.h` |
+| `common/` | Helpers with no UI: settings storage, CRC, memory diagnostics | `common`, `circular_buffer`, `mem_diag` |
+| `services/` | Own their state and task; no UI (two recorded exceptions, below) | `wifi`, `wifi_provision`, `pmic_axp2101`, `pmic_settings`, `kestrel_service`, `buzzer`, `sensor_frame`, `countdown_timer`, `low_power_mode`, `ota_mode` |
+| `ui/core/` | The tile view, settings pages, value editor, corners, UI bridge | `main_tileview`, `settings_ui`, `value_editor`, `display_shape`, `ui_bridge` |
+| `ui/views/` | The tiles | the level view and its styles, `level_band`, `timer_view`, `dope_view`, `sensor_calibration_view`; kept, disabled: `point_of_aim_view`, `acceleration_analysis_view`, `opentrickler_remote_controller_view` |
+| `ui/settings/` | The settings pages | `settings_hub`, `about_page`, `wifi_page`, `power_page`, `kestrel_page`, `system_config`, `sensor_config` |
+| `tools/` | Device tests and diagnostics | `remote_control`, `rc_serial`, `crash_report` |
+| `fonts/` | Generated fonts | `font_dope_digits*` |
+
+**Renamed, where the name hid the role:**
+
+| Old | New |
+|---|---|
+| `config_view` | `settings_hub` |
+| `about_config` | `about_page` |
+| `wifi_config` | `wifi_page` |
+| `pmic_config` | `power_page` |
+| `kestrel_config_view` | `kestrel_page` |
+| `countdown_timer_config_view` | `timer_view` |
+| `dope_config_view` | `dope_view` |
+
+Their includes, guards and comments followed. Function names did not change.
+
+**Other changes:**
+- **`app_cfg.h` split:**
+  - `board/board_cfg.h` has the buses, pins, the panel and the chips;
+  - `app_cfg.h` keeps memory placement, the parts fitted (`USE_*`), task sizes and periods, and profiling, and includes `board_cfg.h`, so no includer changed.
+- **`main/CMakeLists.txt`:** lists the folders as include directories. The source glob is recursive; a new file needs `idf.py reconfigure`, because ESP-IDF reads component files in script mode, where `CONFIGURE_DEPENDS` is refused.
+- **`main_tileview_jump_to(tile)`** replaces the "set the tile, send the change event, remember where we were" code written three times (OTA install, Sensor calibration in and out).
+- **Leftover includes:** `system_config.h` and `sensor_config.h` in the timer and low power services, and `main_tileview.h` in low power. Nothing in those files used them.
+
+**Exceptions to the rule:**
+- **`low_power_mode` calls the display:** it is the display's power switch, accepted in ADR-005.
+- **`ota_mode` is the update service and its own screens** (tile, offer, prompt) in one file of about 1,050 lines. Splitting it into a service and a view is its own change to the update path, so it is left for a later ADR.
+
+A script checks the rule: no other file in `services/` includes a header from `ui/`, `tools/` or `board/`.
+
+**Checks:**
+- Clean build: no warning from our code.
+- **`state_change` on COM11:** PASS (`rc_state_change_20261108_232808.log`, `largest_dma` at least 81,920 B).
+- **A real update, end to end**, from `scripts/ota_host.py --force` serving this build:
+  - "Update available", then the offer with the build's note;
+  - Install, which jumps to the update tile through the new helper;
+  - "Update installed", 2,390 K of 2,390 K, then Restart;
+  - About: "Running ota_1".
+- **Sensor calibration through the helper:** Advanced, Sensor calibration (tile 0,2, its first screen, "Calibrated, offset -2.1°"); Cancel goes back to the settings tile (3,1).
+- **Snaps against the baseline, rotation 0 and 1:** every page is pixel-identical except About (version) and Power (live readings). The settings hub differs in its scroll position and in an "Update available" row: the unit had restarted while the forced test host still ran.

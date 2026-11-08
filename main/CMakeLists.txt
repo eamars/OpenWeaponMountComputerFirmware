@@ -1,4 +1,7 @@
-file(GLOB_RECURSE SRC_FILES "*.c" "*.cpp")
+# Sources by role (AGENTS.md): app wiring, board bring-up, shared helpers, services (no UI), the UI (its core,
+# the tiles, the settings pages), test and diagnostic tools, generated fonts
+file(GLOB_RECURSE SRC_FILES "*.c" "*.cpp")  # a new file needs `idf.py reconfigure`
+set(MAIN_INCLUDE_DIRS app board common services ui/core ui/views ui/settings tools fonts)
 
 set(ALL_DEPS
     # Base requirements
@@ -55,5 +58,5 @@ set(ALL_DEPS
 
 idf_component_register(
     SRCS ${SRC_FILES}
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS ${MAIN_INCLUDE_DIRS}
     REQUIRES ${ALL_DEPS})
