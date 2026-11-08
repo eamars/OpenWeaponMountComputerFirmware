@@ -1,4 +1,7 @@
 #include "digital_level_view_type_2.h"
+
+#include <math.h>
+
 #include "esp_macros.h"
 #include "digital_level_view.h"
 #include "system_config.h"
@@ -76,34 +79,35 @@ void delete_digital_level_view_type_2(lv_obj_t *container) {
 
 void update_digital_level_view_type_2(float roll_rad, float pitch_rad) {
     ESP_UNUSED(pitch_rad);
-    float roll_deg = RAD_TO_DEG(roll_rad);
+    const float roll_deg = RAD_TO_DEG(roll_rad);
+    const float threshold_deg = digital_level_view_config.delta_level_threshold;
     lv_obj_set_style_bg_color(digital_level_view_type_2_context.container, lv_palette_main(digital_level_view_config.colour_foreground), 0);
 
-    if (roll_deg < -3 * digital_level_view_config.delta_level_threshold) {
-        lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_left_tilt_indicator), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
-    }
-    else if (roll_deg < -2 * digital_level_view_config.delta_level_threshold) {
-        lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_left_tilt_indicator), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_left_tilt_indicator), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
-    }
-    else if (roll_deg > -1 * digital_level_view_config.delta_level_threshold && roll_deg < 1 * digital_level_view_config.delta_level_threshold) {
-        lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_horizontal_level_indicator), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
+    // Every angle sets all three blocks. Level within the threshold, as the other styles; beyond it the centre and
+    // the side block show the tilt colour, and past three thresholds the side block alone. The same on both sides
+    lv_palette_t left = digital_level_view_config.colour_foreground;
+    lv_palette_t center = digital_level_view_config.colour_foreground;
+    lv_palette_t right = digital_level_view_config.colour_foreground;
 
+    if (fabsf(roll_deg) <= threshold_deg) {
+        center = digital_level_view_config.colour_horizontal_level_indicator;
     }
-    else if (roll_deg > 5 * digital_level_view_config.delta_level_threshold) {
-        lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_right_tilt_indicator), LV_PART_MAIN);
+    else {
+        const bool left_tilt = roll_deg < 0;
+        const lv_palette_t tilt = left_tilt ? digital_level_view_config.colour_left_tilt_indicator :
+                                              digital_level_view_config.colour_right_tilt_indicator;
+        if (left_tilt) {
+            left = tilt;
+        }
+        else {
+            right = tilt;
+        }
+        if (fabsf(roll_deg) <= 3 * threshold_deg) {
+            center = tilt;
+        }
+    }
 
-    }
-    else if (roll_deg > 2 * digital_level_view_config.delta_level_threshold) {
-        lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(digital_level_view_config.colour_foreground), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(digital_level_view_config.colour_right_tilt_indicator), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(digital_level_view_config.colour_right_tilt_indicator), LV_PART_MAIN);
-    }
+    lv_obj_set_style_bg_color(left_tilt_led, lv_palette_main(left), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(center_tilt_led, lv_palette_main(center), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(right_tilt_led, lv_palette_main(right), LV_PART_MAIN);
 }
