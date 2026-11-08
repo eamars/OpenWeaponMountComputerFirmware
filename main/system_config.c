@@ -63,7 +63,7 @@ static void apply_remote_control_config() {
 
 
 static void apply_brightness(void) {
-    if (!is_idle_mode_activated() && !is_sleep_mode_activated()) {
+    if (!is_idle_mode_activated()) {
         set_display_brightness(&io_handle, system_config.screen_brightness_normal_pct);
     }
 }

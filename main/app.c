@@ -46,27 +46,6 @@ bno085_ctx_t * bno085_dev;
 axp2101_ctx_t * axp2101_dev;
 
 
-void mem_monitor_task(void *pvParameters) {
-    while (1) {
-        // Heap info
-        size_t free_heap = esp_get_free_heap_size();
-        size_t min_free_heap = esp_get_minimum_free_heap_size();
-
-        ESP_LOGI(TAG, "Free heap: %u kbytes | Min free heap: %u kbytes",
-                (unsigned)free_heap / 1024, (unsigned)min_free_heap / 1024);
-
-        // Optional: Internal RAM only
-        ESP_LOGI(TAG, "Free internal heap: %u kbytes",
-                (unsigned)esp_get_free_internal_heap_size() / 1024);
-
-        ESP_LOGI(TAG, "Wakeup cause: %" PRIu32, wakeup_cause);
-
-
-        ESP_LOGI(TAG, "---------------------------");
-        vTaskDelay(pdMS_TO_TICKS(2000)); // Every 2 seconds
-    }
-}
-
 i2c_master_bus_handle_t i2c0_master_init() {
     i2c_master_bus_handle_t i2c_bus_handle;
     i2c_master_bus_config_t i2c_mst_config = {};
@@ -129,9 +108,6 @@ void app_main(void)
     usb_serial_jtag_vfs_use_driver();
 
     crash_report_log_last_reset();
-
-    // Create task to monitor memory usage
-    // xTaskCreate(mem_monitor_task, "mem_monitor_task", 4096, NULL, 3, NULL);
 
     // Start event loop
     ESP_ERROR_CHECK(esp_event_loop_create_default());

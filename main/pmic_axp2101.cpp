@@ -632,7 +632,6 @@ esp_err_t axp2101_deinit(axp2101_ctx_t *ctx) {
     ESP_LOGI(TAG, "Event group deleted");
 
     // FIXME: Don't free the CTX for now. 
-    // heap_caps_free(ctx);
 
     // Remove I2C device from master bus
     PMU.deinit();

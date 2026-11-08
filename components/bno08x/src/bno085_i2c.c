@@ -134,11 +134,6 @@ int bno085_hal_i2c_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
         return 0;
     }
 
-    // ESP_LOGI(TAG, "i2c_write() write %d bytes", len);
-    // for (int i = 0; i < len; i++) {
-    //     printf("%02x ", pBuffer[i]);
-    // }
-    // printf("\n");
 
     return len;
 }

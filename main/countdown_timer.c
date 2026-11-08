@@ -171,7 +171,6 @@ LVGL Widgets and Callbacks
 void countdown_timer_button_press_event_cb(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
     countdown_timer_t * countdown_timer = (countdown_timer_t *) lv_event_get_user_data(e);
-    lv_obj_t * button = lv_event_get_target(e);
 
     // Skip if the button is not visible
     if (!get_countdown_timer_widget_enabled()) {

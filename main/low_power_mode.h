@@ -21,12 +21,10 @@ esp_err_t low_power_mode_init();
 esp_err_t low_power_mode_start();
 
 /** @brief The black tile shown while idle. LVGL lock held. */
-void create_low_power_mode_view(lv_obj_t *parent);
 
 void update_low_power_mode_last_activity_event();
 
 bool is_idle_mode_activated();
-bool is_sleep_mode_activated();
 
 void prevent_idle_mode_enter(bool prevent);
 void prevent_sleep_mode_enter(bool prevent);
@@ -81,9 +79,6 @@ void low_power_mode_set_usb_power(bool present);
 
 /** @brief Copy the light-sleep statistics. Any task. */
 void low_power_mode_get_sleep_stats(low_power_sleep_stats_t *out);
-
-// Shared state, defined in low_power_mode.c
-extern uint32_t wakeup_cause;
 
 #ifdef __cplusplus
 }

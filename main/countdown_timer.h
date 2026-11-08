@@ -48,7 +48,6 @@ void countdown_timer_continue(countdown_timer_t *ctx);
 void countdown_timer_update_time(countdown_timer_t *ctx, int new_time_ms);
 
 countdown_timer_state_t get_countdown_timer_state(countdown_timer_t *ctx);
-// void set_countdown_timer_state(countdown_timer_t *ctx, countdown_timer_state_t new_state);
 
 /** @brief Start the timer's task; the level view's band shows it (level_band.c) */
 void countdown_timer_setup(countdown_timer_t * countdown_timer);

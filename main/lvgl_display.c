@@ -393,7 +393,6 @@ esp_err_t lvgl_display_init(i2c_master_bus_handle_t tp_i2c_handle) {
 
     // Add display to LVGL
     lv_display_t *lvgl_disp = NULL;
-    // lv_indev_t *lvgl_touch_indev = NULL;
     if (lvgl_port_lock(0)) {
         lvgl_disp = display_flush_create(io_handle, panel_handle);
         lvgl_port_unlock();

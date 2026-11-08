@@ -25,7 +25,6 @@
 #define I2C1_MASTER_SCL (GPIO_NUM_6)
 
 // Define QSPI for display
-#define USE_LCD_SH8601 1  // Use SH8601 LCD module
 #define LCD_QSPI_HOST            (SPI2_HOST)
 #define LCD_CS                   (GPIO_NUM_10)
 #define LCD_PCLK                 (GPIO_NUM_12) 
@@ -37,29 +36,26 @@
 #define LCD_TE_OUT               (GPIO_NUM_18)
 #define LCD_QSPI_MAX_TRANSFER_SIZE 4091
 
-#if USE_LCD_SH8601
-    #if CONFIG_LV_COLOR_DEPTH == 32
-        #define LCD_BIT_PER_PIXEL       (24)
-    #elif CONFIG_LV_COLOR_DEPTH == 16
-        #define LCD_BIT_PER_PIXEL       (16)
-    #endif  // CONFIG_LV_COLOR_DEPTH
+#if CONFIG_LV_COLOR_DEPTH == 32
+    #define LCD_BIT_PER_PIXEL       (24)
+#elif CONFIG_LV_COLOR_DEPTH == 16
+    #define LCD_BIT_PER_PIXEL       (16)
+#endif  // CONFIG_LV_COLOR_DEPTH
 
-    #define DISP_H_RES_PIXEL (280)
-    #define DISP_V_RES_PIXEL (456)
+#define DISP_H_RES_PIXEL (280)
+#define DISP_V_RES_PIXEL (456)
 
-    // The pixel area's corners are rounded: R2.30 mm at 0.078 mm a pixel (DO0164FMST05 datasheet, page 6; ADR-006)
-    #define DISP_CORNER_RADIUS_PX (30)
+// The pixel area's corners are rounded: R2.30 mm at 0.078 mm a pixel (DO0164FMST05 datasheet, page 6; ADR-006)
+#define DISP_CORNER_RADIUS_PX (30)
 
-    #define DISP_PANEL_H_GAP (20) // Horizontal gap for display panel
-    #define DISP_PANEL_V_GAP (0)  // Vertical gap for display panel
+#define DISP_PANEL_H_GAP (20) // Horizontal gap for display panel
+#define DISP_PANEL_V_GAP (0)  // Vertical gap for display panel
 
-    #define DISP_ROTATION (0) // 0: 0 degrees, 1: 90 degrees, 2: 180 degrees, 3: 270 degrees
+#define DISP_ROTATION (0) // 0: 0 degrees, 1: 90 degrees, 2: 180 degrees, 3: 270 degrees
 
-#endif  // USE_LCD_SH8601
 
 
 // Touchscreen
-#define USE_TOUCH_FT3168 1 // Use FT3168 touch controller
 #define TOUCHSCREEN_INT_PIN      (GPIO_NUM_15)
 #define TOUCHSCREEN_RST_PIN      (GPIO_NUM_16)
 #define I2C_ADDR_FT3168          0x38
@@ -73,7 +69,6 @@
 //Buzzer
 #define USE_BUZZER 1
 #define BUZZER_OUT_PIN           (GPIO_NUM_47)
-#define BUZZER_LEDC_DRIVER       (LEDC_TIMER_0)
 #define BUZZER_TIMER             (LEDC_TIMER_0)
 #define BUZZER_CHANNEL           (LEDC_CHANNEL_0)
 
@@ -81,7 +76,6 @@
 // AXP2101 power management
 #define USE_PMIC 1
 #define XPOWERS_CHIP_AXP2101
-#define I2C_ADDR_AXP2101         0x34
 #define PMIC_AXP2101_INT_PIN     (GPIO_NUM_21)
 
 // Physical button
@@ -96,11 +90,8 @@
 #define ACCELERATION_EVENT_POLLER_TASK_PRIORITY 4
 
 #define SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS 20
-#define SENSOR_GAME_ROTATION_VECTOR_LOW_POWER_MODE_REPORT_PERIOD_MS 0
 #define SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS 50
-#define SENSOR_LINEAR_ACCELERATION_LOW_POWER_MODE_REPORT_PERIOD_MS 0
 
-#define DIGITAL_LEVEL_VIEW_DISPLAY_UPDATE_PERIOD_MS 20
 
 #define LOW_POWER_MODE_MONITOR_TASK_STACK 4096
 #define LOW_POWER_MODE_MONITOR_TASK_PRIORITY 3

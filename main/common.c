@@ -89,7 +89,6 @@ esp_err_t load_config_grown(const char *ns, void *cfg, const void *default_cfg, 
         return save_config(ns, cfg, size);
     }
     else {
-        // memcpy(cfg, default_cfg, size);
         // if ret != ESP_OK then we cannot handle the error
         heap_caps_free(buf);
         ESP_LOGE(TAG, "NS: %s, Failed to read NVS blob: %s", ns, esp_err_to_name(ret));

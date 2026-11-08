@@ -15,10 +15,6 @@
 
 
 
-static lv_obj_t * horizontal_indicator_line_left = NULL;
-static lv_obj_t * horizontal_indicator_line_right = NULL;
-static lv_obj_t * digital_level_bg_canvas = NULL;
-
 static float roll_rad_local = 0;
 static float pitch_rad_local = 0;
 static lv_obj_t * digital_level = NULL;
@@ -42,11 +38,6 @@ digital_level_view_t digital_level_view_type_1_context = {
 };
 
 
-static void on_rotation_change_event(lv_event_t * e) {
-
-}
-
-
 static void digital_level_view_draw_event_cb(lv_event_t * e) {
     lv_layer_t * layer = lv_event_get_layer(e);
     lv_obj_t * obj = lv_event_get_target(e);
@@ -57,7 +48,6 @@ static void digital_level_view_draw_event_cb(lv_event_t * e) {
 
     int32_t disp_width = lv_area_get_width(&coords);
     int32_t disp_height = lv_area_get_height(&coords);
-    float max_delta_vertical_shift = disp_height/ 4.0;  // maximum vertical shift for the indicator lines
     float max_delta_vertical_vertex = disp_height / 2.0f - 20;  // Maximum vertical verticies for the triangle
     float delta_vertical_shift = -tanf(pitch_rad_local) * (disp_height / 2) * digital_level_view_config.pitch_display_gain;
     float vertical_base_position = disp_height / 2 + delta_vertical_shift;
@@ -158,14 +148,7 @@ static void digital_level_view_draw_event_cb(lv_event_t * e) {
 }
 
 lv_obj_t * create_digital_level_view_type_1(lv_obj_t *parent) {
-    // lv_obj_t * container = lv_obj_create(parent);
-    // digital_level_view_type_1_context.container = container;
 
-    // lv_obj_set_style_border_width(container, 0, LV_PART_MAIN);
-    // lv_obj_set_style_pad_all(container, 0, 0);
-    // lv_obj_set_size(container, lv_pct(100), lv_pct(100));
-    // lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, LV_PART_MAIN);
-    // lv_obj_center(container);
 
     // Create drawing object
     digital_level = lv_obj_create(parent);

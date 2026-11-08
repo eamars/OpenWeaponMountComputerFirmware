@@ -31,7 +31,6 @@
 
 typedef enum {
     IN_IDLE_MODE = (1 << 0),
-    IN_SLEEP_MODE = (1 << 1),
     PREVENT_ENTER_IDLE_MODE = (1 << 2),
     PREVENT_ENTER_SLEEP_MODE = (1 << 3),
     REQUEST_IDLE = (1 << 4),
@@ -42,11 +41,9 @@ typedef enum {
 
 
 
-lv_obj_t * pre_low_power_mode_tile;
 
 TaskHandle_t low_power_monitor_task_handle;
 TaskHandle_t sensor_stability_detector_poller_task_handle;
-uint32_t wakeup_cause;
 
 TickType_t last_activity_tick = 0;
 
@@ -407,27 +404,8 @@ static void enter_idle_mode() {
     ESP_ERROR_CHECK_WITHOUT_ABORT(set_display_sleep(io_handle, true));
 
 #if USE_BNO085
-    // // Stop the reporting
-    // if (sensor_config.enable_game_rotation_vector_report) {
-    //     ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
-    // }
-    // if (sensor_config.enable_linear_acceleration_report) {
-    //     ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
-    // }
-    // if (sensor_config.enable_rotation_vector_report) {
-    //     ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
-    // }
     bno085_enter_sleep(bno085_dev);
 #endif  // USE_BNO085
-
-    // Move to low power mode view
-    // if (lvgl_port_lock(0)) {
-    //     pre_low_power_mode_tile = lv_tileview_get_tile_active(main_tileview);
-    //     lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
-    //     lv_obj_invalidate(main_tileview);
-
-    //     lvgl_port_unlock();
-    // }
 
     lvgl_port_unlock();
 
@@ -471,20 +449,6 @@ static void exit_idle_mode() {
     bno085_wake_up(bno085_dev);
 #endif  // USE_BNO085
 
-    // Move out of low power mode view
-    // if (lvgl_port_lock(0)) {
-    //     if (pre_low_power_mode_tile) {
-    //         lv_tileview_set_tile(main_tileview, pre_low_power_mode_tile, LV_ANIM_OFF);
-    //     }
-    //     else {
-    //         // If for some reason we don't have the previous tile, just move to the default tile
-    //         lv_tileview_set_tile(main_tileview, default_tile, LV_ANIM_OFF);
-    //     }
-    //     lv_obj_invalidate(main_tileview);
-
-    //     lvgl_port_unlock();
-    // }
-
     // Restore display brightness. LVGL is stopped, so the panel bus is idle. Sleep-out first; it returns once the
     // panel may be switched on (the sensor's first report, 99 ms after its wake above, comes later anyway)
     ESP_ERROR_CHECK_WITHOUT_ABORT(set_display_sleep(io_handle, false));
@@ -523,77 +487,6 @@ static void run_idle_requests() {
     else if (requests & REQUEST_IDLE) {
         enter_idle_mode();
     }
-}
-
-
-void enter_sleep_mode() {
-    ESP_LOGI(TAG, "Entering sleep power mode due to inactivity");
-
-    // Set flag
-    xEventGroupSetBits(low_power_control_event, IN_SLEEP_MODE);
-
-    // Stop Wifi; returns once the radio is off, so light sleep may follow
-    wifi_request_suspend(WIFI_SUSPEND_SLEEP);
-
-#if USE_BNO085
-    // // Stop the reporting
-    // if (sensor_config.enable_game_rotation_vector_report) {
-    //     ESP_ERROR_CHECK(bno085_enable_game_rotation_vector_report(bno085_dev, 0));
-    // }
-    // if (sensor_config.enable_linear_acceleration_report) {
-    //     ESP_ERROR_CHECK(bno085_enable_linear_acceleration_report(bno085_dev, 0));
-    // }
-    // if (sensor_config.enable_rotation_vector_report) {
-    //     ESP_ERROR_CHECK(bno085_enable_rotation_vector_report(bno085_dev, 0));
-    // }
-    bno085_enter_sleep(bno085_dev);
-#endif  // USE_BNO085
-    
-    // Dim the display  
-    if (io_handle) {
-        set_display_brightness(&io_handle, 0);
-    }
-
-    // Enter light sleep mode; if it is refused, the wake path below runs at once (logged)
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_light_sleep_start());
-    // vTaskDelay(pdMS_TO_TICKS(5000));  // Sleep for a while to allow the system to enter sleep mode. The actual sleep duration is determined by the hardware and the wakeup source, so we don't use esp_light_sleep_start() here to have better control over the flow after waking up.
-    
-    /* Sleep Starts */
-
-    /* Sleep Ends */
-    wakeup_cause = esp_sleep_get_wakeup_cause();
-    ESP_LOGI(TAG, "Woke up from sleep, wakeup cause: %" PRIu32, wakeup_cause);
-
-    // Resume the previous operation
-    update_low_power_mode_last_activity_event();  // Update the last activity tick to prevent immediately re-entering low power mode
-    last_idle_tick = xTaskGetTickCount();  // Update the last idle tick to prevent immediately entering sleep mode after waking up
-    xEventGroupClearBits(low_power_control_event, IN_SLEEP_MODE);
-
-#if USE_BNO085
-    bno085_wake_up(bno085_dev);
-#endif  // USE_BNO085
-
-    // Resume display brightness
-    if (io_handle) {
-        set_display_brightness(&io_handle, system_config.screen_brightness_normal_pct);
-    }
-
-    // Exit idle mode
-    if (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) {
-        wake_from_idle_mode();
-    }
-
-    if (lvgl_port_lock(0)) {
-        lv_obj_t * prev_tile = lv_tileview_get_tile_active(main_tileview);
-        lv_tileview_set_tile(main_tileview, tile_low_power_mode_view, LV_ANIM_OFF);
-        lv_tileview_set_tile(main_tileview, prev_tile, LV_ANIM_OFF);
-        lv_obj_invalidate(main_tileview);
-
-        lvgl_port_unlock();
-    }
-
-    // Restore wifi
-    wifi_request_suspend(WIFI_SUSPEND_NONE);
 }
 
 
@@ -656,12 +549,6 @@ void low_power_monitor_task(void *p) {
         uint32_t active_duration_ms = pdTICKS_TO_MS(current_tick - last_activity_tick);
         uint32_t idle_duration_ms = pdTICKS_TO_MS(current_tick - last_idle_tick);
 
-        // ESP_LOGI(TAG, "Current Idle Mode: %d, Current Sleep Mode: %d, Prevent Enter Idle Mode: %d, Prevent Enter Sleep Mode: %d", 
-        //     (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) != 0,
-        //     (xEventGroupGetBits(low_power_control_event) & IN_SLEEP_MODE) != 0,
-        //     (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_IDLE_MODE) != 0,
-        //     (xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE) != 0
-        // );
         // Debug level: once a second at info it was a console line (and a wake-up) every second, idle or not
         ESP_LOGD(TAG, "Active duration: %" PRIu32 " ms, Idle duration: %" PRIu32 " ms", active_duration_ms, idle_duration_ms);
 
@@ -714,14 +601,12 @@ void low_power_monitor_task(void *p) {
         // Can enter sleep mode
         if (power_management_config.sleep_timeout != SLEEP_TIMEOUT_NEVER &&                                   // Low power mode enabled
             (xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE) &&                         // In idle mode already
-            !(xEventGroupGetBits(low_power_control_event) & IN_SLEEP_MODE) &&                       // Not already in sleep mode
             !(xEventGroupGetBits(low_power_control_event) & PREVENT_ENTER_SLEEP_MODE))              // Sleep mode is not temporarily blocked
         {                                            
             uint32_t sleep_timeout_ms = sleep_timeout_to_secs(power_management_config.sleep_timeout) * 1000;
 
             // Have stayed in idle long enough
             if (idle_duration_ms > sleep_timeout_ms) {
-                // enter_sleep_mode();
                 // The PMIC service shuts the unit down from its own task (ADR-005 step 3). Without a PMIC
                 // there is nothing to do: the request returns ESP_ERR_INVALID_STATE
                 (void) pmic_request_power_off();
@@ -775,20 +660,6 @@ esp_err_t low_power_mode_init() {
 }
 
 
-void create_low_power_mode_view(lv_obj_t * parent) {
-
-    // Set background to save power on AMOLED screen
-    lv_obj_set_style_bg_color(parent, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, LV_PART_MAIN);
-
-    // Put a simple label to indicate low power mode
-    lv_obj_t * low_power_mode_label = lv_label_create(parent);
-    lv_label_set_text(low_power_mode_label, "Low Power Mode");
-    lv_obj_set_style_text_color(low_power_mode_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_center(low_power_mode_label);
-}
-
-
 esp_err_t low_power_mode_start() {
     // Inject the wrapper to the pointer input, before the tasks that can put the unit to idle exist
     lvgl_port_lock(0);
@@ -837,10 +708,6 @@ esp_err_t low_power_mode_start() {
 bool is_idle_mode_activated() {
     // Both idle mode and sleep mode are considered as low power mode
     return xEventGroupGetBits(low_power_control_event) & IN_IDLE_MODE;
-}
-
-bool is_sleep_mode_activated() {
-    return xEventGroupGetBits(low_power_control_event) & IN_SLEEP_MODE;
 }
 
 

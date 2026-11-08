@@ -151,7 +151,6 @@ void unified_sensor_poller_task(void *p) {
                 // Redraw the screen
                 if (lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {  // prevent a deadlock if the LVGL event wants to continue
                     update_digital_level_view(display_roll, sensor_pitch_thread_unsafe);
-                    // ESP_LOGI(TAG, "Screen upated");
                     lvgl_port_unlock();
 #if DISPLAY_PROFILING_ENABLED
                     digital_level_profile.ui_update_success++;
