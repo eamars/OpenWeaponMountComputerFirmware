@@ -5,6 +5,8 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_macros.h"
+#include "esp_lvgl_port.h"
 
 #include "dope_config_view.h"
 #include "font_dope_digits.h"
@@ -237,6 +239,74 @@ static lv_obj_t * create_text(lv_obj_t * parent, lv_color_t colour) {
     lv_obj_set_style_text_color(label, colour, LV_PART_MAIN);
     lv_label_set_text(label, "");
     return label;
+}
+
+
+// The timer's listener (countdown_timer_setup): runs in the timer's task, or in the caller's for pause and continue
+void level_band_timer_update_cb(void * arg, int time_left_ms) {
+    ESP_UNUSED(arg);
+    if (lvgl_port_lock(0)) {
+        level_band_update_timer(time_left_ms);
+        lvgl_port_unlock();
+    }
+}
+
+
+void enable_countdown_timer_widget(bool enable) {
+    ESP_LOGI(TAG, "Setting countdown timer visibility to %d", enable);
+    if (lvgl_port_lock(0)) {
+        level_band_show_timer(enable);
+        lvgl_port_unlock();
+    }
+}
+
+
+bool get_countdown_timer_widget_enabled(void) {
+    bool enabled = false;
+    if (lvgl_port_lock(0)) {
+        enabled = level_band_timer_shown();
+        lvgl_port_unlock();
+    }
+
+    return enabled;
+}
+
+
+// The timer's controls: a tap starts, pauses or continues; a long press re-arms with the full time
+static void countdown_timer_button_press_event_cb(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    countdown_timer_t * countdown_timer = (countdown_timer_t *) lv_event_get_user_data(e);
+
+    // Skip if the button is not visible
+    if (!get_countdown_timer_widget_enabled()) {
+        return;
+    }
+
+    if (code == LV_EVENT_SHORT_CLICKED) {
+        countdown_timer_state_t current_state = get_countdown_timer_state(countdown_timer);
+        ESP_LOGI(TAG, "Current state %d", current_state);
+        switch (current_state)
+        {
+        case COUNTDOWN_TIMER_EXPIRED:
+            countdown_timer_start(countdown_timer);
+
+            break;
+        case COUNTDOWN_TIMER_PAUSE:
+            countdown_timer_continue(countdown_timer);
+
+            break;
+
+        case COUNTDOWN_TIMER_RUN:
+            countdown_timer_pause(countdown_timer);
+
+            break;
+        default:
+            break;
+        }
+    }
+    else if (code == LV_EVENT_LONG_PRESSED) {
+        countdown_timer_start(countdown_timer);
+    }
 }
 
 

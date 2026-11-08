@@ -6,8 +6,6 @@
 
 #include "esp_log.h"
 #include "esp_err.h"
-#include "nvs.h"
-#include "esp_crc.h"
 #include "esp_check.h"
 
 #include "digital_level_view.h"
@@ -213,7 +211,7 @@ void create_digital_level_overlay(lv_obj_t *parent)
     lv_obj_center(overlay_container);
 
     create_roll_deg_indicator(overlay_container);
-    countdown_timer_setup(&countdown_timer);
+    countdown_timer_setup(&countdown_timer, level_band_timer_update_cb, NULL);
     level_band_create(overlay_container, &countdown_timer);
     create_hint(overlay_container);
 

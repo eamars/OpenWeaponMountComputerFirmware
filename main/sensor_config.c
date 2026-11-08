@@ -5,7 +5,6 @@
 
 #include "esp_check.h"
 #include "esp_log.h"
-#include "nvs.h"
 #include "esp_check.h"
 #include "lvgl.h"
 #include "bno085.h"

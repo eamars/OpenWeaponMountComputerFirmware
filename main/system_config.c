@@ -5,7 +5,6 @@
 
 #include "esp_check.h"
 #include "esp_log.h"
-#include "nvs.h"
 #include "app_cfg.h"
 #include "pmic_axp2101.h"
 #include "low_power_mode.h"

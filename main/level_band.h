@@ -21,6 +21,12 @@ void level_band_refresh_dope(void);
 /** @brief Recoil's next target: it stops at the last target (no wrap, unlike the band's tap) */
 void level_band_next_target(void);
 
+/** @brief The countdown timer's listener (countdown_timer_setup). Any task; takes the LVGL lock */
+void level_band_timer_update_cb(void * arg, int time_left_ms);
+/** @brief Show or hide the timer on the level view (armed by a preset, hidden when disarmed). Any task */
+void enable_countdown_timer_widget(bool enable);
+bool get_countdown_timer_widget_enabled(void);
+
 void level_band_show_timer(bool show);
 bool level_band_timer_shown(void);
 /** @brief The time left changed, or the timer's state did */

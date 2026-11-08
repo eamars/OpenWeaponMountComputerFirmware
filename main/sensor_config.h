@@ -2,7 +2,6 @@
 #define SENSOR_CONFIG_H
 
 #include <stdint.h>
-#include "lvgl.h"
 #include "esp_err.h"
 #include "settings_ui.h"
 

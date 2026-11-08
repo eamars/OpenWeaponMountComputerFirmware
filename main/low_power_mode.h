@@ -1,7 +1,6 @@
 #ifndef LOW_POWER_MODE_H
 #define LOW_POWER_MODE_H
 
-#include "lvgl.h"
 #include "esp_err.h"
 
 #ifdef __cplusplus

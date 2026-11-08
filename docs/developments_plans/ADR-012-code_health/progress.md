@@ -61,3 +61,30 @@
   - the settings hub's scroll position and the Wi-Fi icon, which is live state.
 
   `rotation_sweep` leaves the unit in rotation 3 (RAM only), so this capture took rotations 3 and 0. Rotation 1 is compared in step 3.
+
+## Step 3: dependencies in one direction (2026-11-08)
+
+**Built:**
+- **Countdown timer.**
+  - The service (`countdown_timer.c`) no longer includes LVGL or the level band.
+  - It keeps its state machine, its task and its beeps. The beeps were inside the UI callback; they are now the service's own `beep_at()`, run at the same points and before the listener.
+  - It reports the time left through its callback, `countdown_timer_setup(timer, cb, arg)`: on each tick, on re-arm, and on pause or continue (with the time last reported). This replaces its direct `level_band_update_timer()` calls.
+  - The level band (UI) supplies the callback, `level_band_timer_update_cb`, which takes the LVGL lock as before. The band also owns the timer's controls: the tap and long-press handler, and showing, hiding and asking whether the timer is shown.
+- **PMIC settings.** Their storage, defaults and timeout conversions moved from the Power page (`pmic_config.c`) to the service side (`pmic_settings.c`). The service no longer depends on a UI file; the page only shows and edits.
+- **Includes.**
+  - `lvgl.h` is no longer included by `sensor_config.h` and `low_power_mode.h`, which did not use it.
+  - Unused `nvs.h` and `esp_crc.h` includes were removed from five files.
+
+**Kept:**
+- **`system_config.h` still includes LVGL.** Its stored struct holds LVGL's display rotation type. It is display configuration, not a service, and changing the stored type would put the settings layout at risk for no gain.
+- **What ADR-005 accepted:** low power's display calls, and the views' sensor reader tasks.
+
+**Checks:**
+- Clean build: no warning from our code.
+- **`state_change` on COM11:** PASS (`rc_state_change_20261108_231424.log`, `largest_dma` at least 81,920 B).
+- **The timer, end to end on the unit** (a script driving the remote control in one session; arming is RAM only, so no setting changed):
+  - armed: the 1:00 preset, the bar orange;
+  - started (tap on the time): 0:57 after 3 s;
+  - paused: the bar turned grey at once, through the new callback path, and stayed at 0:57 two seconds later;
+  - disarmed: the timer hidden.
+- **Snaps against the baseline, rotation 0 and 1:** every page is pixel-identical except About (version) and Power (live readings). The level tile differs in the live tilt and the settings hub in its scroll position. The Power page shows the stored timeouts after the reboot, now loaded from `pmic_settings.c`.

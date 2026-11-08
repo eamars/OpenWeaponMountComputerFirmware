@@ -4,8 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-
-#include "lvgl.h"
+#include "esp_err.h"
 
 #define COUNTDOWN_TIMER_TASK_DEFAULT_UPDATE_PERIOD_MS 250
 
@@ -27,6 +26,7 @@ typedef enum {
 } countdown_timer_state_t;
 
 
+// The listener: called with the time left on each tick, on re-arm, and when paused or continued
 typedef void (*timer_update_cb_t) (void *, int);
 
 
@@ -38,6 +38,7 @@ typedef struct {
     int update_period_ms;
     SemaphoreHandle_t state_mux;
     countdown_timer_state_t countdown_timer_state;
+    int time_left_ms;  // as last reported
 } countdown_timer_t;
 
 
@@ -49,15 +50,7 @@ void countdown_timer_update_time(countdown_timer_t *ctx, int new_time_ms);
 
 countdown_timer_state_t get_countdown_timer_state(countdown_timer_t *ctx);
 
-/** @brief Start the timer's task; the level view's band shows it (level_band.c) */
-void countdown_timer_setup(countdown_timer_t * countdown_timer);
-/** @brief Show or hide the timer on the level view (armed by a preset, hidden when disarmed) */
-void enable_countdown_timer_widget(bool enable);
-bool get_countdown_timer_widget_enabled(void);
-/**
- * @brief The timer's controls (the band's time and bar, the hardware button): a tap starts, pauses or continues;
- * a long press re-arms with the full time. User data: the countdown_timer_t.
- */
-void countdown_timer_button_press_event_cb(lv_event_t * e);
+/** @brief Start the timer's task, reporting to update_cb (the level band, level_band.c) */
+void countdown_timer_setup(countdown_timer_t * countdown_timer, timer_update_cb_t update_cb, void * update_cb_args);
 
 #endif  // COUNTDOWN_TIMER_H_

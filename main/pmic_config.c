@@ -5,10 +5,8 @@
 #include <stdio.h>
 
 #include "ui_bridge.h"
-#include "esp_crc.h"
 #include "esp_log.h"
 #include "esp_check.h"
-#include "nvs.h"
 #include "common.h"
 #include "app_cfg.h"
 #include "settings_ui.h"
@@ -20,67 +18,8 @@
 #include "app.h"
 
 #define TAG "AXP2101"
-#define NVS_NAMESPACE "PMG"
 
 static lv_obj_t * power_menu = NULL;
-
-HEAPS_CAPS_ATTR power_management_config_t power_management_config;
-const power_management_config_t default_power_management_config = {
-    .vbus_current_limit = PMIC_VBUS_CURRENT_LIMIT_1000MA,  // the running unit shares it with the charge (ADR-009)
-    .battery_charge_current = PMIC_BATTERY_CHARGE_CURRENT_500MA,
-    .battery_charge_voltage = PMIC_BATTERY_CHARGE_VOLTAGE_4V2,
-    .idle_timeout = IDLE_TIMEOUT_5_MIN,
-    .sleep_timeout = SLEEP_TIMEOUT_5_HRS,  // a long wait between stages ends idle, not off (ADR-009)
-};
-
-
-
-esp_err_t save_pmic_config() {
-    return save_config(NVS_NAMESPACE, &power_management_config, sizeof(power_management_config));
-}
-
-
-esp_err_t load_pmic_config() {
-    return load_config(NVS_NAMESPACE, &power_management_config, &default_power_management_config, sizeof(power_management_config));
-}
-
-uint32_t idle_timeout_to_secs(idle_timeout_t timeout) {
-    switch (timeout) {
-        case IDLE_TIMEOUT_NEVER:
-            return 0;
-        case IDLE_TIMEOUT_1_MIN:
-            return 60;
-        case IDLE_TIMEOUT_5_MIN:
-            return 300;
-        case IDLE_TIMEOUT_10_MIN:
-            return 600;
-        case IDLE_TIMEOUT_10_SEC:
-            return 10;
-        default:
-            return 0;
-    }
-
-    return 0;
-}
-
-uint32_t sleep_timeout_to_secs(sleep_timeout_t timeout) {
-    switch (timeout) {
-        case SLEEP_TIMEOUT_NEVER:
-            return 0;
-        case SLEEP_TIMEOUT_1_HRS:
-            return 60 * 60;
-        case SLEEP_TIMEOUT_2_HRS:
-            return 60 * 60 * 2;
-        case SLEEP_TIMEOUT_5_HRS:
-            return 60 * 60 * 5;
-        case SLEEP_TIMEOUT_1_MIN:
-            return 60;
-        default:
-            return 0;
-    }
-
-    return 0;
-}
 
 // FIXME: Make it generic (this is imported from ota_mode.c)
 void on_reboot_button_pressed(lv_event_t * e);
