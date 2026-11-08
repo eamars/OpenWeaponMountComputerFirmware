@@ -1,0 +1,2 @@
+# The chip this project is built for; without it a fresh clone builds for the plain ESP32
+CONFIG_IDF_TARGET="esp32s3"

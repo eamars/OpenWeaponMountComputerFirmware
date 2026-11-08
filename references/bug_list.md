@@ -1,5 +1,7 @@
 # Bug List (Independently Reviewed)
 
+> A record of a review in June 2026, not the current bug list: ADR-005 later reviewed every module and fixed the bugs the owner approved, and some items here are fixed or their code rewritten. It stays because ADR-001 cites it.
+
 Date: 2026-06-09
 Reviewer: Senior system engineer independent review pass
 
