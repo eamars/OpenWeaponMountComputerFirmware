@@ -172,8 +172,8 @@ static void set_remote_control_wifi(bool on, void * ctx) {
 
 void system_settings_add_advanced_rows(settings_page_t * page) {
     settings_row_choice(page, "Log level", log_level_names, 6, get_log_level, set_log_level, NULL);
-    settings_row_toggle(page, "Remote control over USB", get_remote_control, set_remote_control, NULL);
-    settings_row_toggle(page, "Remote control over Wi-Fi", get_remote_control_wifi, set_remote_control_wifi, NULL);
+    settings_row_toggle(page, "USB remote control", get_remote_control, set_remote_control, NULL);
+    settings_row_toggle(page, "Wi-Fi remote control", get_remote_control_wifi, set_remote_control_wifi, NULL);
 }
 
 

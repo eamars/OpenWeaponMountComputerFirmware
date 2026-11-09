@@ -104,13 +104,13 @@ static void wifi_status_text(char * buf, size_t size, void * ctx) {
 
 // What a host connects to (ADR-013): the name, which stays, and the address, which the router may change
 static void wifi_name_text(char * buf, size_t size, void * ctx) {
-    snprintf(buf, size, "Name: %s.local", wifi_get_hostname());
+    snprintf(buf, size, "Network name\n%s.local", wifi_get_hostname());     // as the Kestrel page shows the HUD name
 }
 
 
 static void wifi_address_text(char * buf, size_t size, void * ctx) {
     char address[16];
-    snprintf(buf, size, "Address: %s", wifi_get_address(address, sizeof(address)) ? address : "-");
+    snprintf(buf, size, "Address\n%s", wifi_get_address(address, sizeof(address)) ? address : "-");
 }
 
 

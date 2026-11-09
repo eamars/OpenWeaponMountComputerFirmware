@@ -48,7 +48,7 @@ static settings_page_t * create_advanced_settings_page(void) {
 #if USE_PMIC
     pmic_settings_add_advanced_rows(page);
 #endif  // USE_PMIC
-    settings_row_reset(page, "Reset Advanced", "Reset the Advanced settings? Remote control over USB turns back on.",
+    settings_row_reset(page, "Reset Advanced", "Reset the Advanced settings? USB remote control turns back on.",
                        reset_advanced, NULL);
     return page;
 }
