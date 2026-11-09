@@ -180,6 +180,27 @@ static void wifi_expiry_watchdog_stop() {
 }
 
 
+// "owmc-" and the unit's number: the DHCP and mDNS host name, and the mDNS instance (ADR-013)
+static char wifi_hostname[16];
+static esp_netif_t * wifi_sta_netif = NULL;
+
+
+const char * wifi_get_hostname() {
+    return wifi_hostname;
+}
+
+
+bool wifi_get_address(char * buf, size_t size) {
+    esp_netif_ip_info_t info;
+    if (wifi_sta_netif == NULL || !wifi_is_sta_connected() || esp_netif_get_ip_info(wifi_sta_netif, &info) != ESP_OK ||
+        info.ip.addr == 0) {
+        return false;
+    }
+    snprintf(buf, size, IPSTR, IP2STR(&info.ip));
+    return true;
+}
+
+
 static esp_err_t start_mdns_service() {
     mem_diag_log_checkpoint("mdns_restart begin");
 
@@ -193,8 +214,19 @@ static esp_err_t start_mdns_service() {
         ESP_LOGE(TAG, "mDNS init failed: %s", esp_err_to_name(ret));
     }
     mem_diag_log_checkpoint("mdns_init end");
+    if (ret != ESP_OK) {
+        return ret;
+    }
 
-    // TODO: Assign mDNS name and service
+    // The unit's name, so a host finds it without knowing its address (the remote control over Wi-Fi announces its
+    // service under it, ADR-013)
+    ret = mdns_hostname_set(wifi_hostname);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS hostname: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_ERROR_CHECK_WITHOUT_ABORT(mdns_instance_name_set(wifi_hostname));  // one instance per unit
+    ESP_LOGI(TAG, "mDNS name %s.local", wifi_hostname);
 
     return ret;
 }
@@ -666,12 +698,13 @@ esp_err_t wifi_init() {
     // The service owns its settings (the settings page used to load them, which tied Wi-Fi to the UI)
     ESP_ERROR_CHECK(load_wifi_user_config());
 
-    // Generate service name based on MAC address. Read it from eFuse: esp_wifi_get_mac() needs
-    // esp_wifi_init(), which runs further down, and left the buffer unset (ADR-005 B9)
-    uint8_t eth_mac[6];
-    ESP_ERROR_CHECK(esp_read_mac(eth_mac, ESP_MAC_WIFI_STA));
-    snprintf(wifi_provision_state.service_name, sizeof(wifi_provision_state.service_name), "OWMC_%02X%02X%02X", eth_mac[3], eth_mac[4], eth_mac[5]);
-    ESP_LOGI(TAG, "Service name and hostname: %s (STA MAC " MACSTR ")", wifi_provision_state.service_name, MAC2STR(eth_mac));
+    // Every name carries the unit's number (read from eFuse: esp_wifi_get_mac() needs esp_wifi_init(), which runs
+    // further down, ADR-005 B9): OWMC_<n> while it is set up, owmc-<n> on the network, as HUD-<n> for the Kestrel
+    char number[UNIT_NUMBER_SIZE];
+    unit_number(number, sizeof(number));
+    snprintf(wifi_provision_state.service_name, sizeof(wifi_provision_state.service_name), "OWMC_%s", number);
+    snprintf(wifi_hostname, sizeof(wifi_hostname), "owmc-%s", number);
+    ESP_LOGI(TAG, "Set-up name %s, host name %s", wifi_provision_state.service_name, wifi_hostname);
 
     wifi_request_queue = xQueueCreate(WIFI_REQUEST_QUEUE_LENGTH, sizeof(wifi_req_t));
     wifi_suspend_done = xSemaphoreCreateBinary();
@@ -689,8 +722,8 @@ esp_err_t wifi_init() {
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_sys_event_handler, NULL));
 
     // Initialize Wifi including netif with default configuration
-    esp_netif_t *netif = esp_netif_create_default_wifi_sta();
-    ESP_ERROR_CHECK(esp_netif_set_hostname(netif, wifi_provision_state.service_name));
+    wifi_sta_netif = esp_netif_create_default_wifi_sta();
+    ESP_ERROR_CHECK(esp_netif_set_hostname(wifi_sta_netif, wifi_hostname));     // what the router lists
 
     esp_netif_create_default_wifi_ap();
 

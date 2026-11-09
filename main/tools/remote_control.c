@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,6 +62,7 @@
 #define RC_POINT_QUEUE_LEN (RC_SWIPE_STEPS + 2)  // press, moves, release
 
 #define RC_REBOOT_DELAY_US (100 * 1000)
+#define RC_IDLE_WAKE_MAX_S 3600     // `idle <s>`: the longest timed idle
 
 #define RC_MAX_ARGS 6   // "settings open How to pair"
 
@@ -79,11 +81,18 @@ typedef struct {
 HEAPS_CAPS_ATTR remote_control_config_t remote_control_config;
 const remote_control_config_t remote_control_config_default = {
     .serial_enable = true,  // on while the firmware is in development; flip before a release build
+    .wifi_enable = false,   // anyone on the network could send commands: on only when wanted
 };
 
 
 static SemaphoreHandle_t rc_execute_mutex = NULL;
+
+// Where the command being executed sends its lines besides the reply (the snap data): set by the transport for each
+// command, under rc_execute_mutex
+static remote_control_write_fn rc_write = NULL;
+static void * rc_write_ctx = NULL;
 static esp_timer_handle_t rc_reboot_timer = NULL;
+static esp_timer_handle_t rc_idle_wake_timer = NULL;
 
 // Virtual pointer. The queue is written by the command task and read by the LVGL task (read_cb);
 // the spinlock lets a timed-out command drop the queue without the LVGL lock.
@@ -99,12 +108,22 @@ static volatile bool rc_gesture_pending = false;
 
 
 esp_err_t load_remote_control_config() {
-    return load_config(NVS_NAMESPACE, &remote_control_config, &remote_control_config_default, sizeof(remote_control_config));
+    // Saved before the Wi-Fi switch existed: loads with it off
+    return load_config_grown(NVS_NAMESPACE, &remote_control_config, &remote_control_config_default,
+                             sizeof(remote_control_config), offsetof(remote_control_config_t, wifi_enable));
 }
 
 
 esp_err_t save_remote_control_config() {
     return save_config(NVS_NAMESPACE, &remote_control_config, sizeof(remote_control_config));
+}
+
+
+// One line (no line ending) to the transport the command came from
+static void rc_write_line(const char *line) {
+    if (rc_write != NULL) {
+        rc_write(line, rc_write_ctx);
+    }
 }
 
 
@@ -737,14 +756,38 @@ static bool rc_cmd_save(int argc, char **argv, char *reply, size_t reply_size) {
 }
 
 
-static bool rc_cmd_idle(char *reply, size_t reply_size) {
+// `idle <s>` wakes by this timer: over Wi-Fi the radio stops with the idle, so no `wake` can reach the unit
+// (ADR-013). With automatic light sleep the timer is also a real wake from it
+static void rc_idle_wake_timer_cb(void *arg) {
+    if (is_idle_mode_activated()) {
+        low_power_mode_note_wake_cause("timer");
+        wake_from_idle_mode();
+    }
+}
+
+
+// `idle`, or `idle <s>`: idle, then wake by a timer after s seconds
+static bool rc_cmd_idle(int argc, char **argv, char *reply, size_t reply_size) {
+    long seconds = 0;
+    if (argc > 2 || (argc == 2 && (!rc_parse_long(argv[1], &seconds) || seconds < 1 ||
+                                   seconds > RC_IDLE_WAKE_MAX_S))) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
     if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
         return rc_reply(reply, reply_size, false, "@err busy");
     }
     low_power_mode_request_idle();
     lvgl_port_unlock();
 
-    return rc_reply(reply, reply_size, true, "@ok idle");
+    if (seconds == 0) {
+        return rc_reply(reply, reply_size, true, "@ok idle");
+    }
+    esp_timer_stop(rc_idle_wake_timer);     // a timed idle before it: this one counts
+    esp_err_t ret = esp_timer_start_once(rc_idle_wake_timer, (uint64_t) seconds * 1000000);
+    if (ret != ESP_OK) {
+        return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(ret));
+    }
+    return rc_reply(reply, reply_size, true, "@ok idle %ld", seconds);
 }
 
 
@@ -814,8 +857,8 @@ static const char rc_base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmno
 HEAPS_CAPS_ATTR static uint8_t rc_snap_pairs[RC_SNAP_PAIRS_PER_LINE * 4];
 HEAPS_CAPS_ATTR static char rc_snap_line[4 + (RC_SNAP_PAIRS_PER_LINE * 4 / 3 + 1) * 4 + 2];
 
-// Print one data line from the first `len` bytes of rc_snap_pairs
-static void rc_snap_print_line(size_t len) {
+// Write one data line from the first `len` bytes of rc_snap_pairs
+static void rc_snap_write_line(size_t len) {
     size_t out = 0;
     memcpy(rc_snap_line, "@sd ", 4);
     out = 4;
@@ -833,7 +876,7 @@ static void rc_snap_print_line(size_t len) {
         rc_snap_line[out++] = (i + 2 < len) ? rc_base64_chars[v & 0x3F] : '=';
     }
     rc_snap_line[out] = '\0';
-    printf("%s\n", rc_snap_line);
+    rc_write_line(rc_snap_line);
 }
 
 
@@ -894,7 +937,9 @@ static bool rc_cmd_snap(char *reply, size_t reply_size) {
     uint32_t w = snap->header.w;
     uint32_t h = snap->header.h;
     uint32_t stride = snap->header.stride;
-    printf("@snap %" PRIu32 " %" PRIu32 " rgb565rle\n", w, h);
+    char header[48];
+    snprintf(header, sizeof(header), "@snap %" PRIu32 " %" PRIu32 " rgb565rle", w, h);
+    rc_write_line(header);
 
     // Pixels in row order; a run may cross rows
     size_t pair_bytes = 0;
@@ -915,7 +960,7 @@ static bool rc_cmd_snap(char *reply, size_t reply_size) {
                 rc_snap_pairs[pair_bytes++] = run_pixel & 0xFF;
                 rc_snap_pairs[pair_bytes++] = run_pixel >> 8;
                 if (pair_bytes == sizeof(rc_snap_pairs)) {
-                    rc_snap_print_line(pair_bytes);
+                    rc_snap_write_line(pair_bytes);
                     pair_bytes = 0;
                     lines++;
                 }
@@ -931,10 +976,9 @@ static bool rc_cmd_snap(char *reply, size_t reply_size) {
         rc_snap_pairs[pair_bytes++] = run_pixel >> 8;
     }
     if (pair_bytes > 0) {
-        rc_snap_print_line(pair_bytes);
+        rc_snap_write_line(pair_bytes);
         lines++;
     }
-    fflush(stdout);
 
     lv_draw_buf_destroy(snap);
 
@@ -1152,10 +1196,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
         return rc_cmd_pmic(reply, reply_size);
     }
     if (strcmp(cmd, "idle") == 0) {
-        if (argc != 1) {
-            return rc_reply(reply, reply_size, false, "@err args");
-        }
-        return rc_cmd_idle(reply, reply_size);
+        return rc_cmd_idle(argc, argv, reply, reply_size);
     }
     if (strcmp(cmd, "wake") == 0) {
         if (argc != 1) {
@@ -1221,7 +1262,8 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
 }
 
 
-bool remote_control_execute(const char *line, char *reply, size_t reply_size) {
+bool remote_control_execute(const char *line, char *reply, size_t reply_size, remote_control_write_fn write,
+                            void *write_ctx) {
     if (reply == NULL || reply_size == 0) {
         return false;
     }
@@ -1238,7 +1280,11 @@ bool remote_control_execute(const char *line, char *reply, size_t reply_size) {
 
     // One command at a time, whichever transport it comes from
     xSemaphoreTake(rc_execute_mutex, portMAX_DELAY);
+    rc_write = write;
+    rc_write_ctx = write_ctx;
     bool ok = rc_execute_locked(line_copy, reply, reply_size);
+    rc_write = NULL;
+    rc_write_ctx = NULL;
     xSemaphoreGive(rc_execute_mutex);
 
     return ok;
@@ -1258,6 +1304,13 @@ esp_err_t remote_control_init(void) {
     };
     esp_err_t ret = esp_timer_create(&reboot_timer_args, &rc_reboot_timer);
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to create reboot timer: %s", esp_err_to_name(ret));
+
+    const esp_timer_create_args_t idle_wake_timer_args = {
+        .callback = rc_idle_wake_timer_cb,
+        .name = "rc_idle_wake",
+    };
+    ret = esp_timer_create(&idle_wake_timer_args, &rc_idle_wake_timer);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to create idle wake timer: %s", esp_err_to_name(ret));
 
     if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
         ESP_LOGE(TAG, "Failed to take the LVGL lock");

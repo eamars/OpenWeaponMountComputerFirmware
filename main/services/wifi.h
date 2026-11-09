@@ -124,6 +124,12 @@ bool wifi_is_provisioned();
 esp_err_t wifi_wait_for_sta_connected(uint32_t block_wait_ms);
 bool wifi_is_sta_connected();
 
+/** @brief The unit's host name on the network, "owmc-" and its number (mDNS adds ".local"); set by wifi_init() */
+const char * wifi_get_hostname();
+
+/** @brief The unit's IP address as text, while it is connected; false (buf untouched) otherwise. Any task */
+bool wifi_get_address(char * buf, size_t size);
+
 /**
  * @brief Block waiting for wifi to expire.
  */

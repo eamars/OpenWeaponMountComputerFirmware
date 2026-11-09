@@ -13,6 +13,7 @@
 #include "bsp.h"
 #include "remote_control.h"
 #include "rc_serial.h"
+#include "rc_net.h"
 #include "lvgl_display.h"
 #include "settings_ui.h"
 
@@ -50,7 +51,7 @@ void system_config_set_rotation(lv_display_rotation_t rotation) {
 }
 
 
-// Start or stop the serial remote control to match the flag
+// Start or stop the remote control to match its two switches, USB and Wi-Fi, each on its own
 static void apply_remote_control_config() {
     if (remote_control_config.serial_enable) {
         rc_serial_start();
@@ -58,6 +59,7 @@ static void apply_remote_control_config() {
     else {
         rc_serial_stop();
     }
+    rc_net_set_enabled(remote_control_config.wifi_enable);
 }
 
 
@@ -156,9 +158,22 @@ static void set_remote_control(bool on, void * ctx) {
 }
 
 
+static bool get_remote_control_wifi(void * ctx) {
+    return remote_control_config.wifi_enable;
+}
+
+
+static void set_remote_control_wifi(bool on, void * ctx) {
+    remote_control_config.wifi_enable = on;
+    apply_remote_control_config();
+    ESP_ERROR_CHECK_WITHOUT_ABORT(save_remote_control_config());
+}
+
+
 void system_settings_add_advanced_rows(settings_page_t * page) {
     settings_row_choice(page, "Log level", log_level_names, 6, get_log_level, set_log_level, NULL);
-    settings_row_toggle(page, "Remote control", get_remote_control, set_remote_control, NULL);
+    settings_row_toggle(page, "USB remote control", get_remote_control, set_remote_control, NULL);
+    settings_row_toggle(page, "Wi-Fi remote control", get_remote_control_wifi, set_remote_control_wifi, NULL);
 }
 
 

@@ -1244,11 +1244,8 @@ esp_err_t kestrel_service_init(void) {
     }
     memset(table_value, 0xff, sizeof(table_value));
 
-    // The name the Kestrel lists: "HUD-" and 7 digits, from this unit's Bluetooth address so it stays the same
-    uint8_t mac[6] = {0};
-    esp_read_mac(mac, ESP_MAC_BT);
-    uint32_t number = ((uint32_t) mac[3] << 16 | mac[4] << 8 | mac[5]) % 10000000;
-    snprintf(hud_serial, sizeof(hud_serial), "%07" PRIu32, number);
+    // The name the Kestrel lists: "HUD-" and the unit's number, so it stays the same
+    unit_number(hud_serial, sizeof(hud_serial));
     snprintf(hud_name, sizeof(hud_name), "HUD-%s", hud_serial);
     snprintf(status.message, sizeof(status.message), "No pull yet");
 

@@ -3,6 +3,7 @@ as they were (ADR-012).
 
 Usage, from the repo root with the repo venv:
     python tools/remote_control/ui_snaps.py capture --port COM11 logs/rc/snaps/before
+    python tools/remote_control/ui_snaps.py capture --host owmc-8626470.local logs/rc/snaps/before   (over Wi-Fi)
     python tools/remote_control/ui_snaps.py compare logs/rc/snaps/before logs/rc/snaps/after [montage.png]
 
 capture: drives the unit over its USB console (rc_run.Session): the four tiles (timer, level, dope, settings) and
@@ -26,9 +27,9 @@ TILES = {"timer": "2 0", "level": "2 1", "dope": "2 2", "settings": "3 1"}
 PAGES = ["Timer", "Dope", "Kestrel", "Level", "Display", "Wi-Fi", "Power", "Advanced", "About"]
 
 
-def capture(port: str, out: pathlib.Path) -> int:
+def capture(port: str, host, out: pathlib.Path) -> int:
     out.mkdir(parents=True, exist_ok=True)
-    session = rc_run.Session(port, out / "capture.log")
+    session = rc_run.Session(port, out / "capture.log", host=host)
     failures = []
     try:
         if not session.wait_ready():
@@ -100,6 +101,7 @@ def main(argv) -> int:
     sub = parser.add_subparsers(dest="action", required=True)
     cap = sub.add_parser("capture", help="snap every tile and settings page")
     cap.add_argument("--port", default=rc_run.DEFAULT_PORT)
+    cap.add_argument("--host", default=None, help="the unit's address or mDNS name, over Wi-Fi instead of --port")
     cap.add_argument("out", type=pathlib.Path)
     cmp_ = sub.add_parser("compare", help="compare two capture folders")
     cmp_.add_argument("before", type=pathlib.Path)
@@ -107,7 +109,7 @@ def main(argv) -> int:
     cmp_.add_argument("montage", type=pathlib.Path, nargs="?")
     args = parser.parse_args(argv)
     if args.action == "capture":
-        return capture(args.port, args.out)
+        return capture(args.port, args.host, args.out)
     return compare(args.before, args.after, args.montage)
 
 

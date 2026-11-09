@@ -160,16 +160,17 @@ static void reset_kestrel(void * ctx) {
 static void build_kestrel_page(void) {
     built_mode = kestrel_settings.mode;
     settings_page_clear(kestrel_page);
+    // What you tap at the top, what you read in the middle, Reset at the bottom (owner, 2026-11-09)
     settings_row_choice(kestrel_page, "Kestrel", mode_names, 3, get_mode, set_mode, NULL);
 
     if (kestrel_settings.mode == KESTREL_MODE_HUD) {
-        settings_row_status(kestrel_page, hud_name_text, NULL);
         settings_row_link(kestrel_page, NULL, "How to pair", NULL, NULL, pairing_page);
+        settings_row_status(kestrel_page, hud_name_text, NULL);
     }
     else if (kestrel_settings.mode == KESTREL_MODE_PHONE) {
-        settings_row_status(kestrel_page, picked_text, NULL);
         settings_row_action(kestrel_page, LV_SYMBOL_REFRESH, "Find Kestrels nearby", search_text, NULL, find_kestrels,
                             NULL, NULL, false);
+        settings_row_status(kestrel_page, picked_text, NULL);
     }
     // Pull is on the dope tile, where its targets go; its outcome shows here too
     if (kestrel_settings.mode != KESTREL_MODE_OFF) {
