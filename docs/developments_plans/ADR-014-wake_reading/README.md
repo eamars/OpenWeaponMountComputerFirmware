@@ -80,19 +80,32 @@ Error of the shown cant against each run's own settled value. Two COM12 runs lyi
 
 ## What we will do
 
-Depends on the decision below. With option A:
-1. The game rotation vector keeps running while the hub sleeps (`alwaysOnEnabled`, non-wake, so its reports wait in the hub's buffer and never wake the host).
-2. Proof on the turret, on battery, with `trace`:
-   - wakes after no tilt and after tilts during sleep: the first reading within 0.1° of the settled one;
-   - light sleep share and wake counts unchanged;
-   - `state_change` over Wi-Fi.
-3. If the owner can measure current: idle draw before and after.
+Depends on the decisions below. With B (recommended):
+1. **Path B, refined.**
+   - The correction starts from the average of the first few still accelerometer samples after the wake, not one sample, so a noisy first sample can't make the start worse.
+   - It follows with a time constant of about 0.3 s while still, and fades out by the end of the window.
+   - The accelerometer report runs only during that window, so idle and normal running cost nothing more.
+   - The `bno levelfix` experiment becomes the level's own code; the experiment switches that lost (`bno wake fresh`) are removed.
+2. **Proof on both units, with `trace`:**
+   - wakes after no tilt and after tilts during sleep, on the turret (with vibration) and on a still unit;
+   - the shown cant within 0.1° of the settled value by 300 ms and after, and never worse than the fusion alone at any point;
+   - `state_change` over Wi-Fi;
+   - light sleep share and wake counts unchanged.
 
-## Decision for the owner
+## Decisions for the owner
 
-**How to make the first reading right:**
-- **A. Keep the fusion running while the hub sleeps (recommended).** Proven on the unit, and a one-flag change in the code ADR-009 already has. The reading is right at the instant of the wake, including tilts made while asleep.
-  - Cost by the datasheet: about 11 mA while idle, so up to 6% of the cell per 5 h idle stretch with the defaults. Idle is the time between stages, and the unit powers off after the sleep timeout.
-- **B. Keep the power, correct the reading after the wake.** For example, take the cant from the accelerometer until the fusion agrees with it.
-  - It costs nothing while idle, but it is new code in the level's path, the accelerometer is noisy while the rifle moves, and the first ~1° may come from the sensor's own restart. It would need its own investigation, with no guarantee.
-- **C. Keep today's behaviour,** and accept up to about 1° off for the first second after every wake.
+**1. How to make the first reading right:**
+- **B. Correct the reading toward the accelerometer after a wake (recommended).**
+  - Measured: within about 0.07° by 1 s every time, against 2 to 4 s and up to 1.2° without it. Within about 0.2° from the first 50 to 300 ms, limited by the accelerometer's resolution and vibration.
+  - No cost while idle.
+  - When the shooter lifts the rifle to wake it, the level is read once the rifle is held still, which is when the accelerometer is right.
+- **A. Keep the fusion running while the hub sleeps.**
+  - Right at the instant of the wake (one run: within 0.04°).
+  - Costs at least about 8 mA while idle at any rate, by the datasheet (the gyroscope alone is 7.5 mA): up to 6% of the cell per 5 h idle stretch with the defaults.
+  - Worth it only if the first 300 ms must be within 0.1°.
+- **Ruled out:** a slower rate for A (the gyroscope's cost stays); a fresh fusion start (no better); a full reset on each wake (0.75 s with no reading, and 0.3° off under vibration).
+
+**2. A way for the rig to wake its unit.** Today an idle unit can't be reached over Wi-Fi, and the turret's movements don't wake it, so testing stops whenever the unit idles (it did, during this work).
+- Proposed: while "Wi-Fi remote control" is on, the radio stays connected through idle, so `wake` reaches the unit.
+- It costs power only on a unit set up for testing; light sleep with the radio connected wakes for the access point's beacons.
+- Off by default, as the switch is.
