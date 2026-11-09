@@ -72,7 +72,7 @@ Changes are proven on a real unit, not only built. `tools/remote_control/rc_run.
 - `scenario state_change`: a tour of tiles, idle and wake, rotation and Wi-Fi, with a PASS or FAIL verdict. `--min-largest-dma 70000` also checks internal DMA memory.
 - `scenario rotation_sweep`: 2 minutes on the level in each rotation, about 8 minutes in all. Keep any one test under 10 minutes; no long soaks.
 - `idle <s>`: idle, then wake by a timer after s seconds.
-- `trace <s> [now]` (ADR-014): every 50 ms for s seconds from the next wake (or now), the cant shown, the fusion's own, the accelerometer's, the correction, pitch, report counts and |g|, in the log. `bno levelfix off` (RAM only) turns off the level's correction after a wake, to compare.
+- `trace <s> [now]` (ADR-014): every 50 ms for s seconds from the next wake (or now), the level's cant and pitch, the count of game rotation reports and whether the unit is idle, in the log. The unit keeps its log through an idle, so a wake's first readings can be read over Wi-Fi afterwards.
 
 **Over Wi-Fi** (ADR-013): the same commands, snaps and log, with `--host` in place of `--port`.
 - Turn it on with Settings, Advanced, "Wi-Fi remote control" (off by default; "USB remote control" is its own switch). Anyone on the network can then send commands, so leave it off when you're done.
