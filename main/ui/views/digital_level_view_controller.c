@@ -47,6 +47,10 @@ float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
 #define LEVEL_WAKE_FIX_FIRST_SAMPLES 5      // averaged before the time constant takes over (100 ms at 50 Hz)
 #define LEVEL_STILL_G_TOLERANCE 0.3f        // m/s^2 from the unit's own 1 g: closer counts as still
 #define LEVEL_G_REF_TAU_S 2.0f              // the unit's own 1 g (its accelerometer's scale), followed slowly
+// The accelerometer's cant moves in steps of about 0.23 deg (one count of the BNO085's accelerometer); on a still
+// unit nothing blurs them, so its average may sit up to half a step off. Within that the fusion is trusted: only
+// the part of the difference beyond it is corrected (measured on COM12, 2026-11-09)
+#define LEVEL_WAKE_FIX_DEAD_BAND_RAD (0.12f * (float) M_PI / 180.0f)
 bool level_wake_fix_enabled = true;
 float level_grv_cant_rad, level_fix_rad;
 static float level_fix_pitch_rad;
@@ -102,6 +106,18 @@ static void level_wake_fix_take_accel(float grv_cant, float grv_pitch, int64_t n
 }
 
 
+// The part of a correction beyond the dead band
+static float level_dead_band(float fix) {
+    if (fix > LEVEL_WAKE_FIX_DEAD_BAND_RAD) {
+        return fix - LEVEL_WAKE_FIX_DEAD_BAND_RAD;
+    }
+    if (fix < -LEVEL_WAKE_FIX_DEAD_BAND_RAD) {
+        return fix + LEVEL_WAKE_FIX_DEAD_BAND_RAD;
+    }
+    return 0;
+}
+
+
 // Sensor poller task, with each new fusion reading: the cant and pitch to show
 static void level_wake_fix(float grv_cant, float grv_pitch, float * cant, float * pitch) {
     level_grv_cant_rad = grv_cant;
@@ -131,8 +147,8 @@ static void level_wake_fix(float grv_cant, float grv_pitch, float * cant, float 
     if (since_ms > LEVEL_WAKE_FIX_MS - LEVEL_WAKE_FIX_FADE_MS) {
         fade = (float) (LEVEL_WAKE_FIX_MS - since_ms) / LEVEL_WAKE_FIX_FADE_MS;
     }
-    *cant = level_wrap_pi(grv_cant + level_fix_rad * fade);
-    *pitch = grv_pitch + level_fix_pitch_rad * fade;
+    *cant = level_wrap_pi(grv_cant + level_dead_band(level_fix_rad) * fade);
+    *pitch = grv_pitch + level_dead_band(level_fix_pitch_rad) * fade;
 }
 
 
