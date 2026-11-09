@@ -41,7 +41,8 @@ int32_t display_locked_row_height(int32_t viewport, int32_t min_row, int32_t gap
 
 /**
  * @brief For a list snapping row starts: the last `rows_per_screen` - 1 shown rows are no snap points, so the last
- * stop is the last full screen (a snap to a later row's start scrolled past the list's end, leaving blank rows)
+ * stop is the last full screen (a snap to a later row's start scrolled past the list's end, leaving blank rows).
+ * Also stops every row, and everything in it, from scrolling the list when tapped: only the user scrolls it.
  */
 void display_locked_list_snap(lv_obj_t * list, int32_t rows_per_screen);
 
