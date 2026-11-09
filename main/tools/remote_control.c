@@ -83,6 +83,11 @@ const remote_control_config_t remote_control_config_default = {
 
 
 static SemaphoreHandle_t rc_execute_mutex = NULL;
+
+// Where the command being executed sends its lines besides the reply (the snap data): set by the transport for each
+// command, under rc_execute_mutex
+static remote_control_write_fn rc_write = NULL;
+static void * rc_write_ctx = NULL;
 static esp_timer_handle_t rc_reboot_timer = NULL;
 
 // Virtual pointer. The queue is written by the command task and read by the LVGL task (read_cb);
@@ -105,6 +110,14 @@ esp_err_t load_remote_control_config() {
 
 esp_err_t save_remote_control_config() {
     return save_config(NVS_NAMESPACE, &remote_control_config, sizeof(remote_control_config));
+}
+
+
+// One line (no line ending) to the transport the command came from
+static void rc_write_line(const char *line) {
+    if (rc_write != NULL) {
+        rc_write(line, rc_write_ctx);
+    }
 }
 
 
@@ -814,8 +827,8 @@ static const char rc_base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmno
 HEAPS_CAPS_ATTR static uint8_t rc_snap_pairs[RC_SNAP_PAIRS_PER_LINE * 4];
 HEAPS_CAPS_ATTR static char rc_snap_line[4 + (RC_SNAP_PAIRS_PER_LINE * 4 / 3 + 1) * 4 + 2];
 
-// Print one data line from the first `len` bytes of rc_snap_pairs
-static void rc_snap_print_line(size_t len) {
+// Write one data line from the first `len` bytes of rc_snap_pairs
+static void rc_snap_write_line(size_t len) {
     size_t out = 0;
     memcpy(rc_snap_line, "@sd ", 4);
     out = 4;
@@ -833,7 +846,7 @@ static void rc_snap_print_line(size_t len) {
         rc_snap_line[out++] = (i + 2 < len) ? rc_base64_chars[v & 0x3F] : '=';
     }
     rc_snap_line[out] = '\0';
-    printf("%s\n", rc_snap_line);
+    rc_write_line(rc_snap_line);
 }
 
 
@@ -894,7 +907,9 @@ static bool rc_cmd_snap(char *reply, size_t reply_size) {
     uint32_t w = snap->header.w;
     uint32_t h = snap->header.h;
     uint32_t stride = snap->header.stride;
-    printf("@snap %" PRIu32 " %" PRIu32 " rgb565rle\n", w, h);
+    char header[48];
+    snprintf(header, sizeof(header), "@snap %" PRIu32 " %" PRIu32 " rgb565rle", w, h);
+    rc_write_line(header);
 
     // Pixels in row order; a run may cross rows
     size_t pair_bytes = 0;
@@ -915,7 +930,7 @@ static bool rc_cmd_snap(char *reply, size_t reply_size) {
                 rc_snap_pairs[pair_bytes++] = run_pixel & 0xFF;
                 rc_snap_pairs[pair_bytes++] = run_pixel >> 8;
                 if (pair_bytes == sizeof(rc_snap_pairs)) {
-                    rc_snap_print_line(pair_bytes);
+                    rc_snap_write_line(pair_bytes);
                     pair_bytes = 0;
                     lines++;
                 }
@@ -931,10 +946,9 @@ static bool rc_cmd_snap(char *reply, size_t reply_size) {
         rc_snap_pairs[pair_bytes++] = run_pixel >> 8;
     }
     if (pair_bytes > 0) {
-        rc_snap_print_line(pair_bytes);
+        rc_snap_write_line(pair_bytes);
         lines++;
     }
-    fflush(stdout);
 
     lv_draw_buf_destroy(snap);
 
@@ -1221,7 +1235,8 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
 }
 
 
-bool remote_control_execute(const char *line, char *reply, size_t reply_size) {
+bool remote_control_execute(const char *line, char *reply, size_t reply_size, remote_control_write_fn write,
+                            void *write_ctx) {
     if (reply == NULL || reply_size == 0) {
         return false;
     }
@@ -1238,7 +1253,11 @@ bool remote_control_execute(const char *line, char *reply, size_t reply_size) {
 
     // One command at a time, whichever transport it comes from
     xSemaphoreTake(rc_execute_mutex, portMAX_DELAY);
+    rc_write = write;
+    rc_write_ctx = write_ctx;
     bool ok = rc_execute_locked(line_copy, reply, reply_size);
+    rc_write = NULL;
+    rc_write_ctx = NULL;
     xSemaphoreGive(rc_execute_mutex);
 
     return ok;

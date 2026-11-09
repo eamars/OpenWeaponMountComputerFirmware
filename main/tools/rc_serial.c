@@ -33,6 +33,12 @@ HEAPS_CAPS_ATTR static char rc_serial_line[REMOTE_CONTROL_LINE_MAX + 1];
 HEAPS_CAPS_ATTR static char rc_serial_reply[RC_SERIAL_REPLY_SIZE];
 
 
+// A command's lines before its reply (the snap data), on the console as they come
+static void rc_serial_write_line(const char *line, void *ctx) {
+    printf("%s\n", line);
+}
+
+
 static void rc_serial_print_reply() {
     // One printf per reply, so the line is not interleaved with log output
     printf("%s\n", rc_serial_reply);
@@ -74,7 +80,8 @@ static void rc_serial_task(void *p) {
                         rc_serial_line[line_len] = '\0';
 
                         rc_serial_park_if_requested();
-                        remote_control_execute(rc_serial_line, rc_serial_reply, sizeof(rc_serial_reply));
+                        remote_control_execute(rc_serial_line, rc_serial_reply, sizeof(rc_serial_reply), rc_serial_write_line,
+                                               NULL);
                         rc_serial_print_reply();
                     }
                     line_len = 0;

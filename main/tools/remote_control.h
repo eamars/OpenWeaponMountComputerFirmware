@@ -27,11 +27,19 @@ esp_err_t save_remote_control_config();
 esp_err_t remote_control_init(void);
 
 /**
- * @brief Execute one command line (no newline) and write one reply line (no newline) into reply.
+ * @brief How a transport takes the lines a command sends before its reply (the snap's data): one line, no line
+ * ending. Called from the task executing the command.
+ */
+typedef void (*remote_control_write_fn)(const char *line, void *ctx);
+
+/**
+ * @brief Execute one command line (no newline) and write one reply line (no newline) into reply. Lines the command
+ * sends before its reply go to `write` (NULL drops them).
  * Thread-safe; may block up to the command's time. Must not be called from the LVGL task.
  * @return true for an `@ok` reply, false for an `@err` reply.
  */
-bool remote_control_execute(const char *line, char *reply, size_t reply_size);
+bool remote_control_execute(const char *line, char *reply, size_t reply_size, remote_control_write_fn write,
+                            void *write_ctx);
 
 // Shared state, defined in remote_control.c
 extern remote_control_config_t remote_control_config;
