@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1067,11 +1068,17 @@ static void rc_trace_timer_cb(void *arg) {
     const uint32_t count = bno085_get_game_rotation_quaternion(bno085_dev, quat);
     float accel[3];
     const uint32_t accel_count = bno085_get_accelerometer(bno085_dev, accel);
+    float accel_cant = 0, accel_pitch = 0;
+    const float g = sqrtf(accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2]);
+    if (accel_count != 0 && g > 0.1f) {
+        const float up[3] = {accel[0] / g, accel[1] / g, accel[2] / g};
+        sensor_frame_cant_pitch(up, &accel_cant, &accel_pitch);
+    }
     ESP_LOGI(TAG, "wtrace t=%" PRId64 " cant=%.2f grv=%.2f acc=%.2f fix=%.2f pitch=%.2f n=%" PRIu32 " na=%" PRIu32
-             " idle=%d", since_us / 1000, (double) RAD_TO_DEG(sensor_roll_thread_unsafe),
-             (double) RAD_TO_DEG(level_grv_cant_rad), (double) RAD_TO_DEG(level_accel_cant_rad),
+             " g=%.2f idle=%d", since_us / 1000, (double) RAD_TO_DEG(sensor_roll_thread_unsafe),
+             (double) RAD_TO_DEG(level_grv_cant_rad), (double) RAD_TO_DEG(accel_cant),
              (double) RAD_TO_DEG(level_fix_rad), (double) RAD_TO_DEG(sensor_pitch_thread_unsafe), count, accel_count,
-             idle ? 1 : 0);
+             (double) g, idle ? 1 : 0);
     if (since_us >= rc_trace_length_us) {
         esp_timer_stop(rc_trace_timer);
         ESP_LOGI(TAG, "wtrace end");
