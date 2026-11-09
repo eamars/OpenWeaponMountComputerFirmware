@@ -167,15 +167,16 @@ settings_page_t * create_wifi_settings_page(void) {
     lv_subject_add_observer_obj(ui_wifi_provisioned, wifi_provision_panel_observer_cb, qr_container, NULL);
     lv_subject_add_observer_obj(ui_wifi_expired, wifi_provision_panel_observer_cb, qr_container, NULL);
 
+    // What you tap at the top, what you read in the middle, what cannot be undone at the bottom (owner, 2026-11-09)
     settings_page_t * page = settings_page_create("Wi-Fi");
+    settings_row_toggle(page, "Wi-Fi", get_wifi_on, set_wifi_on, NULL);
+    settings_row_action(page, NULL, "Set-up QR code", NULL, NULL, open_qr_page, NULL, NULL, false);
+    settings_row_shown_when(page, setup_shown);
     settings_row_status(page, wifi_status_text, NULL);
     settings_row_status(page, wifi_name_text, NULL);
     settings_row_shown_when(page, connected_shown);
     settings_row_status(page, wifi_address_text, NULL);
     settings_row_shown_when(page, connected_shown);
-    settings_row_toggle(page, "Wi-Fi", get_wifi_on, set_wifi_on, NULL);
-    settings_row_action(page, NULL, "Set-up QR code", NULL, NULL, open_qr_page, NULL, NULL, false);
-    settings_row_shown_when(page, setup_shown);
     // The page's only setting is Wi-Fi on or off, so it has no Reset: Forget network is its reset
     settings_row_action(page, NULL, "Forget network", NULL, NULL, forget_network,
                         "Forget the Wi-Fi network? The unit waits to be set up again.", "Forget", true);
