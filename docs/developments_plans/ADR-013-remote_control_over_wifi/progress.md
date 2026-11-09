@@ -95,6 +95,14 @@ The first time, the OTA host was still running when the unit restarted, so the u
 | `sleep` afterwards | idle 58.1 s on battery, asleep 57.5 s (99.1%), 493 timer wakes: about 8.5 a second, against ADR-009's "about 10 a second" |
 | Build | No warning from our code |
 
+**The order of a settings page** (the owner's second review comment): what you tap at the top, what you read in the middle, what cannot be undone at the bottom, for every settings page.
+- Only Wi-Fi and Kestrel broke it, and each now orders its rows by hand:
+  - Wi-Fi: switch, set-up · status, name, address · Forget network;
+  - Kestrel: mode, How to pair or Find Kestrels nearby · HUD name or the picked Kestrel, the pull status · Reset.
+- The owner turned down a framework that sorts rows by kind: exceptions are decided page by page. Power keeps its battery status at the top.
+- The rule is item 14 of the `embedded-ui-design` skill.
+- Put on the turret unit by OTA as `v1.2.0-17-gb3e5a10`; snaps of both pages, scrolled through, in rotations 3 and 0, show the new order.
+
 **First reading with the turret** (for ADR-014): turret pitch turns into the unit's cant. +4.90° of encoder moved cant from −91.01° to −95.37° (4.36°), and back to −90.59° (4.78°); the unit's own pitch stayed within 0.1°. These are single readings 3 s after each step: accuracy and settling are ADR-014's to measure.
 
 ## Found on the way, for ADR-014
