@@ -1,6 +1,6 @@
 # ADR-013: remote control over Wi-Fi
 
-Status: **Open** 2026-11-09. Approved by the owner with no password on the network control. Steps 1 to 6 built and checked on the COM11 unit: `state_change` passes over USB and over Wi-Fi; snaps and a full screen capture over Wi-Fi match USB; no CPU or internal RAM cost found. Reopened by the owner's review of PR #13: step 7 (finding and telling units apart, two switches) is left. Details, and two findings for ADR-014, in [progress](progress.md).
+Status: **Built** 2026-11-09. Approved by the owner with no password on the network control. Steps 1 to 6 built and checked on the COM11 unit: `state_change` passes over USB and over Wi-Fi; snaps and a full screen capture over Wi-Fi match USB; no CPU or internal RAM cost found. Step 7, from the owner's review of PR #13, built and put on the unit mounted on the turret by OTA over the remote control, with no cable: one number in every name, the name and address on the Wi-Fi page, the version in `find`, two separate switches; `state_change` passes over Wi-Fi on battery. Details, and findings for ADR-014, in [progress](progress.md).
 
 ## What we want
 
@@ -61,10 +61,10 @@ This is the first half of the owner's idea "remote debug, with turntable integra
    - `AGENTS.md` says how to use it.
 
 7. **Finding a unit, and telling units apart** (the owner's review).
-   - **One number per unit:** the network name uses the same 7 digits as the Kestrel HUD name, `owmc-8626470.local` beside `HUD-8626470`, from one helper in `common/`, so the two cannot drift. It comes from the chip, so it survives a reflash, an update and a settings reset.
-   - **The Wi-Fi page shows "Name" and "Address"** while the unit is connected (the address exists only then). That is where a user reads what to connect to.
+   - **One number per unit:** the network name uses the same 7 digits as the Kestrel HUD name, `owmc-8626470.local` beside `HUD-8626470`, from one helper in `common/`, so the two cannot drift. It comes from the chip, so it survives a reflash, an update and a settings reset. The set-up name (`OWMC_<n>`, the access point a phone joins) and the DHCP host name the router lists carry it too: they were a third and fourth name, from the Wi-Fi MAC address.
+   - **The Wi-Fi page shows "Network name" and "Address"** while the unit is connected (the address exists only then), each as a label line over its value, as the Kestrel page shows the HUD name. That is where a user reads what to connect to.
    - **`rc_run.py find` shows each unit's firmware version** beside its name and address, from a field in the mDNS announcement.
-   - **Two switches on Advanced, each on its own:** "Remote control over USB" (the old switch, its stored value kept, on by default) and "Remote control over Wi-Fi" (off by default, no longer needing USB on). The stored layout does not change.
+   - **Two switches on Advanced, each on its own:** "USB remote control" (the old switch, its stored value kept, on by default) and "Wi-Fi remote control" (off by default, no longer needing USB on). The stored layout does not change. ("Remote control over USB" took three lines; the shorter labels take two.)
    - Docs and tools use names, not addresses: a router can hand out a new address, but the name stays.
 
 ## How the unit shows it works

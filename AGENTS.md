@@ -74,8 +74,12 @@ Changes are proven on a real unit, not only built. `tools/remote_control/rc_run.
 - `idle <s>`: idle, then wake by a timer after s seconds.
 
 **Over Wi-Fi** (ADR-013): the same commands, snaps and log, with `--host` in place of `--port`.
-- Turn it on with Settings, Advanced: Remote control, then "Over Wi-Fi" (off by default). Anyone on the network can then send commands, so leave it off when you're done.
-- `rc_run.py find` lists the units announcing it, by mDNS name (`owmc-` plus the end of the MAC address). Example: `rc_run.py send state --host owmc-83a124.local`. `ui_snaps.py capture` takes `--host` too.
+- Turn it on with Settings, Advanced, "Wi-Fi remote control" (off by default; "USB remote control" is its own switch). Anyone on the network can then send commands, so leave it off when you're done.
+- **Finding a unit:** every name a unit goes by carries its 7-digit number (`unit_number()` in `common/`): `HUD-<n>` for the Kestrel, `OWMC_<n>` while it is set up, and `owmc-<n>` on the network, as both its DHCP and mDNS host name.
+  - The unit's Wi-Fi page shows its network name and address while connected.
+  - `rc_run.py find` lists the units with the switch on: name, address and firmware version.
+  - Use the name, not the address: the router can change the address. Example: `rc_run.py send state --host owmc-8626470.local`. `ui_snaps.py capture` takes `--host` too.
+- **Updating a unit with no cable** (the one on the turret): `scripts/ota_host.py --force --importance 1` serves the build, `send reboot --host ...` makes the unit check for it, then `tap` Install on the offer. Stop the host once the download is done, before you tap Restart: the restarted unit checks again, and with `--force` it would be offered the same build again. There is no app rollback, so a build that can't get back onto the network needs a USB cable.
 - Use it to test a unit on battery: on USB power the unit never light-sleeps, because the firmware holds a power lock. Connecting doesn't reset the unit, and snaps come back whole.
 - Idling stops the radio, which ends the session. Over Wi-Fi, scenarios idle with `idle <s>` and connect again after it. An idle unit can't be reached until something wakes it: a touch, the button, movement, or `wake` over USB.
 - The ROM's reset and panic lines go to the console only.

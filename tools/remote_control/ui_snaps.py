@@ -3,7 +3,7 @@ as they were (ADR-012).
 
 Usage, from the repo root with the repo venv:
     python tools/remote_control/ui_snaps.py capture --port COM11 logs/rc/snaps/before
-    python tools/remote_control/ui_snaps.py capture --host owmc-83a124.local logs/rc/snaps/before   (over Wi-Fi)
+    python tools/remote_control/ui_snaps.py capture --host owmc-8626470.local logs/rc/snaps/before   (over Wi-Fi)
     python tools/remote_control/ui_snaps.py compare logs/rc/snaps/before logs/rc/snaps/after [montage.png]
 
 capture: drives the unit over its USB console (rc_run.Session): the four tiles (timer, level, dope, settings) and

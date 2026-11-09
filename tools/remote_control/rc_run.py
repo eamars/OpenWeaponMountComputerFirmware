@@ -12,7 +12,7 @@ Opening the port may reset the board. After opening, the runner sends `state` ev
 the device answers, so the boot is part of the session and its markers are counted. During that
 boot, `rst:` lines are expected, and one abort right after "Failed to detect BNO085" is allowed.
 
-Over Wi-Fi (ADR-013; Settings, Advanced: Remote control and Over Wi-Fi on), the same commands, snaps and log:
+Over Wi-Fi (ADR-013; Settings, Advanced: Wi-Fi remote control on), the same commands, snaps and log:
     venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py find
     venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py send state --host owmc-8626470.local
     venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py scenario state_change --host 192.168.2.150
