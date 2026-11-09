@@ -36,6 +36,22 @@ The unit (`owmc-8626470`) is on the turret's pitch cradle, so turret pitch is th
 - **A slow tilt does not wake the unit:** a 5° turret step (about 1.2 s) did not trip the stability detector (no BNO085 wake in the counters). A lifted rifle moves harder than that. How hard a movement wakes the unit is a separate question, not measured here.
 - **Not explained:** one idle on the turret ended 4 to 5 s after a tilt, by a touch wake (`touch=1`), with nobody touching the unit as far as the run knows.
 
+## The owner's questions, and the experiments (2026-11-09)
+
+The owner asked for the options before the safe path: (1) does a slower report rate cut the cost, (2) force a fresh measurement after a known wake, (3) try path B; A only if the others fail or cost too much. And: does yaw wake the unit?
+
+Experiment build, every switch RAM only and set over Wi-Fi: `bno accel <ms>` (the calibrated accelerometer report), `bno wake fresh|resume`, `bno levelfix on|off` (path B), and `trace` logging the level's cant, the fusion's, the accelerometer's, the correction and |g|.
+
+1. **The report rate barely changes the cost** (DS p.51). The fusion costs 7.50 mA on the VDD rail at every listed rate, which is the gyroscope; the VDDIO part is 3.50 / 5.34 / 6.90 mA at 100 / 200 / 400 Hz. Below 100 Hz only the 3.5 mA part can shrink, so option A at 2 to 5 Hz still costs at least about 8 mA. The accelerometer at 125 Hz costs 1.4 mA, and the stability detector that runs in sleep today 0.13 mA.
+2. **A fresh fusion start does not help.** With the game rotation vector stopped before sleep and enabled again after the wake, the first reading was still 0.64° off (−91.77° against a settled −91.13°), converging at the same pace. The error comes from how the fusion starts, whether it resumes or restarts.
+3. **Path B works in principle.**
+   - **The accelerometer is right at the wake:** −95.46 to −95.71° in the first samples, against a settled −95.65°. It is noisy, about ±0.25° a sample on the turret, and up to about ±1° in one run (|g| between 9.5 and 10.3 m/s²): the turret's yaw motor shakes it (owner).
+   - **Once settled, the two agree** (−95.62° against −95.64°), so the correction hands back to the fusion without a step.
+   - **First run with path B on:** the shown cant was 0.07° off at 300 ms and 0.03° at 1 s. Without it, the fusion took about 3 s to get there.
+   - That run had a bug: the first correction used the accelerometer value stored from before the sleep, so it started at 0 instead of the whole difference. Fixed in `v1.2.0-27-ge49c99e` (only samples from after the wake count); not yet run, because the turret unit went idle (below).
+4. **Yaw does not wake the unit.** A 4.9° yaw step during sleep, like the 5° pitch steps and three quick back-and-forth pitch steps, left the BNO085 wake counter at 0. The stability detector works from the accelerometer, and the turret's movements are too gentle for it.
+5. **The rig cannot wake its unit.** Over Wi-Fi an idle unit can't be reached, and the turret's movements don't wake it. The turret unit went idle during other work and stays so until someone touches it.
+
 ## What we will do
 
 Depends on the decision below. With option A:
