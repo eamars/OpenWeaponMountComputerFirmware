@@ -8,6 +8,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+#include "esp_app_desc.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -357,7 +358,10 @@ static void serve(void) {
         return;
     }
     // The Wi-Fi service starts mDNS before it reports the connection, so the service can be added now
-    esp_err_t ret = mdns_service_add(NULL, RC_NET_MDNS_SERVICE, RC_NET_MDNS_PROTO, RC_NET_PORT, NULL, 0);
+    // The firmware version rides along, so `rc_run.py find` tells units apart by version as well as by name
+    mdns_txt_item_t txt[] = {{"version", esp_app_get_description()->version}};
+    esp_err_t ret = mdns_service_add(NULL, RC_NET_MDNS_SERVICE, RC_NET_MDNS_PROTO, RC_NET_PORT, txt,
+                                     sizeof(txt) / sizeof(txt[0]));
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "mDNS service not announced: %s", esp_err_to_name(ret));
     }

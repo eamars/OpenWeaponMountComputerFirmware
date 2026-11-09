@@ -14,7 +14,7 @@ boot, `rst:` lines are expected, and one abort right after "Failed to detect BNO
 
 Over Wi-Fi (ADR-013; Settings, Advanced: Remote control and Over Wi-Fi on), the same commands, snaps and log:
     venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py find
-    venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py send state --host owmc-83a124.local
+    venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py send state --host owmc-8626470.local
     venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py scenario state_change --host 192.168.2.150
 The radio stops whenever the unit idles, so over Wi-Fi a scenario idles with `idle <s>` (the unit wakes itself by
 a timer) and connects again after it. Connecting never resets the unit; the ROM's reset lines are console only.
@@ -187,7 +187,7 @@ class NetPort:
 
 
 def find_units() -> list:
-    """The units announcing the remote control over Wi-Fi: (host name, addresses) pairs."""
+    """The units announcing the remote control over Wi-Fi: (host name, "addresses  version") pairs."""
     from zeroconf import ServiceBrowser, Zeroconf
 
     zc = Zeroconf()
@@ -197,7 +197,9 @@ def find_units() -> list:
         def add_service(self, zc, kind, name):
             info = zc.get_service_info(kind, name, 3000)
             if info is not None:
-                found[info.server.rstrip(".")] = ", ".join(socket.inet_ntoa(a) for a in info.addresses)
+                version = (info.properties or {}).get(b"version", b"?").decode(errors="replace")
+                addresses = ", ".join(socket.inet_ntoa(a) for a in info.addresses)
+                found[info.server.rstrip(".")] = f"{addresses}  {version}"
 
         def update_service(self, zc, kind, name):
             self.add_service(zc, kind, name)

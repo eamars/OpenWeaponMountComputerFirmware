@@ -51,7 +51,7 @@ void system_config_set_rotation(lv_display_rotation_t rotation) {
 }
 
 
-// Start or stop the remote control to match the switches: Over Wi-Fi only counts while Remote control is on
+// Start or stop the remote control to match its two switches, USB and Wi-Fi, each on its own
 static void apply_remote_control_config() {
     if (remote_control_config.serial_enable) {
         rc_serial_start();
@@ -59,7 +59,7 @@ static void apply_remote_control_config() {
     else {
         rc_serial_stop();
     }
-    rc_net_set_enabled(remote_control_config.serial_enable && remote_control_config.wifi_enable);
+    rc_net_set_enabled(remote_control_config.wifi_enable);
 }
 
 
@@ -170,16 +170,10 @@ static void set_remote_control_wifi(bool on, void * ctx) {
 }
 
 
-static bool remote_control_wifi_shown(void) {
-    return remote_control_config.serial_enable;
-}
-
-
 void system_settings_add_advanced_rows(settings_page_t * page) {
     settings_row_choice(page, "Log level", log_level_names, 6, get_log_level, set_log_level, NULL);
-    settings_row_toggle(page, "Remote control", get_remote_control, set_remote_control, NULL);
-    settings_row_toggle(page, "Over Wi-Fi", get_remote_control_wifi, set_remote_control_wifi, NULL);
-    settings_row_shown_when(page, remote_control_wifi_shown);
+    settings_row_toggle(page, "Remote control over USB", get_remote_control, set_remote_control, NULL);
+    settings_row_toggle(page, "Remote control over Wi-Fi", get_remote_control_wifi, set_remote_control_wifi, NULL);
 }
 
 

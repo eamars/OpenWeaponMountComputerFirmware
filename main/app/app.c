@@ -211,12 +211,12 @@ void app_main(void)
         }
     }
 
-    // And over Wi-Fi, when also switched on (ADR-013)
+    // And over Wi-Fi, when switched on (ADR-013)
     ret = rc_net_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start the remote control over Wi-Fi: %s", esp_err_to_name(ret));
     }
-    rc_net_set_enabled(remote_control_config.serial_enable && remote_control_config.wifi_enable);
+    rc_net_set_enabled(remote_control_config.wifi_enable);
 
     // Print task stack headroom periodically (verification builds only)
     mem_diag_start_stack_report();

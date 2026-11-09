@@ -57,4 +57,14 @@ esp_err_t load_config_grown(const char *ns, void *cfg, const void *default_cfg, 
 
 esp_err_t save_config(const char *ns, void *cfg, size_t size);
 
+
+#define UNIT_NUMBER_SIZE 8  // 7 digits and the terminator
+
+/**
+ * @brief The unit's number, 7 digits from its Bluetooth MAC address: the same on every boot, after a reflash, an
+ * update or a settings reset. Every name the unit goes by carries it (ADR-013): HUD-<n> for the Kestrel, OWMC_<n>
+ * while it is being set up, owmc-<n> on the network
+ */
+void unit_number(char *buf, size_t size);
+
 #endif // COMMON_H_

@@ -7,6 +7,9 @@
 #include "esp_check.h"
 #include "esp_crc.h"
 #include "esp_heap_caps.h"
+#include "esp_mac.h"
+#include <inttypes.h>
+#include <stdio.h>
 
 
 #define TAG "Common"
@@ -132,6 +135,15 @@ esp_err_t load_config_grown(const char *ns, void *cfg, const void *default_cfg, 
     }
 
     return ESP_OK;
+}
+
+
+void unit_number(char *buf, size_t size) {
+    // As the Kestrel HUD name has been since ADR-007, so a unit paired with a Kestrel keeps its name
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_BT);
+    uint32_t number = ((uint32_t) mac[3] << 16 | mac[4] << 8 | mac[5]) % 10000000;
+    snprintf(buf, size, "%07" PRIu32, number);
 }
 
 
