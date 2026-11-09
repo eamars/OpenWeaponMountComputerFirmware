@@ -78,15 +78,13 @@ typedef struct {
 
     // Resets the hub announced (SH2_RESET): each restarts its sensors, which drops state built from their reports
     volatile uint32_t reset_count;
+    // The host asked for the next reset (bno085_soft_reset, bno085_hardware_reset): logged as requested, not unexpected
+    volatile bool reset_requested;
 
     // The newest game rotation vector (real, i, j, k) and how many have arrived; written by the sensor callback,
     // read under sh2_lock (ADR-011)
     float grv_quat[4];
     uint32_t grv_count;
-
-    // The newest calibrated accelerometer report (m/s^2, gravity included) and how many have arrived (ADR-014)
-    float accel[3];
-    uint32_t accel_count;
 
     // Which sensors may calibrate themselves (SH2_CAL_* bits) once the host has set it, and whether it still has to
     // be sent: the setting does not persist across the hub's resets (datasheet 3.1.1), so each reset sets it pending
@@ -172,10 +170,11 @@ esp_err_t bno085_set_report_always_on(bno085_ctx_t *ctx, sh2_SensorId_t sensor_i
 esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx);
 
 /**
- * @brief Measurement (ADR-014): restart the hub by command, `reinit` (SH-2 Initialize, the whole hub) or not
- * (soft reset, sh2_devReset). The driver's reset handling enables the reports again, as after a hardware reset
+ * @brief Reset the hub by command (SH-2 soft reset): its fusion starts afresh from the sensors' present readings.
+ * The driver enables the reports and the calibration setting again, as after any reset; no new report for about
+ * 0.4 s (ADR-014)
  */
-esp_err_t bno085_command_restart(bno085_ctx_t *ctx, bool reinit);
+esp_err_t bno085_soft_reset(bno085_ctx_t *ctx);
 
 
 /**
@@ -186,12 +185,6 @@ esp_err_t bno085_command_restart(bno085_ctx_t *ctx, bool reinit);
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
 esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms);
-
-/** @brief Calibrated accelerometer report (gravity included), every interval_ms; 0 disables it (ADR-014) */
-esp_err_t bno085_enable_accelerometer_report(bno085_ctx_t *ctx, uint32_t interval_ms);
-
-/** @brief The newest accelerometer report (m/s^2) and how many have arrived (0: none yet) */
-uint32_t bno085_get_accelerometer(bno085_ctx_t *ctx, float accel[3]);
 
 /**
  * @brief Enable linear acceleration report

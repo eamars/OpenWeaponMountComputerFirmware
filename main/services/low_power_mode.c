@@ -50,6 +50,12 @@ TickType_t last_activity_tick = 0;
 // detector's run: a hub reset restarts it without a report, so a "moving" from before the last reset does not count
 static volatile bool unit_moving = false;
 static volatile uint32_t unit_moving_reset_count;
+// A wake by motion leaves the BNO085's fusion on its pre-sleep orientation: the turn made before and while it woke is
+// never counted, and the fusion corrects tilt from the accelerometer only slowly (13 to 14 deg off when the rifle
+// came to rest, 6 to 8 s to come within 0.2 deg). So when a unit woken by motion comes to rest, the hub is reset and
+// its fusion starts afresh from a still accelerometer: within 0.2 deg 0.2 to 1.2 s after coming to rest (ADR-014).
+// Written by the stability task only
+static bool woke_moving = false;
 TickType_t last_idle_tick = 0;
 static EventGroupHandle_t low_power_control_event;
 static lv_indev_read_cb_t original_read_cb;  // the original touchpad read callback
@@ -626,18 +632,28 @@ void sensor_stability_detector_poller_task(void *p) {
 
         if (err == ESP_OK) {
             update_low_power_mode_last_activity_event();
+            const bool idle = is_idle_mode_activated();
             // Bit 0: entered the still state; bit 1: left it (SH-2 manual 6.5.35). Still wins if both are set
             if (stability & STABILITY_ENTERED) {
                 unit_moving = false;
+                if (idle) {
+                    woke_moving = false;    // came to rest without waking: nothing to start afresh
+                }
+                else if (woke_moving) {
+                    woke_moving = false;
+                    ESP_LOGI(TAG, "At rest after a wake by motion: the sensor starts afresh");
+                    (void) bno085_soft_reset(bno085_dev);   // a failure is logged by the driver
+                }
             }
             else if (stability & STABILITY_EXITED) {
                 unit_moving_reset_count = bno085_get_reset_count(bno085_dev);
                 unit_moving = true;
-            }
-
-            if (is_idle_mode_activated()) {
-                low_power_mode_note_wake_cause("motion");
-                wake_from_idle_mode();
+                // Only leaving the still state wakes the unit: a "now still" report woke a unit lying still (ADR-013)
+                if (idle) {
+                    woke_moving = true;
+                    low_power_mode_note_wake_cause("motion");
+                    wake_from_idle_mode();
+                }
             }
         }
     }

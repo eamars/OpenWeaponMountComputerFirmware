@@ -118,12 +118,6 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
         ctx->grv_quat[3] = sensor_value.un.gameRotationVector.k;
         ctx->grv_count++;
     }
-    else if (sensor_value.sensorId == SH2_ACCELEROMETER) {
-        ctx->accel[0] = sensor_value.un.accelerometer.x;
-        ctx->accel[1] = sensor_value.un.accelerometer.y;
-        ctx->accel[2] = sensor_value.un.accelerometer.z;
-        ctx->accel_count++;
-    }
 
     xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
 }
@@ -189,7 +183,13 @@ static void sh2_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
     // If we see a reset, set a flag so that sensors will be reconfigured.
     switch (pEvent->eventId) {
         case SH2_RESET: {
-            ESP_LOGW(TAG, "BNO085 Reset Unexpectedly");
+            if (ctx->reset_requested) {
+                ctx->reset_requested = false;
+                ESP_LOGI(TAG, "BNO085 reset, as requested");
+            }
+            else {
+                ESP_LOGW(TAG, "BNO085 Reset Unexpectedly");
+            }
             ctx->reset_count++;
             ctx->cal_config_pending = ctx->cal_config_set;  // sent by the poller task, not from this callback
         
@@ -519,6 +519,7 @@ esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx) {
 
     // Under the sh2 lock, so the pulse never cuts a transfer in half
     sh2_lock(ctx);
+    ctx->reset_requested = true;
     gpio_set_level(ctx->reset_pin, 0);
     vTaskDelay(pdMS_TO_TICKS(BNO085_RESET_PULSE_MS));
     gpio_set_level(ctx->reset_pin, 1);
@@ -529,12 +530,19 @@ esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx) {
 }
 
 
-esp_err_t bno085_command_restart(bno085_ctx_t *ctx, bool reinit) {
+esp_err_t bno085_soft_reset(bno085_ctx_t *ctx) {
     sh2_lock(ctx);
-    int status = reinit ? sh2_reinitialize() : sh2_devReset();
+    ctx->reset_requested = true;
+    int status = sh2_devReset();
+    if (status != SH2_OK) {
+        ctx->reset_requested = false;
+    }
     sh2_unlock(ctx);
-    ESP_LOGW(TAG, "%s: %d", reinit ? "Hub reinitialised (SH-2 Initialize)" : "Hub soft reset", status);
-    return status == SH2_OK ? ESP_OK : ESP_FAIL;
+    if (status != SH2_OK) {
+        ESP_LOGE(TAG, "Soft reset failed: %d", status);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 
@@ -552,31 +560,6 @@ esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t 
     config.reportInterval_us = interval_ms * 1000;
 
     return bno085_configure_report(ctx, SH2_GAME_ROTATION_VECTOR, &config);
-}
-
-
-esp_err_t bno085_enable_accelerometer_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
-    // Not always-on: the accelerometer already runs for the stability detector while the hub sleeps
-    sh2_SensorConfig_t config = {
-        .changeSensitivityEnabled = false,
-        .wakeupEnabled = false,
-        .changeSensitivityRelative = false,
-        .alwaysOnEnabled = false,
-        .changeSensitivity = 0,
-        .batchInterval_us = 0,
-        .sensorSpecific = 0,
-    };
-    config.reportInterval_us = interval_ms * 1000;
-    return bno085_configure_report(ctx, SH2_ACCELEROMETER, &config);
-}
-
-
-uint32_t bno085_get_accelerometer(bno085_ctx_t *ctx, float accel[3]) {
-    sh2_lock(ctx);
-    memcpy(accel, ctx->accel, sizeof(ctx->accel));
-    const uint32_t count = ctx->accel_count;
-    sh2_unlock(ctx);
-    return count;
 }
 
 

@@ -3,7 +3,6 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1041,10 +1040,10 @@ static bool rc_cmd_grav(int argc, char **argv, char *reply, size_t reply_size) {
 }
 
 
-// Debug (ADR-014): `trace <s> [now]` logs every 50 ms for s seconds, from the next wake (or now): the cant shown,
-// the fusion's own, the accelerometer's, the correction, the pitch, the report counts and |g|. What the level read
-// right after a wake is then in the log the host reads once Wi-Fi is back (16 KB keeps about 7 s of it). RAM only,
-// one trace at a time. While armed its timer wakes the chip 20 times a second
+// Debug (ADR-014): `trace <s> [now]` logs the level's cant and pitch and the count of game rotation reports every
+// 50 ms for s seconds, from the next wake (or now). What the level read right after a wake is then in the log the host
+// reads once Wi-Fi is back (16 KB keeps about 10 s of it). RAM only, one trace at a time. While armed its timer wakes
+// the chip 20 times a second
 #define RC_TRACE_PERIOD_US (50 * 1000)
 #define RC_TRACE_MAX_S 30
 static esp_timer_handle_t rc_trace_timer = NULL;
@@ -1067,19 +1066,9 @@ static void rc_trace_timer_cb(void *arg) {
     const int64_t since_us = esp_timer_get_time() - rc_trace_wake_us;
     float quat[4];
     const uint32_t count = bno085_get_game_rotation_quaternion(bno085_dev, quat);
-    float accel[3];
-    const uint32_t accel_count = bno085_get_accelerometer(bno085_dev, accel);
-    float accel_cant = 0, accel_pitch = 0;
-    const float g = sqrtf(accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2]);
-    if (accel_count != 0 && g > 0.1f) {
-        const float up[3] = {accel[0] / g, accel[1] / g, accel[2] / g};
-        sensor_frame_cant_pitch(up, &accel_cant, &accel_pitch);
-    }
-    ESP_LOGI(TAG, "wtrace t=%" PRId64 " cant=%.2f grv=%.2f acc=%.2f fix=%.2f pitch=%.2f n=%" PRIu32 " na=%" PRIu32
-             " g=%.2f idle=%d", since_us / 1000, (double) RAD_TO_DEG(sensor_roll_thread_unsafe),
-             (double) RAD_TO_DEG(level_grv_cant_rad), (double) RAD_TO_DEG(accel_cant),
-             (double) RAD_TO_DEG(level_fix_rad), (double) RAD_TO_DEG(sensor_pitch_thread_unsafe), count, accel_count,
-             (double) g, idle ? 1 : 0);
+    ESP_LOGI(TAG, "wtrace t=%" PRId64 " cant=%.2f pitch=%.2f n=%" PRIu32 " idle=%d", since_us / 1000,
+             (double) RAD_TO_DEG(sensor_roll_thread_unsafe), (double) RAD_TO_DEG(sensor_pitch_thread_unsafe), count,
+             idle ? 1 : 0);
     if (since_us >= rc_trace_length_us) {
         esp_timer_stop(rc_trace_timer);
         ESP_LOGI(TAG, "wtrace end");
@@ -1126,8 +1115,8 @@ static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
 // Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
 // keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
 static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
-    // `bno restart grv|reinit|soft|hard` (ADR-014 measurement): start the fusion afresh four ways, now. grv: the
-    // game rotation vector report stopped and started; reinit: SH-2 Initialize; soft: soft reset; hard: the reset pin
+    // `bno restart grv|soft|hard` (debug, ADR-014): start the fusion afresh now. grv: the game rotation vector report
+    // stopped and started (the fusion keeps its state); soft: soft reset by command; hard: the reset pin
     if (argc == 3 && strcmp(argv[1], "restart") == 0) {
         esp_err_t ret = ESP_ERR_INVALID_ARG;
         if (strcmp(argv[2], "grv") == 0) {
@@ -1136,8 +1125,8 @@ static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
                 ret = bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS);
             }
         }
-        else if (strcmp(argv[2], "reinit") == 0 || strcmp(argv[2], "soft") == 0) {
-            ret = bno085_command_restart(bno085_dev, strcmp(argv[2], "reinit") == 0);
+        else if (strcmp(argv[2], "soft") == 0) {
+            ret = bno085_soft_reset(bno085_dev);
         }
         else if (strcmp(argv[2], "hard") == 0) {
             ret = bno085_hardware_reset(bno085_dev);
@@ -1146,11 +1135,6 @@ static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
             return rc_reply(reply, reply_size, false, "@err args");
         }
         return rc_reply(reply, reply_size, ret == ESP_OK, "@%s bno restart %s", ret == ESP_OK ? "ok" : "err", argv[2]);
-    }
-    // `bno levelfix on|off` (RAM only): the level's correction after a wake (ADR-014), off to compare
-    if (argc == 3 && strcmp(argv[1], "levelfix") == 0 && (strcmp(argv[2], "on") == 0 || strcmp(argv[2], "off") == 0)) {
-        level_wake_fix_enabled = strcmp(argv[2], "on") == 0;
-        return rc_reply(reply, reply_size, true, "@ok bno levelfix %s", argv[2]);
     }
     if (argc != 4 || strcmp(argv[1], "alwayson") != 0 || (strcmp(argv[3], "0") != 0 && strcmp(argv[3], "1") != 0)) {
         return rc_reply(reply, reply_size, false, "@err args");

@@ -30,12 +30,6 @@ float get_relative_roll_angle_rad_thread_unsafe();
 
 // Shared state, defined in digital_level_view_controller.c
 extern float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
-
-// After each wake the shown cant and pitch are corrected toward the accelerometer's for a few seconds (ADR-014). On by
-// default; the remote control's `bno levelfix off` (RAM only) turns it off to compare
-extern bool level_wake_fix_enabled;
-// For the remote control's trace: the fusion's own cant and the correction applied to it (radians)
-extern float level_grv_cant_rad, level_fix_rad;
 extern float sensor_x_acceleration_thread_unsafe;
 
 #endif // DIGITAL_LEVEL_VIEW_CONTROLLER_H
