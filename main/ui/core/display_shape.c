@@ -42,10 +42,21 @@ int32_t display_locked_row_height(int32_t viewport, int32_t min_row, int32_t gap
 }
 
 
+// A tap focuses what it lands on, and a focused object scrolls into view; in a list that snaps row starts, that
+// moved the tapped row to the top (the Dope tile went on one target after an edit). Off for the whole row
+static void no_scroll_on_focus(lv_obj_t * obj) {
+    lv_obj_set_scroll_on_focus(obj, false);
+    for (uint32_t i = 0; i < lv_obj_get_child_count(obj); i++) {
+        no_scroll_on_focus(lv_obj_get_child(obj, i));
+    }
+}
+
+
 void display_locked_list_snap(lv_obj_t * list, int32_t rows_per_screen) {
     int32_t tail = rows_per_screen - 1;   // shown rows from the end that are no snap points
     for (int32_t i = (int32_t) lv_obj_get_child_count(list) - 1; i >= 0; i--) {
         lv_obj_t * child = lv_obj_get_child(list, i);
+        no_scroll_on_focus(child);
         if (lv_obj_is_hidden(child)) {
             continue;
         }
