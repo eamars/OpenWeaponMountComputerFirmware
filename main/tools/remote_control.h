@@ -15,6 +15,7 @@ extern "C" {
 
 typedef struct {
     bool serial_enable;
+    bool wifi_enable;       // also over Wi-Fi, while serial_enable is on (ADR-013). Appended: older settings load
 } remote_control_config_t;
 
 

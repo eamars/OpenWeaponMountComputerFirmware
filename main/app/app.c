@@ -38,6 +38,7 @@
 #include "driver/usb_serial_jtag_vfs.h"
 #include "remote_control.h"
 #include "rc_serial.h"
+#include "rc_net.h"
 
 #define TAG "App"
 
@@ -209,6 +210,13 @@ void app_main(void)
             ESP_LOGE(TAG, "Failed to start serial remote control: %s", esp_err_to_name(ret));
         }
     }
+
+    // And over Wi-Fi, when also switched on (ADR-013)
+    ret = rc_net_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start the remote control over Wi-Fi: %s", esp_err_to_name(ret));
+    }
+    rc_net_set_enabled(remote_control_config.serial_enable && remote_control_config.wifi_enable);
 
     // Print task stack headroom periodically (verification builds only)
     mem_diag_start_stack_report();

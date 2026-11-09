@@ -11,6 +11,13 @@ Usage (repo venv):
 Opening the port may reset the board. After opening, the runner sends `state` every 2 s until
 the device answers, so the boot is part of the session and its markers are counted. During that
 boot, `rst:` lines are expected, and one abort right after "Failed to detect BNO085" is allowed.
+
+Over Wi-Fi (ADR-013; Settings, Advanced: Remote control and Over Wi-Fi on), the same commands, snaps and log:
+    venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py find
+    venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py send state --host owmc-83a124.local
+    venv\\Scripts\\python.exe tools\\remote_control\\rc_run.py scenario state_change --host 192.168.2.150
+The radio stops whenever the unit idles, so over Wi-Fi a scenario idles with `idle <s>` (the unit wakes itself by
+a timer) and connects again after it. Connecting never resets the unit; the ROM's reset lines are console only.
 """
 
 import argparse
@@ -18,6 +25,7 @@ import base64
 import datetime
 import pathlib
 import re
+import socket
 import statistics
 import struct
 import sys
@@ -27,6 +35,11 @@ import zlib
 import serial
 
 DEFAULT_PORT = "COM11"
+RC_NET_PORT = 3333                      # rc_net.h
+RC_NET_SERVICE = "_owmc-rc._tcp.local."
+NET_CONNECT_TIMEOUT_S = 3.0
+NET_RECONNECT_PERIOD_S = 2.0
+FIND_S = 4.0
 BAUD_RATE = 115200
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 # Outside build/: idf.py fullclean and set-target delete build/, and with it the evidence (ADR-005 B22)
@@ -110,19 +123,113 @@ READY_DRAIN_S = 1.0       # after the first answer, replies to earlier probes ma
 FINAL_PUMP_S = 5.0        # keep reading this long after a scenario's last command
 
 
-class Session:
-    """One serial session: port, log file, reply matching, marker counting and readings."""
+class NetPort:
+    """The unit's remote control over Wi-Fi, read and written like the serial port.
 
-    def __init__(self, port: str, log_path: pathlib.Path):
-        """Open the log file and the serial port without asserting DTR or RTS.
+    The connection drops whenever the unit idles (its radio stops), mostly without a word: reads then return
+    nothing until `drop()` and the next read, which connects again (at most every NET_RECONNECT_PERIOD_S).
+    """
+
+    def __init__(self, host: str, port: int = RC_NET_PORT):
+        self.address = (host, port)
+        self.sock = None
+        self.next_try = 0.0
+        self._connect()
+
+    def _connect(self) -> bool:
+        self.next_try = time.monotonic() + NET_RECONNECT_PERIOD_S
+        try:
+            sock = socket.create_connection(self.address, timeout=NET_CONNECT_TIMEOUT_S)
+        except OSError:
+            return False
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.settimeout(0)
+        self.sock = sock
+        return True
+
+    def drop(self):
+        """Close the connection; the next read or write connects again."""
+        if self.sock is not None:
+            self.sock.close()
+        self.sock = None
+        self.next_try = 0.0
+
+    def read(self, size: int) -> bytes:
+        if self.sock is None:
+            if time.monotonic() >= self.next_try:
+                self._connect()
+            return b""
+        try:
+            data = self.sock.recv(size)
+        except BlockingIOError:
+            return b""
+        except OSError:
+            data = b""
+        if not data:
+            self.drop()
+        return data
+
+    def write(self, data: bytes):
+        if self.sock is None and not self._connect():
+            return
+        try:
+            self.sock.settimeout(NET_CONNECT_TIMEOUT_S)
+            self.sock.sendall(data)
+            self.sock.settimeout(0)
+        except OSError:
+            self.drop()
+
+    def flush(self):
+        pass
+
+    def close(self):
+        self.drop()
+
+
+def find_units() -> list:
+    """The units announcing the remote control over Wi-Fi: (host name, addresses) pairs."""
+    from zeroconf import ServiceBrowser, Zeroconf
+
+    zc = Zeroconf()
+    found = {}
+
+    class Listener:
+        def add_service(self, zc, kind, name):
+            info = zc.get_service_info(kind, name, 3000)
+            if info is not None:
+                found[info.server.rstrip(".")] = ", ".join(socket.inet_ntoa(a) for a in info.addresses)
+
+        def update_service(self, zc, kind, name):
+            self.add_service(zc, kind, name)
+
+        def remove_service(self, zc, kind, name):
+            pass
+
+    ServiceBrowser(zc, RC_NET_SERVICE, Listener())
+    time.sleep(FIND_S)
+    zc.close()
+    return sorted(found.items())
+
+
+class Session:
+    """One session, over the serial console or Wi-Fi: port, log file, reply matching, marker counting and readings."""
+
+    def __init__(self, port: str, log_path: pathlib.Path, host: str = None):
+        """Open the log file and the serial port without asserting DTR or RTS, or connect to the unit over Wi-Fi.
 
         Args:
-            port: Serial port name, e.g. COM11.
+            port: Serial port name, e.g. COM11; not used with host.
             log_path: File that receives every line sent and received, with local timestamps.
+            host: The unit's address or mDNS name, for the remote control over Wi-Fi.
         """
         log_path.parent.mkdir(parents=True, exist_ok=True)
         self.log_path = log_path
         self.log = open(log_path, "w", encoding="utf-8")
+        self.is_net = host is not None
+        self._init_state()
+        if self.is_net:
+            self.port = NetPort(host)
+            return
 
         # Configure before open so pyserial never raises DTR/RTS (which can hold the chip in reset)
         self.port = serial.Serial()
@@ -139,6 +246,7 @@ class Session:
             # between two reads stalls the USB link and the device drops console output
             self.port.set_buffer_size(rx_size=HOST_RX_QUEUE_BYTES, tx_size=4096)
 
+    def _init_state(self):
         self.rx_buffer = b""
         self.lines = []           # every received line, in order
         self.replies = []         # received @ok/@err lines not yet matched to a command
@@ -240,6 +348,23 @@ class Session:
                     return reply
                 self._write_log("!", f"reply not matching '{line}' dropped: {reply}")
         return None
+
+    def idle_over_net(self, duration_s: float):
+        """Over Wi-Fi: `idle <s>`, then connect again once the unit has woken itself and has its address back.
+
+        The reply to `idle` may be lost with the radio, so a missing one is not a failure.
+        """
+        line = f"idle {int(duration_s)}"
+        reply = self._exchange(line, COMMAND_TIMEOUT_S)
+        print(f"> {line}\n  {reply or '(no reply: the radio stopped first)'}")
+        if reply is not None and not reply.startswith("@ok"):
+            self.failures.append(f"{line}: {reply}")
+        deadline = time.monotonic() + duration_s
+        while time.monotonic() < deadline:
+            self.pump(READ_POLL_S)
+        self.port.drop()
+        if not self.wait_ready():
+            self.failures.append("no answer after the timed idle")
 
     def wait_ready(self) -> bool:
         """Send `state` every 2 s until the device answers @ok, for up to 60 s.
@@ -479,9 +604,12 @@ def scenario_state_change(session: Session):
         session.dwell(TILE_DWELL_S)
 
     for _ in range(IDLE_CYCLES):
-        session.command("idle")
-        session.dwell(IDLE_DURATION_S)
-        session.command("wake")
+        if session.is_net:
+            session.idle_over_net(IDLE_DURATION_S)
+        else:
+            session.command("idle")
+            session.dwell(IDLE_DURATION_S)
+            session.command("wake")
         session.dwell(AFTER_WAKE_S)
 
     # Turn to another rotation and back to the unit's own, so the saved setting ends as it was found (it used to end
@@ -493,11 +621,15 @@ def scenario_state_change(session: Session):
         session.command("save system")
         session.dwell(AFTER_ROTATION_S)
 
-    session.command("wifi off")
-    session.dwell(WIFI_OFF_S)
-    start_index = len(session.lines)
-    session.command("wifi on")
-    wait_for_ip_address(session, start_index, accept_connected=False)
+    if session.is_net:
+        # Wi-Fi off would end the session itself; the run over USB covers it
+        print("note: Wi-Fi off and on skipped over Wi-Fi")
+    else:
+        session.command("wifi off")
+        session.dwell(WIFI_OFF_S)
+        start_index = len(session.lines)
+        session.command("wifi on")
+        wait_for_ip_address(session, start_index, accept_connected=False)
 
     session.stats()
 
@@ -789,6 +921,8 @@ def parse_args(argv):
     # Options go after the action: rc_run.py scenario state_change --min-lvgl-stack 2048
     options = argparse.ArgumentParser(add_help=False)
     options.add_argument("--port", default=DEFAULT_PORT, help="serial port (default COM11)")
+    options.add_argument("--host", default=None,
+                         help="the unit's address or mDNS name: the remote control over Wi-Fi instead of --port")
     options.add_argument("--min-lvgl-stack", type=int, default=None,
                          help="fail when taskLVGL's lowest free stack (B) is below this")
     options.add_argument("--min-largest-dma", type=int, default=None,
@@ -805,6 +939,7 @@ def parse_args(argv):
     send_parser.add_argument("line", help='command line, e.g. "tile 2 1"')
     scenario_parser = commands.add_parser("scenario", parents=[options], help="run a named scenario")
     scenario_parser.add_argument("name", choices=sorted(SCENARIOS))
+    commands.add_parser("find", help="list the units announcing the remote control over Wi-Fi")
 
     return parser.parse_args(argv)
 
@@ -812,10 +947,16 @@ def parse_args(argv):
 def main(argv) -> int:
     """Run one send or scenario session and return the process exit code (0 PASS, 1 FAIL)."""
     args = parse_args(argv)
+    if args.action == "find":
+        units = find_units()
+        for name, addresses in units:
+            print(f"{name}  {addresses}")
+        print(f"{len(units)} unit(s)")
+        return 0 if units else 1
 
     label = "send" if args.action == "send" else args.name
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    session = Session(args.port, args.log_dir / f"rc_{label}_{stamp}.log")
+    session = Session(args.port, args.log_dir / f"rc_{label}_{stamp}.log", host=args.host)
     session.watch_s = args.watch_s
     try:
         if session.wait_ready():

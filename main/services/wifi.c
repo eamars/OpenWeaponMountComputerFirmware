@@ -193,8 +193,23 @@ static esp_err_t start_mdns_service() {
         ESP_LOGE(TAG, "mDNS init failed: %s", esp_err_to_name(ret));
     }
     mem_diag_log_checkpoint("mdns_init end");
+    if (ret != ESP_OK) {
+        return ret;
+    }
 
-    // TODO: Assign mDNS name and service
+    // A name per unit, "owmc-" and the last three bytes of its station MAC address, so a host finds it without
+    // knowing its address (the remote control over Wi-Fi announces its service under it, ADR-013)
+    uint8_t mac[6];
+    char hostname[16];
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_read_mac(mac, ESP_MAC_WIFI_STA));
+    snprintf(hostname, sizeof(hostname), "owmc-%02x%02x%02x", mac[3], mac[4], mac[5]);
+    ret = mdns_hostname_set(hostname);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS hostname: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_ERROR_CHECK_WITHOUT_ABORT(mdns_instance_name_set(hostname));   // one instance per unit
+    ESP_LOGI(TAG, "mDNS name %s.local", hostname);
 
     return ret;
 }
