@@ -1126,6 +1126,27 @@ static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
 // Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
 // keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
 static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
+    // `bno restart grv|reinit|soft|hard` (ADR-014 measurement): start the fusion afresh four ways, now. grv: the
+    // game rotation vector report stopped and started; reinit: SH-2 Initialize; soft: soft reset; hard: the reset pin
+    if (argc == 3 && strcmp(argv[1], "restart") == 0) {
+        esp_err_t ret = ESP_ERR_INVALID_ARG;
+        if (strcmp(argv[2], "grv") == 0) {
+            ret = bno085_enable_game_rotation_vector_report(bno085_dev, 0);
+            if (ret == ESP_OK) {
+                ret = bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS);
+            }
+        }
+        else if (strcmp(argv[2], "reinit") == 0 || strcmp(argv[2], "soft") == 0) {
+            ret = bno085_command_restart(bno085_dev, strcmp(argv[2], "reinit") == 0);
+        }
+        else if (strcmp(argv[2], "hard") == 0) {
+            ret = bno085_hardware_reset(bno085_dev);
+        }
+        else {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        return rc_reply(reply, reply_size, ret == ESP_OK, "@%s bno restart %s", ret == ESP_OK ? "ok" : "err", argv[2]);
+    }
     // `bno levelfix on|off` (RAM only): the level's correction after a wake (ADR-014), off to compare
     if (argc == 3 && strcmp(argv[1], "levelfix") == 0 && (strcmp(argv[2], "on") == 0 || strcmp(argv[2], "off") == 0)) {
         level_wake_fix_enabled = strcmp(argv[2], "on") == 0;

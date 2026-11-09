@@ -529,6 +529,15 @@ esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx) {
 }
 
 
+esp_err_t bno085_command_restart(bno085_ctx_t *ctx, bool reinit) {
+    sh2_lock(ctx);
+    int status = reinit ? sh2_reinitialize() : sh2_devReset();
+    sh2_unlock(ctx);
+    ESP_LOGW(TAG, "%s: %d", reinit ? "Hub reinitialised (SH-2 Initialize)" : "Hub soft reset", status);
+    return status == SH2_OK ? ESP_OK : ESP_FAIL;
+}
+
+
 esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
     sh2_SensorConfig_t config = {
         .changeSensitivityEnabled = false,

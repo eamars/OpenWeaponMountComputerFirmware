@@ -171,6 +171,12 @@ esp_err_t bno085_set_report_always_on(bno085_ctx_t *ctx, sh2_SensorId_t sensor_i
  */
 esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx);
 
+/**
+ * @brief Measurement (ADR-014): restart the hub by command, `reinit` (SH-2 Initialize, the whole hub) or not
+ * (soft reset, sh2_devReset). The driver's reset handling enables the reports again, as after a hardware reset
+ */
+esp_err_t bno085_command_restart(bno085_ctx_t *ctx, bool reinit);
+
 
 /**
  * @brief Enable Game Rotation Vector Report
