@@ -1,6 +1,6 @@
 # ADR-014: the level reads right the moment the unit wakes
 
-Status: **Draft** 2026-11-09, waiting for the owner's decision below.
+Status: **Built** 2026-11-09. The owner chose path B and no Wi-Fi exception for the rig. Path B is built into the level (`v1.2.0-32-g03dce0e`). Checked on the turret unit (on battery, with the turret's vibration) and on COM12 (still): without it a bad restart showed up to 0.85° for seconds; with it the shown cant stays within 0.34° after 300 ms, and within 0.23° after 1 s. `state_change` passes over Wi-Fi. Details in [progress](progress.md).
 
 ## What we want
 
@@ -11,6 +11,14 @@ When the shooter wakes the unit (lifts the rifle, touches the screen, presses th
 - "After sleep, it takes long time to recover." The unit was on battery.
 - Debug it over Wi-Fi, on the unit mounted on the turret. To reproduce: the BNO085 asleep during light sleep, tilt, then wake.
 - When the screen is off, Wi-Fi disconnects. Perhaps testing on the real unit needs exceptions.
+
+### Second round (2026-11-09)
+
+- Options before the safe path: does a slower rate cut A's cost; force a fresh measurement after a known wake; try path B. A only if the others fail or cost too much.
+- Don't build a Wi-Fi exception for the rig: with full control of the turret, shake the unit until it comes back.
+- Take path B, unless the log buffer can't capture the trace in real time. It can: every line kept in all 12 runs (progress).
+- The noise on the turret is likely the yaw motor.
+- A second unit on COM12, still on the desk, for a side-by-side comparison.
 
 ## What we know (measured 2026-11-09 on the turret, on battery)
 
@@ -80,7 +88,7 @@ Error of the shown cant against each run's own settled value. Two COM12 runs lyi
 
 ## What we will do
 
-Depends on the decisions below. With B (recommended):
+Built with B, as the owner chose ([progress](progress.md)):
 1. **Path B, refined.**
    - The correction starts from the average of the first few still accelerometer samples after the wake, not one sample, so a noisy first sample can't make the start worse.
    - It follows with a time constant of about 0.3 s while still, and fades out by the end of the window.
@@ -105,7 +113,7 @@ Depends on the decisions below. With B (recommended):
   - Worth it only if the first 300 ms must be within 0.1°.
 - **Ruled out:** a slower rate for A (the gyroscope's cost stays); a fresh fusion start (no better); a full reset on each wake (0.75 s with no reading, and 0.3° off under vibration).
 
-**2. A way for the rig to wake its unit.** Today an idle unit can't be reached over Wi-Fi, and the turret's movements don't wake it, so testing stops whenever the unit idles (it did, during this work).
+**2. A way for the rig to wake its unit. Declined by the owner;** the rig parks the unit on `idle <s>` timers instead (the turret's profile can't shake it hard enough, progress). Today an idle unit can't be reached over Wi-Fi, and the turret's movements don't wake it, so testing stops whenever the unit idles (it did, during this work).
 - Proposed: while "Wi-Fi remote control" is on, the radio stays connected through idle, so `wake` reaches the unit.
 - It costs power only on a unit set up for testing; light sleep with the radio connected wakes for the access point's beacons.
 - Off by default, as the switch is.
