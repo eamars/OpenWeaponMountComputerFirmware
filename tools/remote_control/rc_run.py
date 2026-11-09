@@ -93,6 +93,7 @@ REPLY_PREFIXES = {
     "ota": "@ok ota",
     "bno": "@ok bno",
     "top": "@ok top",
+    "trace": "@ok trace",
 }
 FAILURE_MARKERS = (
     RESET_MARKER,
