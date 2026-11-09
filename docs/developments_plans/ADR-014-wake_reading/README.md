@@ -22,8 +22,8 @@ The unit (`owmc-8626470`) is on the turret's pitch cradle, so turret pitch is th
 
 | | Before sleep | 50 ms after the wake | 1 s | 2 s | 4 s | 10 s |
 |---|---|---|---|---|---|---|
-| Tilted 5° during sleep (settles at −91.3°) | −95.8 | −90.09 (1.2° off) | 0.9° off | 0.3° off | 0.14° off | settled |
-| Not tilted (settles at −91.2°) | −91.3 | −90.50 (0.8° off) | 0.6° off | — | 0.2° off (3 s) | settled |
+| Tilted 5° during sleep (settles at −91.3°) | −95.8 | −90.09 (1.2° off) | 0.9° off | 0.3° off | 0.12° off | settled |
+| Not tilted (settles at −91.2°) | −91.3 | −90.50 (0.7° off) | 0.6° off | — | 0.2° off (3 s) | settled |
 
 - **The cause is the BNO085's fusion restarting.** While the hub sleeps, only the stability detector runs (ADR-009, for power). On wake the game rotation vector starts again, and its first orientation is up to about 1° off. It converges at the fusion's slow tilt-correction rate. The same happens with no movement at all, so the tilt only adds to it.
   - ADR-009 measured when the first report came after a wake (99 ms), not whether its value was right. This was invisible to it.
