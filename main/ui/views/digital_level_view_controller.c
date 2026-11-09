@@ -70,6 +70,10 @@ static float level_wake_fix(float grv_cant) {
         level_fix_wake_us = wake_us;
         level_fix_started = false;
         level_fix_rad = 0;
+        // The stored accelerometer value is from before the sleep (its report stops while the hub sleeps): only
+        // samples that arrive after this count
+        float stale[3];
+        level_fix_accel_count = bno085_get_accelerometer(bno085_dev, stale);
     }
     const int64_t now_us = esp_timer_get_time();
     const int64_t since_ms = (now_us - wake_us) / 1000;
