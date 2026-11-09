@@ -1,6 +1,6 @@
 # ADR-014: the level reads right the moment the unit wakes
 
-Status: **Built** 2026-11-09. The owner chose path B and no Wi-Fi exception for the rig. Path B is built into the level (`v1.2.0-32-g03dce0e`). Checked on the turret unit (on battery, with the turret's vibration) and on COM12 (still): without it a bad restart showed up to 0.85° for seconds; with it the shown cant stays within 0.34° after 300 ms, and within 0.23° after 1 s. `state_change` passes over Wi-Fi. Details in [progress](progress.md).
+Status: **Open** 2026-11-10. Path B was built and closed on 2026-11-09, then failed the owner's test of a wake by motion: COM12 showed up to 78° wrong for 4.7 s. PR #14 is on hold. The owner asked for a system-level analysis before fixing or dropping path B. It is below ("System-level analysis"), and the proposal waits for the owner's decision.
 
 ## What we want
 
@@ -86,34 +86,89 @@ Error of the shown cant against each run's own settled value. Two COM12 runs lyi
   - on the turret, it starts 0.30° off and takes about 5 s, because the fusion takes its starting tilt from the accelerometer, vibration and all.
   - The only re-measure the SH-2 offers is this reinitialisation (Initialize command, SH-2 §6.4.4); nothing sets how much the fusion trusts the accelerometer.
 
-## What we will do
+## Path B (2026-11-09: built; dropping it is proposed below)
 
-Built with B, as the owner chose ([progress](progress.md)):
-1. **Path B, refined.**
-   - The correction starts from the average of the first few still accelerometer samples after the wake, not one sample, so a noisy first sample can't make the start worse.
-   - It follows with a time constant of about 0.3 s while still, and fades out by the end of the window.
-   - The accelerometer report runs only during that window, so idle and normal running cost nothing more.
-   - The `bno levelfix` experiment becomes the level's own code; the experiment switches that lost (`bno wake fresh`) are removed.
-2. **Proof on both units, with `trace`:**
-   - wakes after no tilt and after tilts during sleep, on the turret (with vibration) and on a still unit;
-   - the shown cant within 0.1° of the settled value by 300 ms and after, and never worse than the fusion alone at any point;
-   - `state_change` over Wi-Fi;
-   - light sleep share and wake counts unchanged.
+Path B corrected the shown cant toward the accelerometer for 8 s after a wake ([progress](progress.md)). The owner chose it over keeping the fusion on. Tested only with timer wakes on still units, it looked right. On a wake by motion it failed (F3 below), and it also swings past the truth (F4).
 
-## Decisions for the owner
+## System-level analysis (2026-11-10)
 
-**1. How to make the first reading right:**
-- **B. Correct the reading toward the accelerometer after a wake (recommended).**
-  - Measured: within about 0.07° by 1 s every time, against 2 to 4 s and up to 1.2° without it. Within about 0.2° from the first 50 to 300 ms, limited by the accelerometer's resolution and vibration.
-  - No cost while idle.
-  - When the shooter lifts the rifle to wake it, the level is read once the rifle is held still, which is when the accelerometer is right.
-- **A. Keep the fusion running while the hub sleeps.**
-  - Right at the instant of the wake (one run: within 0.04°).
-  - Costs at least about 8 mA while idle at any rate, by the datasheet (the gyroscope alone is 7.5 mA): up to 6% of the cell per 5 h idle stretch with the defaults.
-  - Worth it only if the first 300 ms must be within 0.1°.
-- **Ruled out:** a slower rate for A (the gyroscope's cost stays); a fresh fusion start (no better); a full reset on each wake (0.75 s with no reading, and 0.3° off under vibration).
+### Owner's direction
 
-**2. A way for the rig to wake its unit. Declined by the owner;** the rig parks the unit on `idle <s>` timers instead (the turret's profile can't shake it hard enough, progress). Today an idle unit can't be reached over Wi-Fi, and the turret's movements don't wake it, so testing stops whenever the unit idles (it did, during this work).
-- Proposed: while "Wi-Fi remote control" is on, the radio stays connected through idle, so `wake` reaches the unit.
-- It costs power only on a unit set up for testing; light sleep with the radio connected wakes for the access point's beacons.
-- Off by default, as the switch is.
+- Not in a hurry: look at it at system level, analyse the failure modes, generalise the use cases, then propose.
+- Preference: after a wake, the IMU resets its previous measurement and starts afresh. Measure how long it takes to settle after a wake.
+- Decide between fixing and dropping path B only after the full analysis.
+- Use cases:
+  1. Between matches the unit sits on a still rifle: it stays idle.
+  2. Carried: walking easily exceeds the threshold, so it stays awake; the shooter turns it off to save power.
+  3. On a stage: it stays awake (timer, recoil, moving between props).
+  4. The shooter picks the rifle up and moves to the prop: the unit goes from idle to awake.
+- Keep the stability detector's default threshold for now. Waking by a deliberate gesture (muzzle up, then down) is its own ADR.
+
+### How the sensor restarts (measured, path B off)
+
+Two still units, path B off. The reference is the fusion's own average over the second before the restart (`bno restart grv|reinit|soft|hard`, RAM only).
+
+| Restart | COM12 (still): first reading, its error | Turret unit (still, yaw motor's vibration): first reading, its error, worst in 15 s |
+|---|---|---|
+| Resume after sleep (today) | 49 ms, 0.01–0.03° | 49 ms, 0.09–0.20°, 0.12–0.22° |
+| Fusion report stopped and started | 350–550 ms, 0.00–0.01° | 50–600 ms, 0.00–0.02°, 0.08–0.13° (the fusion probably keeps its state: no different from resuming) |
+| SH-2 Initialize command | no effect: no reset, readings carry on | — |
+| Soft reset (command) | 450 ms, 0.01–0.04° | 100–400 ms, 0.01–0.23°, 0.28–0.53° |
+| Hardware reset (pin) | 400 ms, 0.07–0.18° | 400–850 ms, 0.00–0.59°, 0.14–0.59° |
+
+- **The floor:** with nothing restarted, the fusion on the still COM12 wanders 0.15 to 0.26° peak to peak over 30 s. Its 5 s averages stay within about 0.05° of the accelerometer's average. So "settled" means within about 0.2°.
+- **A still wake** restarts within that floor on COM12, and up to about 0.2° on the turret. A reset is no better, and under vibration it is worse: the reset fusion takes its starting tilt from a shaking accelerometer.
+
+### Wakes by motion (measured, path B off; COM12 picked up by the owner, swung as onto a prop, stood back on its edge)
+
+"At rest" is the stability detector's "now still" report, 1.7 to 2.2 s after each pickup. Wake 5 is left out (the unit was moved again).
+
+| Wake | At rest | +0.3 s | +1 s | +2 s | +5 s | Within 0.2° after rest |
+|---|---|---|---|---|---|---|
+| 1, resume | −14.4° | −10.0° | −6.3° | −3.9° | −1.1° | 8.1 s |
+| 3, resume | −12.7° | −7.0° | −1.5° | −0.8° | −0.3° | 5.8 s |
+| 2, soft reset at rest | (before the reset lands) | −0.15° | −0.17° | −0.16° | −0.15° | 0.27 s |
+| 4, soft reset at rest | (before the reset lands) | −0.18° | −0.16° | −0.15° | −0.13° | 0.21 s |
+| 6, soft reset at rest | (before the reset lands) | (reset still running) | −0.19° | −0.18° | −0.11° | 1.2 s |
+
+### Failure modes
+
+| # | Failure | Root cause | Seen |
+|---|---|---|---|
+| F1 | **After a wake by motion, the level is 13 to 14° off when the rifle comes to rest, and takes 6 to 8 s to come within 0.2°** | The fusion resumes from its pre-sleep orientation. The rifle turned before and while it woke (the detector, the wake, the gyroscope starting), so that rotation was never integrated. The game rotation vector then corrects tilt only slowly from the accelerometer. | Motion wakes on COM12; the owner's "takes a long time to recover" |
+| F2 | After a still wake, 0.01 to 1.2° off, settling over seconds | The same restart with no rotation missed: a small error | Turret and COM12, timer wakes |
+| F3 | Path B showed up to 78° wrong on a motion wake | Its "still" test used only \|g\|, so a turning unit passed; its 1 g reference learned from moving samples. It corrected a fusion that was right, with mid-swing accelerometer samples. | Owner's demonstration |
+| F4 | Path B swings past the truth by 0.1 to 0.2° for about a second | Its correction trails the fusion's own convergence, so for a moment both correct the same error | Turret runs tdb8 and tdb10; the owner on COM12 |
+| F5 | A reset under vibration starts up to 0.6° off | The fusion's starting tilt comes from the accelerometer at that moment | Turret unit only (motor vibration) |
+| F6 | An idle unit wakes itself on a "now still" report | The stability poller wakes on any report, bit 0 ("entered still") included | ADR-013, 1 of 6 idles |
+| F7 | A wake shows nothing new for about 0.4 s after a reset | A reset restarts the hub; the driver enables its reports again | Every reset |
+
+### The use cases against the failures
+
+| Use case | Wakes how | Failure today | With the proposal |
+|---|---|---|---|
+| 1. At rest between matches | No wake. A touch or the button wakes it still | F2 (small); F6 wakes it for nothing | Unchanged (no reset on a still wake); F6 fixed |
+| 2. Carried | Stays awake, or wakes by motion over and over | F1 at each wake, while walking (not read then) | Reset when it next comes to rest |
+| 3. On a stage | Awake: no restart | None: the fusion tracks motion while it runs | Unchanged |
+| 4. Picked up and moved to the prop | Wake by motion | **F1: 13° off at rest, 6 to 8 s** | Right about 0.2 to 1.2 s after coming to rest (still detection 0.5 s, reset about 0.3 s) |
+| Waiting at the start position, prone and still | Awake, still | None | Unchanged |
+| A gesture wake (its own ADR) | By motion | F1 | Same as case 4 |
+
+### What this means for path B
+
+Path B corrects the symptom with a second estimate that has its own failure modes (F3, F4) and its own floor (the accelerometer's 0.23° steps). F1 is a stale starting point. A fresh start once the rifle is at rest removes it at the source, and needs no correction running afterwards. Proposed: drop path B.
+
+## Proposal (waiting for the owner's decision)
+
+1. **A fresh start at rest after a moving wake.** After a wake, if the unit moved (a "moving" report since the wake), the first "now still" report triggers a soft reset of the BNO085. The driver enables the reports and the calibration setting again, as it already does after any reset.
+   - Still wakes (touch, button, timer) are not reset: they are already within the floor, and a reset could only add F5 and F7.
+   - One reset per wake. Movement while awake is tracked by the running fusion and needs nothing.
+2. **Path B, the wake correction and `bno levelfix` are removed.** The level shows the fusion as before ADR-014. `trace` and `bno restart` stay as debug commands.
+3. **F6 fixed:** only "left the still state" (bit 1) wakes an idle unit.
+4. **Proof:**
+   - motion wakes by hand, about 6 with the reset and 2 without, on COM12, recorded with `trace`: within 0.2° by 1.5 s after the "now still" report, every time;
+   - still wakes on both units: no reset, unchanged;
+   - an idle unit left still for 10 minutes: no self-wake;
+   - `state_change` over Wi-Fi.
+5. **Not in this ADR:** the threshold (kept at its default), the gesture wake (its own ADR), and F5 (vibration while at rest is the turret's, not a rifle's).
+
