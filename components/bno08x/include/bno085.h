@@ -84,6 +84,14 @@ typedef struct {
     float grv_quat[4];
     uint32_t grv_count;
 
+    // The newest calibrated accelerometer report (m/s^2, gravity included) and how many have arrived (ADR-014)
+    float accel[3];
+    uint32_t accel_count;
+
+    // Experiment (ADR-014): stop the game rotation vector before the hub sleeps and enable it again after the wake,
+    // so its fusion starts afresh instead of resuming
+    bool grv_fresh_on_wake;
+
     // Which sensors may calibrate themselves (SH2_CAL_* bits) once the host has set it, and whether it still has to
     // be sent: the setting does not persist across the hub's resets (datasheet 3.1.1), so each reset sets it pending
     // again and the poller task sends it (ADR-011)
@@ -176,6 +184,12 @@ esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx);
  * @return esp_err_t ESP_OK on success, error code otherwise.
  */
 esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_ms);
+
+/** @brief Calibrated accelerometer report (gravity included), every interval_ms; 0 disables it (ADR-014) */
+esp_err_t bno085_enable_accelerometer_report(bno085_ctx_t *ctx, uint32_t interval_ms);
+
+/** @brief The newest accelerometer report (m/s^2) and how many have arrived (0: none yet) */
+uint32_t bno085_get_accelerometer(bno085_ctx_t *ctx, float accel[3]);
 
 /**
  * @brief Enable linear acceleration report

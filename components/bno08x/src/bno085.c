@@ -118,6 +118,12 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
         ctx->grv_quat[3] = sensor_value.un.gameRotationVector.k;
         ctx->grv_count++;
     }
+    else if (sensor_value.sensorId == SH2_ACCELEROMETER) {
+        ctx->accel[0] = sensor_value.un.accelerometer.x;
+        ctx->accel[1] = sensor_value.un.accelerometer.y;
+        ctx->accel[2] = sensor_value.un.accelerometer.z;
+        ctx->accel_count++;
+    }
 
     xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
 }
@@ -400,6 +406,14 @@ esp_err_t bno085_configure_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, s
 
 
 esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx) {
+    if (ctx->grv_fresh_on_wake && ctx->enabled_sensor_report_list[SH2_GAME_ROTATION_VECTOR].config.reportInterval_us) {
+        sh2_SensorConfig_t off = ctx->enabled_sensor_report_list[SH2_GAME_ROTATION_VECTOR].config;
+        off.reportInterval_us = 0;
+        sh2_lock(ctx);
+        int status = sh2_setSensorConfig(SH2_GAME_ROTATION_VECTOR, &off);
+        sh2_unlock(ctx);
+        ESP_LOGI(TAG, "Game rotation vector stopped before sleep: %d", status);
+    }
     sh2_lock(ctx);
     int ret = sh2_devSleep();
     sh2_unlock(ctx);
@@ -419,6 +433,13 @@ esp_err_t bno085_wake_up(bno085_ctx_t *ctx) {
     ctx->wake_us = esp_timer_get_time();
     int ret = sh2_devOn();
     ctx->wake_cmd_us = (uint32_t) (esp_timer_get_time() - ctx->wake_us);
+    if (ret == SH2_OK && ctx->grv_fresh_on_wake &&
+        ctx->enabled_sensor_report_list[SH2_GAME_ROTATION_VECTOR].config.reportInterval_us) {
+        // The saved configuration still has the level's interval: enabling it again starts the fusion afresh
+        int status = sh2_setSensorConfig(SH2_GAME_ROTATION_VECTOR,
+                                         &ctx->enabled_sensor_report_list[SH2_GAME_ROTATION_VECTOR].config);
+        ESP_LOGI(TAG, "Game rotation vector started again after the wake: %d", status);
+    }
     sh2_unlock(ctx);
     if (ret != SH2_OK) {
         ESP_LOGE(TAG, "Failed to wake up the sensor: %d", ret);
@@ -537,6 +558,31 @@ esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t 
     config.reportInterval_us = interval_ms * 1000;
 
     return bno085_configure_report(ctx, SH2_GAME_ROTATION_VECTOR, &config);
+}
+
+
+esp_err_t bno085_enable_accelerometer_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
+    // Not always-on: the accelerometer already runs for the stability detector while the hub sleeps
+    sh2_SensorConfig_t config = {
+        .changeSensitivityEnabled = false,
+        .wakeupEnabled = false,
+        .changeSensitivityRelative = false,
+        .alwaysOnEnabled = false,
+        .changeSensitivity = 0,
+        .batchInterval_us = 0,
+        .sensorSpecific = 0,
+    };
+    config.reportInterval_us = interval_ms * 1000;
+    return bno085_configure_report(ctx, SH2_ACCELEROMETER, &config);
+}
+
+
+uint32_t bno085_get_accelerometer(bno085_ctx_t *ctx, float accel[3]) {
+    sh2_lock(ctx);
+    memcpy(accel, ctx->accel, sizeof(ctx->accel));
+    const uint32_t count = ctx->accel_count;
+    sh2_unlock(ctx);
+    return count;
 }
 
 

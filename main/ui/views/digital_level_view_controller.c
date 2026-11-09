@@ -7,6 +7,7 @@
 #include "esp_timer.h"
 
 #include <inttypes.h>
+#include <math.h>
 
 #include "digital_level_view_controller.h"
 #include "sensor_frame.h"
@@ -35,6 +36,78 @@ static TaskHandle_t sensor_poller_task_handle;
 static EventGroupHandle_t sensor_task_control;
 
 float sensor_pitch_thread_unsafe, sensor_roll_thread_unsafe;
+
+// Path B (ADR-014). The correction starts at the whole difference on the first still sample after a wake, follows
+// it with a 0.25 s time constant while still, and fades out over the window's last 2 s, handing back to the fusion
+#define LEVEL_WAKE_FIX_MS 8000
+#define LEVEL_WAKE_FIX_FADE_MS 2000
+#define LEVEL_WAKE_FIX_TAU_S 0.25f
+#define LEVEL_STILL_G_TOLERANCE 0.3f    // m/s^2 from 1 g: closer counts as still (no acceleration besides gravity)
+bool level_wake_fix_enabled = false;
+float level_grv_cant_rad, level_accel_cant_rad, level_fix_rad;
+static int64_t level_fix_wake_us = 0;
+static bool level_fix_started = false;
+static uint32_t level_fix_accel_count = 0;
+static int64_t level_fix_last_us = 0;
+
+
+static float level_wrap_pi(float a) {
+    while (a > (float) M_PI) {
+        a -= 2.0f * (float) M_PI;
+    }
+    while (a < -(float) M_PI) {
+        a += 2.0f * (float) M_PI;
+    }
+    return a;
+}
+
+
+// Called with each new fusion cant; returns the cant to show
+static float level_wake_fix(float grv_cant) {
+    level_grv_cant_rad = grv_cant;
+    const int64_t wake_us = bno085_dev->wake_us;
+    if (wake_us != level_fix_wake_us) {     // a new wake
+        level_fix_wake_us = wake_us;
+        level_fix_started = false;
+        level_fix_rad = 0;
+    }
+    const int64_t now_us = esp_timer_get_time();
+    const int64_t since_ms = (now_us - wake_us) / 1000;
+    if (!level_wake_fix_enabled || wake_us == 0 || since_ms > LEVEL_WAKE_FIX_MS) {
+        level_fix_rad = 0;
+        return grv_cant;
+    }
+
+    float accel[3];
+    const uint32_t count = bno085_get_accelerometer(bno085_dev, accel);
+    if (count != level_fix_accel_count && count != 0) {
+        level_fix_accel_count = count;
+        const float g = sqrtf(accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2]);
+        if (g > 0.1f) {
+            const float up[3] = {accel[0] / g, accel[1] / g, accel[2] / g};
+            float pitch;
+            sensor_frame_cant_pitch(up, &level_accel_cant_rad, &pitch);
+            if (fabsf(g - 9.80665f) < LEVEL_STILL_G_TOLERANCE) {
+                const float diff = level_wrap_pi(level_accel_cant_rad - grv_cant);
+                if (!level_fix_started) {
+                    level_fix_rad = diff;
+                    level_fix_started = true;
+                }
+                else {
+                    const float dt = (float) (now_us - level_fix_last_us) / 1e6f;
+                    const float k = dt / (LEVEL_WAKE_FIX_TAU_S + dt);
+                    level_fix_rad += k * (diff - level_fix_rad);
+                }
+                level_fix_last_us = now_us;
+            }
+        }
+    }
+    float fade = 1.0f;
+    if (since_ms > LEVEL_WAKE_FIX_MS - LEVEL_WAKE_FIX_FADE_MS) {
+        fade = (float) (LEVEL_WAKE_FIX_MS - since_ms) / LEVEL_WAKE_FIX_FADE_MS;
+    }
+    return grv_cant + level_fix_rad * fade;
+}
 float sensor_x_acceleration_thread_unsafe, sensor_y_acceleration_thread_unsafe, sensor_z_acceleration_thread_unsafe;
 
 
@@ -139,7 +212,9 @@ void unified_sensor_poller_task(void *p) {
                 float up[3];
                 bno085_get_game_rotation_quaternion(bno085_dev, quat);
                 sensor_frame_up_from_quaternion(quat, up);
-                sensor_frame_cant_pitch(up, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe);
+                float grv_cant;
+                sensor_frame_cant_pitch(up, &grv_cant, &sensor_pitch_thread_unsafe);
+                sensor_roll_thread_unsafe = level_wake_fix(grv_cant);
 #if DISPLAY_PROFILING_ENABLED
                 digital_level_profile.game_reports++;
                 digital_level_profile.ui_update_attempts++;

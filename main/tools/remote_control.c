@@ -1065,8 +1065,12 @@ static void rc_trace_timer_cb(void *arg) {
     const int64_t since_us = esp_timer_get_time() - rc_trace_wake_us;
     float quat[4];
     const uint32_t count = bno085_get_game_rotation_quaternion(bno085_dev, quat);
-    ESP_LOGI(TAG, "wtrace t=%" PRId64 " cant=%.2f pitch=%.2f n=%" PRIu32 " idle=%d", since_us / 1000,
-             (double) RAD_TO_DEG(sensor_roll_thread_unsafe), (double) RAD_TO_DEG(sensor_pitch_thread_unsafe), count,
+    float accel[3];
+    const uint32_t accel_count = bno085_get_accelerometer(bno085_dev, accel);
+    ESP_LOGI(TAG, "wtrace t=%" PRId64 " cant=%.2f grv=%.2f acc=%.2f fix=%.2f pitch=%.2f n=%" PRIu32 " na=%" PRIu32
+             " idle=%d", since_us / 1000, (double) RAD_TO_DEG(sensor_roll_thread_unsafe),
+             (double) RAD_TO_DEG(level_grv_cant_rad), (double) RAD_TO_DEG(level_accel_cant_rad),
+             (double) RAD_TO_DEG(level_fix_rad), (double) RAD_TO_DEG(sensor_pitch_thread_unsafe), count, accel_count,
              idle ? 1 : 0);
     if (since_us >= rc_trace_length_us) {
         esp_timer_stop(rc_trace_timer);
@@ -1076,12 +1080,14 @@ static void rc_trace_timer_cb(void *arg) {
 
 
 static bool rc_cmd_trace(int argc, char **argv, char *reply, size_t reply_size) {
+    // `trace <s>` from the next wake, `trace <s> now` from now
     long seconds = 0;
-    if (argc != 2 || !rc_parse_long(argv[1], &seconds) || seconds < 1 || seconds > RC_TRACE_MAX_S) {
+    const bool now = argc == 3 && strcmp(argv[2], "now") == 0;
+    if ((argc != 2 && !now) || !rc_parse_long(argv[1], &seconds) || seconds < 1 || seconds > RC_TRACE_MAX_S) {
         return rc_reply(reply, reply_size, false, "@err args");
     }
     esp_timer_stop(rc_trace_timer);
-    rc_trace_wake_us = 0;
+    rc_trace_wake_us = now ? esp_timer_get_time() : 0;
     rc_trace_seen_idle = false;
     rc_trace_length_us = (int64_t) seconds * 1000000;
     ESP_LOGI(TAG, "wtrace armed cant=%.2f", (double) RAD_TO_DEG(sensor_roll_thread_unsafe));
@@ -1112,6 +1118,24 @@ static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
 // Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
 // keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
 static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
+    // Experiments (ADR-014), RAM only: `bno accel <ms>` (0 off), `bno wake fresh|resume`, `bno levelfix on|off`
+    if (argc == 3 && strcmp(argv[1], "accel") == 0) {
+        long ms = 0;
+        if (!rc_parse_long(argv[2], &ms) || ms < 0 || ms > 1000) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        esp_err_t ret = bno085_enable_accelerometer_report(bno085_dev, (uint32_t) ms);
+        return rc_reply(reply, reply_size, ret == ESP_OK, "@%s bno accel %ld", ret == ESP_OK ? "ok" : "err", ms);
+    }
+    if (argc == 3 && strcmp(argv[1], "wake") == 0 &&
+        (strcmp(argv[2], "fresh") == 0 || strcmp(argv[2], "resume") == 0)) {
+        bno085_dev->grv_fresh_on_wake = strcmp(argv[2], "fresh") == 0;
+        return rc_reply(reply, reply_size, true, "@ok bno wake %s", argv[2]);
+    }
+    if (argc == 3 && strcmp(argv[1], "levelfix") == 0 && (strcmp(argv[2], "on") == 0 || strcmp(argv[2], "off") == 0)) {
+        level_wake_fix_enabled = strcmp(argv[2], "on") == 0;
+        return rc_reply(reply, reply_size, true, "@ok bno levelfix %s", argv[2]);
+    }
     if (argc != 4 || strcmp(argv[1], "alwayson") != 0 || (strcmp(argv[3], "0") != 0 && strcmp(argv[3], "1") != 0)) {
         return rc_reply(reply, reply_size, false, "@err args");
     }
