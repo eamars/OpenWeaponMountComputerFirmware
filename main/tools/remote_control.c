@@ -67,7 +67,7 @@
 #define RC_MAX_ARGS 6   // "settings open How to pair"
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top tear grav trace"
+#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota top tear grav trace"
 
 
 typedef struct {
@@ -1041,9 +1041,8 @@ static bool rc_cmd_grav(int argc, char **argv, char *reply, size_t reply_size) {
 
 
 // Debug (ADR-014): `trace <s> [now]` logs the level's cant and pitch and the count of game rotation reports every
-// 50 ms for s seconds, from the next wake (or now). What the level read right after a wake is then in the log the host
-// reads once Wi-Fi is back (16 KB keeps about 10 s of it). RAM only, one trace at a time. While armed its timer wakes
-// the chip 20 times a second
+// 50 ms for s seconds, from the next wake (or now). RAM only, one trace at a time. While armed its timer wakes the chip
+// 20 times a second
 #define RC_TRACE_PERIOD_US (50 * 1000)
 #define RC_TRACE_MAX_S 30
 static esp_timer_handle_t rc_trace_timer = NULL;
@@ -1112,51 +1111,6 @@ static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
 }
 
 
-// Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
-// keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
-static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
-    // `bno restart grv|soft|hard` (debug, ADR-014): start the fusion afresh now. grv: the game rotation vector report
-    // stopped and started (the fusion keeps its state); soft: soft reset by command; hard: the reset pin
-    if (argc == 3 && strcmp(argv[1], "restart") == 0) {
-        esp_err_t ret = ESP_ERR_INVALID_ARG;
-        if (strcmp(argv[2], "grv") == 0) {
-            ret = bno085_enable_game_rotation_vector_report(bno085_dev, 0);
-            if (ret == ESP_OK) {
-                ret = bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS);
-            }
-        }
-        else if (strcmp(argv[2], "soft") == 0) {
-            ret = bno085_soft_reset(bno085_dev);
-        }
-        else if (strcmp(argv[2], "hard") == 0) {
-            ret = bno085_hardware_reset(bno085_dev);
-        }
-        else {
-            return rc_reply(reply, reply_size, false, "@err args");
-        }
-        return rc_reply(reply, reply_size, ret == ESP_OK, "@%s bno restart %s", ret == ESP_OK ? "ok" : "err", argv[2]);
-    }
-    if (argc != 4 || strcmp(argv[1], "alwayson") != 0 || (strcmp(argv[3], "0") != 0 && strcmp(argv[3], "1") != 0)) {
-        return rc_reply(reply, reply_size, false, "@err args");
-    }
-    sh2_SensorId_t id;
-    if (strcmp(argv[2], "grv") == 0) {
-        id = SH2_GAME_ROTATION_VECTOR;
-    }
-    else if (strcmp(argv[2], "la") == 0) {
-        id = SH2_LINEAR_ACCELERATION;
-    }
-    else {
-        return rc_reply(reply, reply_size, false, "@err args");
-    }
-    esp_err_t ret = bno085_set_report_always_on(bno085_dev, id, argv[3][0] == '1');
-    if (ret != ESP_OK) {
-        return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(ret));
-    }
-    return rc_reply(reply, reply_size, true, "@ok bno alwayson %s %s", argv[2], argv[3]);
-}
-
-
 // Debug (ADR-009): `top [ms]` logs each task's CPU share over the window (default 2000 ms, at most 4000, inside the
 // runner's reply timeout); verification builds only
 static bool rc_cmd_top(int argc, char **argv, char *reply, size_t reply_size) {
@@ -1211,7 +1165,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
                     strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
                     strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0 ||
-                    strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0 || strcmp(cmd, "bno") == 0 ||
+                    strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0 ||
                     strcmp(cmd, "top") == 0 || strcmp(cmd, "tear") == 0 || strcmp(cmd, "grav") == 0 ||
                     strcmp(cmd, "trace") == 0;
 
@@ -1320,9 +1274,6 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     }
     if (strcmp(cmd, "kestrel") == 0) {
         return rc_cmd_kestrel(argc, argv, reply, reply_size);
-    }
-    if (strcmp(cmd, "bno") == 0) {
-        return rc_cmd_bno(argc, argv, reply, reply_size);
     }
     if (strcmp(cmd, "top") == 0) {
         return rc_cmd_top(argc, argv, reply, reply_size);

@@ -23,6 +23,7 @@
 #include "esp_task_wdt.h"
 #include "bno085.h"
 #include "app.h"
+#include "low_power_mode.h"
 
 #define TAG "DigitalLevelViewController"
 
@@ -140,6 +141,9 @@ void unified_sensor_poller_task(void *p) {
                 bno085_get_game_rotation_quaternion(bno085_dev, quat);
                 sensor_frame_up_from_quaternion(quat, up);
                 sensor_frame_cant_pitch(up, &sensor_roll_thread_unsafe, &sensor_pitch_thread_unsafe);
+                if (is_idle_mode_activated()) {
+                    continue;   // screen off: the reading is kept, nothing is drawn or triggered
+                }
 #if DISPLAY_PROFILING_ENABLED
                 digital_level_profile.game_reports++;
                 digital_level_profile.ui_update_attempts++;
@@ -165,7 +169,8 @@ void unified_sensor_poller_task(void *p) {
             }
 
             // Linear acceleration
-            if (bno085_wait_for_linear_acceleration_report(bno085_dev, &sensor_x_acceleration_thread_unsafe, &sensor_y_acceleration_thread_unsafe, &sensor_z_acceleration_thread_unsafe, false) == ESP_OK) {
+            if (!is_idle_mode_activated() &&
+                bno085_wait_for_linear_acceleration_report(bno085_dev, &sensor_x_acceleration_thread_unsafe, &sensor_y_acceleration_thread_unsafe, &sensor_z_acceleration_thread_unsafe, false) == ESP_OK) {
 #if DISPLAY_PROFILING_ENABLED
                 digital_level_profile.accel_reports++;
 #endif
@@ -204,21 +209,14 @@ void unified_sensor_poller_task(void *p) {
 
 
 void enable_digital_level_view_controller(bool enable) {
+    // The game rotation vector is not switched with the tile: it runs from init (ADR-014)
     if (enable) {
-        // Enable sensor report
-        if (sensor_config.enable_game_rotation_vector_report) {
-            bno085_enable_game_rotation_vector_report(bno085_dev, SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
-        }
         if (sensor_config.enable_linear_acceleration_report) {
             bno085_enable_linear_acceleration_report(bno085_dev, SENSOR_LINEAR_ACCELERATION_REPORT_PERIOD_MS);  // a failure is logged by the driver; not fatal (ADR-005 B7)
         }
 
         xEventGroupSetBits(sensor_task_control, SENSOR_POLL_EVENT_RUN);
     } else {
-        // Disable sensor report
-        if (sensor_config.enable_game_rotation_vector_report) {
-            bno085_enable_game_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
-        }
         if (sensor_config.enable_linear_acceleration_report) {
             bno085_enable_linear_acceleration_report(bno085_dev, 0);  // a failure is logged by the driver; not fatal (ADR-005 B7)
         }

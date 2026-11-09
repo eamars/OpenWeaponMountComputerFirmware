@@ -17,6 +17,7 @@
 #include "value_editor.h"
 #include "display_shape.h"
 #include "app.h"
+#include "sensor_config.h"
 #include "main_tileview.h"
 
 
@@ -463,8 +464,9 @@ void enter_sensor_calibration_mode(bool enable) {
             lv_timer_delete(cal_timer);
             cal_timer = NULL;
         }
-        // The level switches the report on again when it is the next tile
-        bno085_enable_game_rotation_vector_report(bno085_dev, 0);
+        if (!sensor_config.enable_game_rotation_vector_report) {
+            bno085_enable_game_rotation_vector_report(bno085_dev, 0);
+        }
         system_config_set_rotation(rotation_before);
         prevent_idle_mode_enter(false);
     }
