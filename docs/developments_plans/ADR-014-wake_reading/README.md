@@ -52,6 +52,32 @@ Experiment build, every switch RAM only and set over Wi-Fi: `bno accel <ms>` (th
 4. **Yaw does not wake the unit.** A 4.9° yaw step during sleep, like the 5° pitch steps and three quick back-and-forth pitch steps, left the BNO085 wake counter at 0. The stability detector works from the accelerometer, and the turret's movements are too gentle for it.
 5. **The rig cannot wake its unit.** Over Wi-Fi an idle unit can't be reached, and the turret's movements don't wake it. The turret unit went idle during other work and stays so until someone touches it.
 
+### Side by side: the turret unit and COM12 (still on the desk, upright), `v1.2.0-27-ge49c99e`
+
+Error of the shown cant against each run's own settled value. Two COM12 runs lying flat are left out: with gravity along the screen's normal, cant is undefined.
+
+| Run | Path B | 50 ms | 300 ms | 1 s | 2 s |
+|---|---|---|---|---|---|
+| turret, baseline | off | 0.56° | 0.57° | 0.33° | 0.14° |
+| turret, fresh start | off | 0.62° | 0.61° | 0.40° | 0.23° |
+| turret, after a yaw step | off | 0.08° | 0.08° | 0.08° | 0.05° |
+| turret, base_a | off | 0.04° | 0.04° | 0.01° | 0.01° |
+| COM12 | off | 0.44° | 0.41° | 0.27° | 0.16° |
+| turret, path B (first build, with the stale-sample bug) | on | 0.28° | 0.06° | 0.02° | 0.04° |
+| turret, pathB_a | on | 0.19° | 0.13° | 0.02° | 0.03° |
+| turret, pathB_b | on | 0.55° | 0.19° | 0.07° | 0.13° |
+| turret, pathB_c | on | 0.20° | 0.06° | 0.05° | 0.02° |
+| COM12 | on | 0.21° | 0.21° | 0.05° | 0.04° |
+
+- **Without path B,** the restart error varies from 0.04° to 1.2° across the day's runs. When large, it takes 2 to 4 s to clear.
+- **With path B,** the shown cant is within about 0.07° by 1 s every time. Its first few hundred milliseconds are only as good as the accelerometer:
+  - on a still unit, the accelerometer's cant moves in steps of about 0.23° (one count of its internal sensor at its range), and with no vibration to blur them, averaging can't get below a step;
+  - on the turret, the yaw motor's vibration adds noise (one run, pathB_b, started from a noisy sample and was 0.55° off at 50 ms).
+- **A full reset of the BNO085 (`bnoreset`):**
+  - on COM12, it starts right: within 0.03°, after about 0.75 s with no readings;
+  - on the turret, it starts 0.30° off and takes about 5 s, because the fusion takes its starting tilt from the accelerometer, vibration and all.
+  - The only re-measure the SH-2 offers is this reinitialisation (Initialize command, SH-2 §6.4.4); nothing sets how much the fusion trusts the accelerometer.
+
 ## What we will do
 
 Depends on the decision below. With option A:
