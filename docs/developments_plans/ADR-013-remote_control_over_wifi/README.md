@@ -1,6 +1,6 @@
 # ADR-013: remote control over Wi-Fi
 
-Status: **Draft** 2026-11-09, waiting for the owner's approval.
+Status: **Built** 2026-11-09. Approved by the owner with no password on the network control. All six steps built and checked on the COM11 unit: `state_change` passes over USB and over Wi-Fi; snaps and a full screen capture over Wi-Fi match USB; no CPU or internal RAM cost found. Details, and two findings for ADR-014, in [progress](progress.md).
 
 ## What we want
 

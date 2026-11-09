@@ -25,7 +25,7 @@ Firmware for the Open Weapon Mount Computer: an ESP32-S3 with an AMOLED touch sc
 | `ui/core/` | The tile view (`main_tileview_jump_to()` for jumps between tiles), the settings page framework (`settings_ui`), the value editor, corner geometry, the UI bridge |
 | `ui/views/` | The tiles: level (its styles, the band), timer, dope, sensor calibration; three disabled tiles kept for a later decision |
 | `ui/settings/` | The settings pages, one file each (`*_page.c`), the hub, and two settings records with their rows (`system_config`, `sensor_config`) |
-| `tools/` | Device tests and diagnostics: the remote control and its serial transport, the crash report |
+| `tools/` | Device tests and diagnostics: the remote control, its serial and Wi-Fi transports (`rc_serial`, `rc_net`), the crash report |
 | `fonts/` | Generated fonts (lv_font_conv); regenerate, do not edit |
 
 Our own drivers live in `components/`: `bno08x`, `esp_lcd_touch_ft3168`, `kestrel_link`, and `esp_driver_usb_serial_jtag` (a patched copy of the ESP-IDF component; its README says why and how to re-apply it on an ESP-IDF upgrade).
@@ -71,6 +71,14 @@ Changes are proven on a real unit, not only built. `tools/remote_control/rc_run.
   - `rot <n>` (RAM only).
 - `scenario state_change`: a tour of tiles, idle and wake, rotation and Wi-Fi, with a PASS or FAIL verdict. `--min-largest-dma 70000` also checks internal DMA memory.
 - `scenario rotation_sweep`: 2 minutes on the level in each rotation, about 8 minutes in all. Keep any one test under 10 minutes; no long soaks.
+- `idle <s>`: idle, then wake by a timer after s seconds.
+
+**Over Wi-Fi** (ADR-013): the same commands, snaps and log, with `--host` in place of `--port`.
+- Turn it on with Settings, Advanced: Remote control, then "Over Wi-Fi" (off by default). Anyone on the network can then send commands, so leave it off when you're done.
+- `rc_run.py find` lists the units announcing it, by mDNS name (`owmc-` plus the end of the MAC address). Example: `rc_run.py send state --host owmc-83a124.local`. `ui_snaps.py capture` takes `--host` too.
+- Use it to test a unit on battery: on USB power the unit never light-sleeps, because the firmware holds a power lock. Connecting doesn't reset the unit, and snaps come back whole.
+- Idling stops the radio, which ends the session. Over Wi-Fi, scenarios idle with `idle <s>` and connect again after it. An idle unit can't be reached until something wakes it: a touch, the button, movement, or `wake` over USB.
+- The ROM's reset and panic lines go to the console only.
 
 `tools/remote_control/ui_snaps.py` checks that a change left the screens as they were. `capture` snaps every tile and settings page in two rotations; `compare` diffs two captures. Live values (angle, readings, version) differ by nature.
 
