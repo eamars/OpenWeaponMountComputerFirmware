@@ -44,6 +44,7 @@ esp_err_t load_sensor_config() {
 static void apply_sensor_config() {
     if (!sensor_config.enable_game_rotation_vector_report) {
         bno085_enable_game_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver
+        bno085_enable_accelerometer_report(bno085_dev, 0);         // the level's correction after a wake (ADR-014)
     }
     if (!sensor_config.enable_linear_acceleration_report) {
         bno085_enable_linear_acceleration_report(bno085_dev, 0);

@@ -88,10 +88,6 @@ typedef struct {
     float accel[3];
     uint32_t accel_count;
 
-    // Experiment (ADR-014): stop the game rotation vector before the hub sleeps and enable it again after the wake,
-    // so its fusion starts afresh instead of resuming
-    bool grv_fresh_on_wake;
-
     // Which sensors may calibrate themselves (SH2_CAL_* bits) once the host has set it, and whether it still has to
     // be sent: the setting does not persist across the hub's resets (datasheet 3.1.1), so each reset sets it pending
     // again and the poller task sends it (ADR-011)

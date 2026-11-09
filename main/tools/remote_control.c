@@ -1041,9 +1041,10 @@ static bool rc_cmd_grav(int argc, char **argv, char *reply, size_t reply_size) {
 }
 
 
-// Debug (ADR-014): `trace <s>` logs the level's cant and the count of game rotation reports every 50 ms for s
-// seconds from the next wake, so what the level read right after a wake is in the log the host reads once Wi-Fi is
-// back. RAM only, one trace at a time. While armed its timer wakes the chip 20 times a second
+// Debug (ADR-014): `trace <s> [now]` logs every 50 ms for s seconds, from the next wake (or now): the cant shown,
+// the fusion's own, the accelerometer's, the correction, the pitch, the report counts and |g|. What the level read
+// right after a wake is then in the log the host reads once Wi-Fi is back (16 KB keeps about 7 s of it). RAM only,
+// one trace at a time. While armed its timer wakes the chip 20 times a second
 #define RC_TRACE_PERIOD_US (50 * 1000)
 #define RC_TRACE_MAX_S 30
 static esp_timer_handle_t rc_trace_timer = NULL;
@@ -1125,20 +1126,7 @@ static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
 // Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
 // keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
 static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
-    // Experiments (ADR-014), RAM only: `bno accel <ms>` (0 off), `bno wake fresh|resume`, `bno levelfix on|off`
-    if (argc == 3 && strcmp(argv[1], "accel") == 0) {
-        long ms = 0;
-        if (!rc_parse_long(argv[2], &ms) || ms < 0 || ms > 1000) {
-            return rc_reply(reply, reply_size, false, "@err args");
-        }
-        esp_err_t ret = bno085_enable_accelerometer_report(bno085_dev, (uint32_t) ms);
-        return rc_reply(reply, reply_size, ret == ESP_OK, "@%s bno accel %ld", ret == ESP_OK ? "ok" : "err", ms);
-    }
-    if (argc == 3 && strcmp(argv[1], "wake") == 0 &&
-        (strcmp(argv[2], "fresh") == 0 || strcmp(argv[2], "resume") == 0)) {
-        bno085_dev->grv_fresh_on_wake = strcmp(argv[2], "fresh") == 0;
-        return rc_reply(reply, reply_size, true, "@ok bno wake %s", argv[2]);
-    }
+    // `bno levelfix on|off` (RAM only): the level's correction after a wake (ADR-014), off to compare
     if (argc == 3 && strcmp(argv[1], "levelfix") == 0 && (strcmp(argv[2], "on") == 0 || strcmp(argv[2], "off") == 0)) {
         level_wake_fix_enabled = strcmp(argv[2], "on") == 0;
         return rc_reply(reply, reply_size, true, "@ok bno levelfix %s", argv[2]);

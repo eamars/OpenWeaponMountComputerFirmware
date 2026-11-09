@@ -406,14 +406,6 @@ esp_err_t bno085_configure_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, s
 
 
 esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx) {
-    if (ctx->grv_fresh_on_wake && ctx->enabled_sensor_report_list[SH2_GAME_ROTATION_VECTOR].config.reportInterval_us) {
-        sh2_SensorConfig_t off = ctx->enabled_sensor_report_list[SH2_GAME_ROTATION_VECTOR].config;
-        off.reportInterval_us = 0;
-        sh2_lock(ctx);
-        int status = sh2_setSensorConfig(SH2_GAME_ROTATION_VECTOR, &off);
-        sh2_unlock(ctx);
-        ESP_LOGI(TAG, "Game rotation vector stopped before sleep: %d", status);
-    }
     sh2_lock(ctx);
     int ret = sh2_devSleep();
     sh2_unlock(ctx);
@@ -433,13 +425,6 @@ esp_err_t bno085_wake_up(bno085_ctx_t *ctx) {
     ctx->wake_us = esp_timer_get_time();
     int ret = sh2_devOn();
     ctx->wake_cmd_us = (uint32_t) (esp_timer_get_time() - ctx->wake_us);
-    if (ret == SH2_OK && ctx->grv_fresh_on_wake &&
-        ctx->enabled_sensor_report_list[SH2_GAME_ROTATION_VECTOR].config.reportInterval_us) {
-        // The saved configuration still has the level's interval: enabling it again starts the fusion afresh
-        int status = sh2_setSensorConfig(SH2_GAME_ROTATION_VECTOR,
-                                         &ctx->enabled_sensor_report_list[SH2_GAME_ROTATION_VECTOR].config);
-        ESP_LOGI(TAG, "Game rotation vector started again after the wake: %d", status);
-    }
     sh2_unlock(ctx);
     if (ret != SH2_OK) {
         ESP_LOGE(TAG, "Failed to wake up the sensor: %d", ret);
