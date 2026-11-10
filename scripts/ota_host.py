@@ -10,6 +10,9 @@ two paths): the build's, or a release's OTA package. Every request is printed, w
 An OTA package is a zip with the manifest (`manifest.json`) and the firmware (named as the manifest's `path`), so a
 release can be served without building it: write it from the build with --write-package, serve it with --package.
 
+A release also carries its manifest on its own (`manifest.json`, --write-manifest), with `url`: where its firmware is
+on that release. The package's manifest has no `url`, so a unit given the package downloads from this host.
+
 Usage, from the repo root with the repo venv:
     python scripts/ota_host.py                          # the build, offered to units with an older version
     python scripts/ota_host.py --force                  # offered whatever the unit's version (tests)
@@ -19,6 +22,7 @@ Usage, from the repo root with the repo venv:
     python scripts/ota_host.py --manifest-file m.json   # a manifest as written (format tests)
     python scripts/ota_host.py --note-file n.txt --write-package ota.zip   # write the build's OTA package, no serving
     python scripts/ota_host.py --package ota.zip        # serve an OTA package (a release download)
+    python scripts/ota_host.py --note-file n.txt --write-manifest manifest.json --url https://.../fw.bin   # a release's
 Options: --note, --ip (the address announced; default: the one this machine uses on the network), --port.
 
 Plain HTTP and no image signing, as the firmware is built (CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP): run it only on a
@@ -78,9 +82,15 @@ def main():
     ap.add_argument("--manifest-file", help="serve this file as the manifest, as written")
     ap.add_argument("--package", help="serve this OTA package (zip) instead of the build")
     ap.add_argument("--write-package", help="write the build's OTA package (zip) here and exit")
+    ap.add_argument("--write-manifest", help="write the build's manifest here, with --url, and exit")
+    ap.add_argument("--url", help="with --write-manifest: the firmware's address on its release")
     ap.add_argument("--ip", default=None)
     ap.add_argument("--port", type=int, default=PORT)
     args = ap.parse_args()
+    if bool(args.write_manifest) != bool(args.url):
+        ap.error("--write-manifest and --url go together")
+    if args.write_manifest and (args.package or args.manifest_file):
+        ap.error("--write-manifest writes the build's manifest")
 
     if args.package:
         with zipfile.ZipFile(args.package) as package:
@@ -93,26 +103,28 @@ def main():
         image = (BUILD / project["app_bin"]).read_bytes()
         image_path = "/build/" + project["app_bin"]
         version = args.version or project["project_version"]
-        if args.manifest_file:
-            manifest = Path(args.manifest_file).read_bytes()
-        else:
-            manifest = json.dumps({
-                "manifest_version": 1,
-                "version": version,
-                "path": image_path,
-                "note": (Path(args.note_file).read_text(encoding="utf-8").strip() if args.note_file else
-                         args.note or f"Local build {project['project_version']}."),
-                "port": args.port,
-                "ignore_version": args.force,
-                "type": OtaPackageType.FIRMWARE.value,
-                "importance": args.importance,
-            }).encode("utf-8")
+        fields = {
+            "manifest_version": 1,
+            "version": version,
+            "path": image_path,
+            "note": (Path(args.note_file).read_text(encoding="utf-8").strip() if args.note_file else
+                     args.note or f"Local build {project['project_version']}."),
+            "port": args.port,
+            "ignore_version": args.force,
+            "type": OtaPackageType.FIRMWARE.value,
+            "importance": args.importance,
+        }
+        manifest = Path(args.manifest_file).read_bytes() if args.manifest_file else json.dumps(fields).encode("utf-8")
 
-    if args.write_package:
-        with zipfile.ZipFile(args.write_package, "w", zipfile.ZIP_DEFLATED) as package:
-            package.writestr(PACKAGE_MANIFEST, manifest)
-            package.writestr(image_path.lstrip("/"), image)
-        log(f"wrote {args.write_package}: {PACKAGE_MANIFEST}, {image_path.lstrip('/')} ({len(image)} bytes)")
+    if args.write_package or args.write_manifest:
+        if args.write_package:
+            with zipfile.ZipFile(args.write_package, "w", zipfile.ZIP_DEFLATED) as package:
+                package.writestr(PACKAGE_MANIFEST, manifest)
+                package.writestr(image_path.lstrip("/"), image)
+            log(f"wrote {args.write_package}: {PACKAGE_MANIFEST}, {image_path.lstrip('/')} ({len(image)} bytes)")
+        if args.write_manifest:
+            Path(args.write_manifest).write_text(json.dumps({**fields, "url": args.url}), encoding="utf-8")
+            log(f"wrote {args.write_manifest}: version {version}, url {args.url}")
         return 0
 
     class OTARequestHandler(http.server.BaseHTTPRequestHandler):
