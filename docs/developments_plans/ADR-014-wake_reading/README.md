@@ -1,6 +1,6 @@
 # ADR-014: the level reads right the moment the unit wakes
 
-Status: **Open** 2026-11-10, third round. Built: the BNO085's fusion runs whenever the unit is on, through idle and on every tile. The proof on the units is still to run ("How the unit shows it works"). PR #14 waits until this ADR is closed.
+Status: **Built** 2026-11-10, third round: the BNO085's fusion runs whenever the unit is on, through idle and on every tile. Proven on both units ([progress](progress.md)): no step at the wake, no reset, no self-wake; the chip light-sleeps 82.6% of an idle.
 
 ## What we want
 
@@ -95,16 +95,16 @@ The reference is the fusion's own average over the second before the restart.
 From the BNO085 datasheet (DS p.51); there is no current meter here.
 - The fusion: 7.50 mA on VDD at every listed rate (the gyroscope), plus 3.50 / 5.34 / 6.90 mA on VDDIO at 100 / 200 / 400 Hz. A slower report rate can only cut the smaller part, so it costs at least about 8 mA at any rate, and about 11 mA at 100 Hz.
 - The accelerometer at 125 Hz: 1.4 mA. The stability detector: 0.13 mA. ADR-009 estimated the whole idle, sensor asleep, at a milliamp or two.
-- The ESP32's own share while dark is not known: the reports wake it 50 times a second (measured below).
+- **The ESP32's share, measured** (the turret unit on battery, a 570 s idle, 2026-11-10): the chip light-slept 82.6% of the idle, against 98.2% with the sensor asleep. The sensor's interrupt woke it 59 times a second (the game rotation vector at 50 Hz and the stability detector at 10 Hz), against 3.4 timer wakes a second. Its current while awake is not measured here; at an assumed 20 to 30 mA, the extra 16% awake adds 3 to 5 mA. The fuel gauge's 1% steps are too coarse to check it over 10 minutes.
 
-With the sensor on through idle, about 12 mA:
+With the sensor on through idle, about 12 mA for the sensor and an estimated 15 to 17 mA in all:
 
 | Case | Extra drain | Share of the 950 mAh cell |
 |---|---|---|
-| A 30 min break between stages | about 6 mAh | 0.6% |
-| A match day, 12 such breaks | about 70 mAh | 7% |
-| Left dark until the default power-off (5 h) | about 60 mAh, then off | 6% |
-| Power-off set to Never | flat in about 3 days dark, against about 3 weeks | — |
+| A 30 min break between stages | about 8 mAh | 0.8% |
+| A match day, 12 such breaks | about 90 to 100 mAh | 10% |
+| Left dark until the default power-off (5 h) | about 75 to 85 mAh, then off | 8% |
+| Power-off set to Never | flat in about 2.5 days dark, against about 3 weeks | — |
 
 ### Other findings
 
@@ -112,7 +112,10 @@ With the sensor on through idle, about 12 mA:
 - **A "now still" report woke an idle unit** lying still (ADR-013, 1 of 6 idles): the stability poller woke the unit on any report.
 - **The accelerometer's cant moves in steps of about 0.23°** (one count of its internal sensor at its range). On the turret the yaw motor's vibration spreads it over about ±1° from one sample to the next.
 - **The instrument:** `trace` (remote control, RAM only) logs the level's cant every 50 ms from the next wake. The unit keeps its log through the idle and the host reads it once Wi-Fi is back. Every line was kept in every run; light sleep was 98.2% of idle with it armed (20 timer wakes a second).
-- **Not explained:** one idle on the turret ended 4 to 5 s after a tilt by a touch wake, with nobody touching the unit as far as the run knows.
+- **Not explained:**
+  - one idle on the turret ended 4 to 5 s after a tilt by a touch wake, with nobody touching the unit as far as the run knows;
+  - on 2026-11-10 one of seven 5° turret tilts in the dark woke the unit by "left the still state", about 4 s after the tilt command.
+- **After a tilt in the dark the fusion settles more slowly than awake** (the turret, 2026-11-10): 0.1 to 0.25° off 10 to 14 s after a 5° tilt in the dark, against 0.05° or less 8 s after the same tilt awake. The reading has no step at the wake. The cause is not known.
 
 ## What was tried
 
@@ -123,7 +126,7 @@ With the sensor on through idle, about 12 mA:
 | Path B: for 8 s after a wake, correct the shown cant toward the accelerometer while still ([progress](progress.md)) | Within 0.07° by 1 s on still timer wakes. On a wake by motion up to 78° wrong for 4.7 s: its "still" test used only \|g\|, so a turning unit passed, and its 1 g reference learned from moving samples. It also swung past the truth by 0.1 to 0.2° for about a second | No: a second estimate with its own failures |
 | A soft reset once the rifle comes to rest after a wake by motion | Within 0.2° 0.2 to 1.2 s after coming to rest. Wrong while moving; no reading for about 0.4 s; needs the rifle to be still enough for the detector, which a rifle held on a prop may never be | No: replaced by the next row |
 | A screen-off state with the sensor on for a while, then the sensor asleep (owner's idea) | The pickup within the window is right at once; after it, the reset at rest again | Folded into the next row |
-| **The fusion on whenever the unit is on** | Right at the wake, tilts while dark tracked. About 12 mA while dark | **Yes** |
+| **The fusion on whenever the unit is on** | No step at the wake; tilts while dark tracked. An estimated 15 to 17 mA while dark ([progress](progress.md), round 3) | **Yes** |
 
 ## Failure modes
 
@@ -141,10 +144,10 @@ With the sensor on through idle, about 12 mA:
 
 | Use case | Before this ADR | Now |
 |---|---|---|
-| 1. At rest between matches | Idle, sensor asleep | Idle, sensor on: about 12 mA instead of 1 to 2 |
+| 1. At rest between matches | Idle, sensor asleep | Idle, sensor on: an estimated 15 to 17 mA instead of 1 to 2 |
 | 2. Carried | Stays awake | Unchanged |
 | 3. On a stage | Awake, the fusion running | Unchanged |
-| 4. Picked up and moved to the prop | 13° off at rest, 6 to 8 s | Right from the first frame |
+| 4. Picked up and moved to the prop | 13 to 14° off at rest, 6 to 8 s | 0.07 to 0.6° at rest, within 0.2° by 1.5 s at most: as after the same handling while awake |
 
 ## What we do
 
@@ -165,4 +168,4 @@ With the sensor on through idle, about 12 mA:
 
 ## Not in this ADR
 
-The stability detector's threshold (kept at its default), the gesture wake (its own ADR), and a shorter default power-off (not needed at 12 mA, by the table above).
+The stability detector's threshold (kept at its default), the gesture wake (its own ADR), and a shorter default power-off (not needed at an estimated 15 to 17 mA, by the table above).

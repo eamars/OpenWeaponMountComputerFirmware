@@ -38,7 +38,7 @@ It was closed, then failed the owner's test on 2026-11-10: a wake by motion on C
 - The stability poller: after a wake by motion, the first "now still" report soft-reset the BNO085; only "left the still state" woke an idle unit.
 - Measured beforehand with RAM-only restarts (README, the restart and motion-wake tables). The built firmware was flashed to COM12 only; the owner tried it the next morning ("better"). Its own six-pickup proof was not run: the next round replaced it.
 
-## Round 3, 2026-11-10: the fusion on whenever the unit is on (`87456f6`)
+## Round 3, 2026-11-10: the fusion on whenever the unit is on (`87456f6`, proven on `v1.2.0-38-g1ec2f29`)
 
 - `digital_level_view_controller.c`: the game rotation vector is enabled at init and no longer switched with the tile. While idle the poller keeps the reading but draws nothing and skips recoil.
 - `sensor_config.c`: the "Game rotation" switch starts or stops the report at once. `sensor_calibration_view.c`: leaving it no longer stops the report.
@@ -47,4 +47,39 @@ It was closed, then failed the owner's test on 2026-11-10: a wake by motion on C
 - Remote control: `bno` removed; `trace` logs cant, pitch, the report count and idle. `rc_run.py`: the wake-profile scenario runs once, without always-on variants.
 - Build: no warning from our code.
 
-Proof: not run yet.
+Both units were flashed over USB; the turret unit then ran on battery over the Wi-Fi remote control. No run logged a sensor reset.
+
+**The turret unit, tilted 5° in the dark, woken by `idle 20`** (`trace 10` from the wake; error against the mean of the trace's last 3 s):
+
+| Run | Turret | Level moved | First reading | 100 ms | 300 ms | 1 s | Worst after 300 ms |
+|---|---|---|---|---|---|---|---|
+| 1 | −4.87° | +4.87° | +0.01° | +0.02° | +0.03° | +0.00° | 0.13° |
+| 2 | −4.90° | +5.00° | −0.16° | −0.16° | −0.17° | −0.14° | 0.18° |
+| 3 | +4.96° | −4.80° | −0.10° | −0.10° | −0.09° | −0.09° | 0.10° |
+| 4 | −4.92° | +4.73° | −0.25° | −0.26° | −0.25° | −0.25° | 0.27° |
+| 5 | +4.94° | — | woken by motion 4 s after the tilt ("left the still state"), so not a timer wake | | | | |
+| 6 | −4.94° | +4.62° | −0.12° | −0.11° | −0.12° | −0.07° | 0.12° |
+
+Run 4 is 0.05° past the 0.2° bar, and the wake does not cause it:
+- the report count rose at 49.4 a second through every dark spell, as awake: the fusion ran throughout;
+- a trace straight through an idle (`trace 30 now`, a 5° tilt 7 s into the dark) shows the reading at −0.09° in the last dark sample and −0.08° in the first after the wake: no step;
+- the residual is the fusion settling after the tilt, slower in the dark than awake: the same tilt awake, four times, was within 0.12° 2 s after the command and within 0.04° by 8 s (one run had a single 0.49° excursion 3 s after the command, back by 5 s).
+
+**The desk unit (COM12), six pickups by the owner** (`motion_capture4.py`; error at the stability detector's "now still" report, against the trace's last 3 s):
+
+| Pickup | At rest | Within 0.2° after | Note |
+|---|---|---|---|
+| 1 | +0.07° | at once | |
+| 2 | +0.60° | 1.5 s | handled again after rest |
+| 3 | +0.10° | at once | |
+| 4 | +0.59° | 1.2 s | |
+| 5 | +1.66° | — | handled again after rest and settled elsewhere: not counted |
+| 6 | +0.12° | at once | |
+
+Before (round 1 firmware): 13 to 14° off at rest, 6 to 8 s to come within 0.2°.
+
+**The cost and no self-wake** (the turret unit on battery, `idle 570`, no trace armed): one idle of 569.9 s, ended by its timer. Light sleep 470.5 s, 82.6% (98.2% with the sensor asleep). 33,815 wakes by the sensor's interrupt (59 a second) and 1,911 by timers (3.4 a second).
+
+**The tiles:** the level after 60 s on Settings, the turret tilted +4.87° meanwhile: 0.09° off at the first frame, steady.
+
+**`scenario state_change` over Wi-Fi on the turret unit:** PASS, largest DMA block at least 90,112 B.
