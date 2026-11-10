@@ -70,15 +70,19 @@ static bool update_found = false;               // a newer firmware was found; s
 HEAPS_CAPS_ATTR ota_manifest_t ota_manifest;
 
 
+// The manifest at `url`, or at `host`, `path` and `port`. Without a `url` of its own, a manifest's image is
+// downloaded from `host`; a source with no `host` needs manifests with a `url`
 typedef struct {
-    const char * manifest_url;
-    const char * host;          // where `path` is downloaded from without a `url`; NULL: the manifest needs a `url`
+    const char * url;
+    const char * host;
+    const char * path;
+    int port;
 } ota_source_t;
 
 // In order: the first manifest read decides
 static const ota_source_t ota_sources[] = {
-    {OTA_LOCAL_MANIFEST_URL, OTA_LOCAL_HOST},
-    {OTA_GITHUB_MANIFEST_URL, NULL},
+    {.host = OTA_LOCAL_HOST, .path = OTA_LOCAL_MANIFEST_PATH, .port = OTA_MANIFEST_PORT},
+    {.url = OTA_GITHUB_MANIFEST_URL},
 };
 
 typedef struct {
@@ -402,7 +406,7 @@ esp_err_t fetch_manifest_from_source(const ota_source_t * source) {
     bool parsing = false;       // the parser's tokens are freed at the end (they were left allocated)
     ota_manifest_body_t body = {0};
 
-    ESP_LOGI(TAG, "Fetching manifest from %s", source->manifest_url);
+    ESP_LOGI(TAG, "Fetching manifest from %s", source->url ? source->url : source->host);
 
     manifest_json_raw = heap_caps_calloc(1, OTA_MANIFEST_MAX_SIZE + 1, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
     if (!manifest_json_raw) {
@@ -411,7 +415,10 @@ esp_err_t fetch_manifest_from_source(const ota_source_t * source) {
     body.data = manifest_json_raw;
 
     esp_http_client_config_t http_config = {
-        .url = source->manifest_url,
+        .url = source->url,
+        .host = source->host,
+        .path = source->path,
+        .port = source->port,
         .event_handler = manifest_event_handler,
         .user_data = &body,
         .timeout_ms = OTA_HTTP_TIMEOUT,  // longer timeout for slow response servers
@@ -615,6 +622,8 @@ void ota_poller_task(void *p) {
     }
 
     ESP_LOGI(TAG, "Manifest downloaded, waiting for OTA update");
+    ESP_LOGI(TAG, "ota_poller stack: %u of %u bytes never used", (unsigned) uxTaskGetStackHighWaterMark(NULL),
+             (unsigned) OTA_POLLER_TASK_STACK);
 
     vTaskDeleteWithCaps(NULL);   // safely remove this task
 }
@@ -767,6 +776,8 @@ abort:
 
 finally:
     ESP_LOGI(TAG, "OTA Complete: %s", esp_err_to_name(ret));
+    ESP_LOGI(TAG, "ota_updater stack: %u of %u bytes never used", (unsigned) uxTaskGetStackHighWaterMark(NULL),
+             (unsigned) OTA_UPDATE_TASK_STACK);
     vTaskDelete(NULL);   // safely remove this task
 }
 
