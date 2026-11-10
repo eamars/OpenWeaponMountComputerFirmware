@@ -9,7 +9,7 @@ Firmware for the Open Weapon Mount Computer: an ESP32-S3 with an AMOLED touch sc
   - `sdkconfig` is generated and not tracked. Change `sdkconfig.defaults` (the target) or `sdkconfig.defaults.esp32s3` (everything else), then delete `sdkconfig` and run `idf.py reconfigure`. Compare the old and new `sdkconfig`: only the change you meant should appear.
   - `main/` is built by a recursive glob: after adding or removing a source file, run `idf.py reconfigure`.
   - `dependencies.lock` is tracked; a build must not change it.
-- **Over the air:** `scripts/ota_host.py` serves the build (or a release's OTA package) to units on the local network; see its docstring. Releases: [docs/releases/README.md](docs/releases/README.md).
+- **Over the air:** after its Wi-Fi connects at boot, a unit asks `owmc_update.local` for an update, and only if that does not answer, the latest published GitHub release (its `manifest.json`, over HTTPS; ADR-015). `scripts/ota_host.py` is that local host: it serves the build (or a release's OTA package) to units on the local network; see its docstring. Releases: [docs/releases/README.md](docs/releases/README.md).
 - **Host tools:** Python from the venv at the repo root (`venv/`, built from `requirements.txt`). Never a second venv.
 
 ## Where code goes

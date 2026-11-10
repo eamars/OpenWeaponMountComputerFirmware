@@ -3,6 +3,7 @@
 After its Wi-Fi connects at boot, the unit asks `owmc_update.local` port 8080 for `/p1/manifest.json`; when the
 manifest's version is newer than its own, or `ignore_version` is set, it offers the update, and Install downloads
 `path` from the same host and the manifest's `port`. The unit checks once per boot: start this, then restart it.
+Only when this host does not answer does the unit look at the latest published GitHub release (ADR-015).
 
 This announces `owmc_update.local` on the local network (mDNS) and serves the manifest and the firmware (only those
 two paths): the build's, or a release's OTA package. Every request is printed, with the bytes sent.

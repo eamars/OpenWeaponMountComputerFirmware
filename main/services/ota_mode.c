@@ -19,6 +19,7 @@
 #include "esp_check.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
+#include "esp_crt_bundle.h"
 #include "esp_ota_ops.h"
 #include "esp_task_wdt.h"
 #include "json_parser.h"
@@ -69,14 +70,26 @@ static bool update_found = false;               // a newer firmware was found; s
 HEAPS_CAPS_ATTR ota_manifest_t ota_manifest;
 
 
-const char * ota_sources [] = {
-    "owmc_update.local",
-    "http://owmc_update.vfnz.pro",
-    NULL,
+// The manifest at `url`, or at `host`, `path` and `port`. Without a `url` of its own, a manifest's image is
+// downloaded from `host`; a source with no `host` needs manifests with a `url`
+typedef struct {
+    const char * url;
+    const char * host;
+    const char * path;
+    int port;
+} ota_source_t;
+
+// In order: the first manifest read decides
+static const ota_source_t ota_sources[] = {
+    {.host = OTA_LOCAL_HOST, .path = OTA_LOCAL_MANIFEST_PATH, .port = OTA_MANIFEST_PORT},
+    {.url = OTA_GITHUB_MANIFEST_URL},
 };
 
-// End point for PCB revision 1
-const char * manifest_endpoint = "/p1/manifest.json";
+typedef struct {
+    char * data;
+    int length;
+    bool overflow;
+} ota_manifest_body_t;
 
 
 static inline esp_err_t create_ota_event_group() {
@@ -166,6 +179,22 @@ static void ota_event_handler(void* arg, esp_event_base_t event_base,
 }
 
 static esp_err_t http_client_init_cb(esp_http_client_handle_t http_client) {
+    return ESP_OK;
+}
+
+
+// The final response's body only: a redirect's is skipped
+static esp_err_t manifest_event_handler(esp_http_client_event_t *evt) {
+    if (evt->event_id != HTTP_EVENT_ON_DATA || esp_http_client_get_status_code(evt->client) != 200) {
+        return ESP_OK;
+    }
+    ota_manifest_body_t * body = evt->user_data;
+    if (body->length + evt->data_len > OTA_MANIFEST_MAX_SIZE) {
+        body->overflow = true;
+        return ESP_OK;
+    }
+    memcpy(&body->data[body->length], evt->data, evt->data_len);
+    body->length += evt->data_len;
     return ESP_OK;
 }
 
@@ -370,45 +399,50 @@ static esp_err_t read_note(jparse_ctx_t * jctx, char * note, size_t size) {
 }
 
 
-esp_err_t fetch_manifest_from_source(const char * ota_source) {
+esp_err_t fetch_manifest_from_source(const ota_source_t * source) {
     esp_err_t ret;
     char * manifest_json_raw = NULL;
     jparse_ctx_t jctx;
     bool parsing = false;       // the parser's tokens are freed at the end (they were left allocated)
+    ota_manifest_body_t body = {0};
 
-    ESP_LOGI(TAG, "Fetching manifest from %s", ota_source);
+    ESP_LOGI(TAG, "Fetching manifest from %s", source->url ? source->url : source->host);
+
+    manifest_json_raw = heap_caps_calloc(1, OTA_MANIFEST_MAX_SIZE + 1, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
+    if (!manifest_json_raw) {
+        return ESP_ERR_NO_MEM;
+    }
+    body.data = manifest_json_raw;
 
     esp_http_client_config_t http_config = {
-        .host = ota_source, 
-        .path = manifest_endpoint,
-        .port = OTA_MANIFEST_PORT,
-        .event_handler = http_client_event_handler,
+        .url = source->url,
+        .host = source->host,
+        .path = source->path,
+        .port = source->port,
+        .event_handler = manifest_event_handler,
+        .user_data = &body,
         .timeout_ms = OTA_HTTP_TIMEOUT,  // longer timeout for slow response servers
+        .buffer_size = OTA_HTTP_HEADER_BUFFER_SIZE,
+        .buffer_size_tx = OTA_HTTP_HEADER_BUFFER_SIZE,
+        .crt_bundle_attach = esp_crt_bundle_attach,
     };
     esp_http_client_handle_t client_handle = esp_http_client_init(&http_config);
+    if (client_handle == NULL) {
+        heap_caps_free(manifest_json_raw);
+        return ESP_FAIL;
+    }
 
-    // GET
-    esp_http_client_set_method(client_handle, HTTP_METHOD_GET);
-    ret = esp_http_client_open(client_handle, 0);
-    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to open HTTP connection");
+    // GET, following redirects
+    ret = esp_http_client_perform(client_handle);
+    ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to fetch the manifest");
 
-    int manifest_length = (int) esp_http_client_fetch_headers(client_handle);
-    if (manifest_length < 0) {
+    int status = esp_http_client_get_status_code(client_handle);
+    if (status != 200 || body.overflow || body.length == 0) {
         ret = ESP_FAIL;
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to read manifest length: %d", manifest_length);
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "No manifest: HTTP %d, %d bytes%s", status, body.length,
+                          body.overflow ? ", too long" : "");
     }
-    else {
-        // success
-        ESP_LOGI(TAG, "Manifest read successful. Content length: %d", manifest_length);
-    }
-
-    // Allocate memory to read 
-    manifest_json_raw = heap_caps_calloc(1, manifest_length + 1, HEAPS_CAPS_ALLOC_DEFAULT_FLAGS);
-    if (!manifest_json_raw) {
-        ret = ESP_ERR_NO_MEM;
-        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to allocate memory for manifest_json_raw");
-    }
-    int byte_read = esp_http_client_read_response(client_handle, manifest_json_raw, manifest_length);
+    int byte_read = body.length;
     ESP_LOGI(TAG, "Read %d bytes: %s", byte_read, manifest_json_raw);
 
     // Decode by json parser
@@ -456,6 +490,21 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
     ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract note: %s", manifest_json_raw);
     ESP_LOGI(TAG, "note: %s", ota_manifest.note);
 
+    // The image's own address, when the manifest gives one
+    int url_length = 0;
+    ota_manifest.url[0] = '\0';
+    if (json_obj_get_strlen(&jctx, "url", &url_length) == OS_SUCCESS &&
+        (url_length >= (int) sizeof(ota_manifest.url) ||
+         json_obj_get_string(&jctx, "url", ota_manifest.url, sizeof(ota_manifest.url)) != OS_SUCCESS)) {
+        ret = ESP_FAIL;
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "Failed to extract url: %s", manifest_json_raw);
+    }
+    if (ota_manifest.url[0] == '\0' && source->host == NULL) {
+        ret = ESP_FAIL;
+        ESP_GOTO_ON_ERROR(ret, finally, TAG, "This source's manifest needs a url: %s", manifest_json_raw);
+    }
+    ESP_LOGI(TAG, "url: %s", ota_manifest.url[0] ? ota_manifest.url : "(none)");
+
     // Read port number
     if (json_obj_get_int(&jctx, "port", &ota_manifest.port)) {
         ret = ESP_FAIL;
@@ -493,7 +542,7 @@ esp_err_t fetch_manifest_from_source(const char * ota_source) {
     }
 
     // Copy other attributes
-    ota_manifest.host = (char *) ota_source;
+    ota_manifest.host = source->host;
     ota_manifest.initialized = true;
 
     // if ignore_version is false then we can compare the version, populate update only if the OTA server has newer version
@@ -565,14 +614,16 @@ void ota_poller_task(void *p) {
 
     ESP_LOGI(TAG, "Network connected, will poll OTA source");
 
-    for (int idx = 0; ota_sources[idx] != NULL; idx += 1) {
-        esp_err_t ret = fetch_manifest_from_source(ota_sources[idx]);
+    for (size_t idx = 0; idx < sizeof(ota_sources) / sizeof(ota_sources[0]); idx += 1) {
+        esp_err_t ret = fetch_manifest_from_source(&ota_sources[idx]);
         if (ret == ESP_OK) {
             break;
         }
     }
 
     ESP_LOGI(TAG, "Manifest downloaded, waiting for OTA update");
+    ESP_LOGI(TAG, "ota_poller stack: %u of %u bytes never used", (unsigned) uxTaskGetStackHighWaterMark(NULL),
+             (unsigned) OTA_POLLER_TASK_STACK);
 
     vTaskDeleteWithCaps(NULL);   // safely remove this task
 }
@@ -596,14 +647,21 @@ void ota_update_task(void *p) {
     }
 
     esp_http_client_config_t http_config = {
-        .host = ota_manifest.host,
-        .path = ota_manifest.path,
-        .port = ota_manifest.port,
         .event_handler = http_client_event_handler,
         .keep_alive_enable = true,
         .timeout_ms = OTA_HTTP_TIMEOUT,
         .buffer_size = OTA_READ_BUFFER_SIZE,    // each read of the image; the default 512 B made it 28 KB/s
+        .buffer_size_tx = OTA_HTTP_HEADER_BUFFER_SIZE,
+        .crt_bundle_attach = esp_crt_bundle_attach,
     };
+    if (ota_manifest.url[0] != '\0') {
+        http_config.url = ota_manifest.url;
+    }
+    else {
+        http_config.host = ota_manifest.host;
+        http_config.path = ota_manifest.path;
+        http_config.port = ota_manifest.port;
+    }
 
     // Determine the target partition
     const esp_partition_t *ota_partition = esp_ota_get_next_update_partition(NULL);
@@ -718,6 +776,8 @@ abort:
 
 finally:
     ESP_LOGI(TAG, "OTA Complete: %s", esp_err_to_name(ret));
+    ESP_LOGI(TAG, "ota_updater stack: %u of %u bytes never used", (unsigned) uxTaskGetStackHighWaterMark(NULL),
+             (unsigned) OTA_UPDATE_TASK_STACK);
     vTaskDelete(NULL);   // safely remove this task
 }
 
