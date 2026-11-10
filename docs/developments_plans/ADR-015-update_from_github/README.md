@@ -12,6 +12,7 @@ A unit on Wi-Fi finds the newest published firmware on its own, from this reposi
 - The GitHub connection is over a secured channel (HTTPS).
 - The local override stays, for updates on the bench.
 - The check stays once per boot, after Wi-Fi connects. No change to when it runs.
+- The manifest is generated automatically for every new release. v1.3.0 is released first with that workflow (ADR-012 to ADR-014 since v1.2.0); this ADR then leads to v1.4.0.
 
 ## What we know (checked 2026-11-10)
 
@@ -25,7 +26,7 @@ A unit on Wi-Fi finds the newest published firmware on its own, from this reposi
 - **Releases:**
   - a version tag makes the build workflow draft a release with `<name>.bin`, `<name>-ota.zip` (`manifest.json` and the image), the files for flashing over USB, and their SHA-256;
   - the owner publishes the draft after trying it on a unit;
-  - v1.0.0, v1.1.0 and v1.2.0 are published. No release has a `manifest.json` of its own.
+  - v1.0.0, v1.1.0 and v1.2.0 have no `manifest.json` of their own. From v1.3.0 (PR #15) the workflow writes one for every build and uploads it with a tag's release: the package's manifest plus `url`, the firmware's address on that release (`https://github.com/<repository>/releases/download/<tag>/<name>.bin`), written by `ota_host.py --write-manifest --url`. The OTA package's own manifest keeps no `url`, so a unit given the package downloads from the local host (as when a draft is tried on a unit).
 - **GitHub's fixed link for the newest release:**
   - `https://github.com/eamars/OpenWeaponMountComputerFirmware/releases/latest/download/<file>` redirects (302) to `/releases/download/v1.2.0/<file>`, which redirects again to `release-assets.githubusercontent.com`. Checked with `bootloader.bin`.
   - "Latest" skips drafts and pre-releases, so publishing a draft is what hands it out.
@@ -40,29 +41,21 @@ A unit on Wi-Fi finds the newest published firmware on its own, from this reposi
 
 ## What we will do
 
-1. **The release carries its manifest.** The build workflow writes `manifest.json` beside the OTA package on every build, with one new field, `url`: the HTTPS address of that version's image on its release (`https://github.com/<repository>/releases/download/<tag>/<name>.bin`). A tag's release uploads it with the other files. `ota_host.py` writes it (`--url`), so the workflow and the bench share one writer.
-2. **The unit looks in two places, in order:**
+1. **The unit looks in two places, in order:**
    1. `owmc_update.local`, as today: the local override. If it answers, its manifest decides and GitHub is not asked.
    2. `https://github.com/<repository>/releases/latest/download/manifest.json`, with the certificate bundle and a 2 KB header buffer for the redirects.
 
    `owmc_update.vfnz.pro` is removed. The repository (`eamars/OpenWeaponMountComputerFirmware`) is one constant; a fork changes that line.
-3. **Install:** when the manifest has a `url`, the image is downloaded from it, over HTTPS with the certificate bundle. Without one (`ota_host.py`'s own manifest), it comes from the host, path and port as today. `url` is optional, so the units still on v1.2.0 keep reading `ota_host.py`'s manifests, and can be brought onto this firmware that way.
-4. **Nothing else changes:** once per boot after Wi-Fi connects, the offer's screens, the version comparison and the importance rule. No stored settings change.
+2. **Install:** when the manifest has a `url`, the image is downloaded from it, over HTTPS with the certificate bundle. Without one (`ota_host.py`'s own manifest), it comes from the host, path and port as today. `url` is optional, so the units still on v1.2.0 keep reading `ota_host.py`'s manifests, and can be brought onto this firmware that way.
+3. **Nothing else changes:** once per boot after Wi-Fi connects, the offer's screens, the version comparison and the importance rule. No stored settings change.
 
 ## How the unit shows it works
 
 On the turret unit, on battery, over the Wi-Fi remote control:
 - **The local override:** with `ota_host.py` running, the unit offers the local build, as today.
-- **From GitHub, a real release end to end:** a test build that reports `v1.1.9` (a `version.txt`, not committed), with no local host. The unit offers v1.2.0 from GitHub; Install downloads it over HTTPS, and the unit restarts on v1.2.0. `ota_host.py` then puts this ADR's build back.
+- **From GitHub, a real release end to end:** this ADR's code in a test build that reports `v1.2.9` (a `version.txt`, not committed), with no local host. The unit offers v1.3.0 from GitHub; Install downloads it over HTTPS, and the unit restarts on v1.3.0. `ota_host.py` then puts this ADR's build back.
 - **Not offered when newer:** this ADR's build, with no local host, reads GitHub's manifest and offers nothing.
 - **The cost:** internal RAM and the largest DMA block (`stats`) after the HTTPS check, and `state_change` with `--min-largest-dma 70000`. The download time over HTTPS against the local host.
-- **The workflow:** this branch's build artifact holds `manifest.json`, its `url` pointing at the build's own file name.
-
-## Decision for the owner
-
-**A manifest for v1.2.0.** GitHub's link has nothing to find until the latest published release has a `manifest.json`. The end-to-end proof needs one, and so does every unit on this firmware until the next release.
-- Recommended: add `manifest.json` to the published v1.2.0 release (`gh release upload`), written by the same `ota_host.py` from v1.2.0's note, with `url` pointing at v1.2.0's own `.bin`. It is additive: v1.2.0's files and notes stay as they are.
-- The alternative: tag a new release after this ADR is merged, and run the GitHub proof then. The ADR would stay open past its PR, against the rule that an ADR closes before its PR.
 
 ## Not in this ADR
 
