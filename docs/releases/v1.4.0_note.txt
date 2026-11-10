@@ -1,0 +1,4 @@
+Firmware 1.4
+• The unit finds new firmware by itself: it checks the latest GitHub release over HTTPS after Wi-Fi connects
+• A computer running ota_host.py on the local network still comes first
+• Settings and sensor calibration are kept
