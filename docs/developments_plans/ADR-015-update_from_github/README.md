@@ -1,6 +1,6 @@
 # ADR-015: updates from the latest GitHub release
 
-Status: **Draft** 2026-11-10, waiting for the owner's approval.
+Status: **Open** 2026-11-10, approved by the owner. Built; the proof on the unit is running.
 
 ## What we want
 

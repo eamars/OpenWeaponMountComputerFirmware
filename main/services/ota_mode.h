@@ -21,10 +21,11 @@ typedef enum {
 
 typedef struct {
     bool initialized;
-    char *host;
+    const char *host;       // where `path` is downloaded from when there is no `url`
     int manifest_version;
     char version[32];
     char path[128];
+    char url[256];          // the image's address, when the manifest gives one; empty otherwise
     char note[1024];        // the release note, cut beyond this
     int port;
     bool ignore_version;
@@ -34,6 +35,14 @@ typedef struct {
 
 #define OTA_MANIFEST_PORT 8080
 #define OTA_HTTP_TIMEOUT 20 * 1000  // 20s
+#define OTA_HTTP_HEADER_BUFFER_SIZE 2048    // GitHub's redirects carry addresses of about 900 bytes
+#define OTA_MANIFEST_MAX_SIZE 4096
+
+// The local host (scripts/ota_host.py) is asked first; the repository's latest published release next (ADR-015)
+#define OTA_LOCAL_HOST "owmc_update.local"
+#define OTA_LOCAL_MANIFEST_URL "http://" OTA_LOCAL_HOST ":8080/p1/manifest.json"
+#define OTA_GITHUB_REPOSITORY "eamars/OpenWeaponMountComputerFirmware"
+#define OTA_GITHUB_MANIFEST_URL "https://github.com/" OTA_GITHUB_REPOSITORY "/releases/latest/download/manifest.json"
 
 #define OTA_POLLER_TASK_STACK 4096
 #define OTA_POLLER_TASK_PRIORITY 4

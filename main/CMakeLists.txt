@@ -40,6 +40,7 @@ set(ALL_DEPS
 
     # OTA
     esp_https_ota
+    mbedtls
 
     # MDNS
     mdns
