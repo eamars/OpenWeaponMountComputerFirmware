@@ -1,6 +1,6 @@
 # ADR-015: updates from the latest GitHub release
 
-Status: **Open** 2026-11-10, approved by the owner. Built; the proof on the unit is running.
+Status: **Built** 2026-11-10, approved by the owner. Built and proven on the turret unit ([progress](progress.md)): the local host first, then GitHub's latest release over HTTPS; a test build found and installed v1.3.0 from GitHub. The first build boot-looped (the update tasks' stacks); fixed and measured ("What building found").
 
 ## What we want
 
@@ -39,21 +39,32 @@ A unit on Wi-Fi finds the newest published firmware on its own, from this reposi
 - **Room:** each app partition is 4 MB; the v1.2.0 image is 2.45 MB.
 - **No app rollback** (`CONFIG_APP_ROLLBACK_ENABLE` off), as in ADR-013: a bad image needs USB to recover.
 
+## What building found
+
+| # | Failure | Root cause | Now |
+|---|---|---|---|
+| F1 | The first build boot-looped on the turret unit: about 6 s after each boot, "A stack overflow in task ota_poller" | The update tasks had 4 KB stacks, enough for plain HTTP. Measured with 16 KB: the HTTPS check uses about 4.6 KB, an HTTPS update about 4.7 KB, so the download task would have overflowed too | `ota_poller` 8 KB (PSRAM, freed after the check), `ota_updater` 7 KB (internal RAM, from boot; 3 KB more than before). Each logs its unused stack when it ends |
+| F2 | The local host was never asked: "Error parse url http://owmc_update.local:8080/..." | The HTTP client's URL parser rejects the underscore in `owmc_update`; the old code gave the host, path and port apart, past the parser | The local source is given as host, path and port again. The name stays, so units on v1.3.0 and older still find `ota_host.py` |
+| — | A request for the redirect's address would be refused | `CONFIG_ESP_HTTP_CLIENT_STRICT_HEADER_BUFFER` is on: a request line longer than the transmit buffer (512 B by default) fails. The redirect's path is about 900 bytes | 2 KB transmit buffers for the manifest and the image, as planned for the receive side |
+
+The unit was on USB, so it was reflashed over the cable. A unit on the field with that build would have needed a cable too (no app rollback).
+
 ## What we will do
 
 1. **The unit looks in two places, in order:**
-   1. `owmc_update.local`, as today: the local override. If it answers, its manifest decides and GitHub is not asked.
-   2. `https://github.com/<repository>/releases/latest/download/manifest.json`, with the certificate bundle and a 2 KB header buffer for the redirects.
+   1. `owmc_update.local`, port 8080, `/p1/manifest.json`, as today: the local override. If it answers, its manifest decides and GitHub is not asked.
+   2. `https://github.com/<repository>/releases/latest/download/manifest.json`, following the redirects, with the certificate bundle and 2 KB header buffers both ways.
 
    `owmc_update.vfnz.pro` is removed. The repository (`eamars/OpenWeaponMountComputerFirmware`) is one constant; a fork changes that line.
 2. **Install:** when the manifest has a `url`, the image is downloaded from it, over HTTPS with the certificate bundle. Without one (`ota_host.py`'s own manifest), it comes from the host, path and port as today. `url` is optional, so the units still on v1.2.0 keep reading `ota_host.py`'s manifests, and can be brought onto this firmware that way.
-3. **Nothing else changes:** once per boot after Wi-Fi connects, the offer's screens, the version comparison and the importance rule. No stored settings change.
+3. **The update tasks' stacks** are sized for TLS (F1): 8 KB for the check, 7 KB for the download.
+4. **Nothing else changes:** once per boot after Wi-Fi connects, the offer's screens, the version comparison and the importance rule. No stored settings change.
 
 ## How the unit shows it works
 
-On the turret unit, on battery, over the Wi-Fi remote control:
+On the turret unit (on USB for this ADR: the proof needs no battery run; its console showed each step):
 - **The local override:** with `ota_host.py` running, the unit offers the local build, as today.
-- **From GitHub, a real release end to end:** this ADR's code in a test build that reports `v1.2.9` (a `version.txt`, not committed), with no local host. The unit offers v1.3.0 from GitHub; Install downloads it over HTTPS, and the unit restarts on v1.3.0. `ota_host.py` then puts this ADR's build back.
+- **From GitHub, a real release end to end:** this ADR's code in a test build that reports `v1.2.9` (a `version.txt`, not committed), with no local host. The unit offers v1.3.0 from GitHub; Install downloads it over HTTPS, and the unit restarts on v1.3.0. This ADR's build then goes back on.
 - **Not offered when newer:** this ADR's build, with no local host, reads GitHub's manifest and offers nothing.
 - **The cost:** internal RAM and the largest DMA block (`stats`) after the HTTPS check, and `state_change` with `--min-largest-dma 70000`. The download time over HTTPS against the local host.
 
