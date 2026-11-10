@@ -79,13 +79,16 @@ jobs:
           name="OpenWeaponMountComputerFirmware-$VERSION"
           cp build/OpenWeaponMountComputerFirmware.bin "dist/$name.bin"
           cp build/bootloader/bootloader.bin build/partition_table/partition-table.bin build/ota_data_initial.bin dist/
+          # The release's own manifest: where a unit finds this firmware once the release is published (ADR-015)
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/$name.bin"
           if [ "$GITHUB_REF_TYPE" = tag ]; then
-            python scripts/ota_host.py --note-file "docs/releases/${VERSION}_note.txt" --write-package "dist/$name-ota.zip"
+            note=(--note-file "docs/releases/${VERSION}_note.txt")
           else
-            python scripts/ota_host.py --note "Build $VERSION." --write-package "dist/$name-ota.zip"
+            note=(--note "Build $VERSION.")
           fi
+          python scripts/ota_host.py "${note[@]}" --write-package "dist/$name-ota.zip"             --write-manifest dist/manifest.json --url "$url"
           cd dist
-          sha256sum "$name.bin" "$name-ota.zip" bootloader.bin partition-table.bin ota_data_initial.bin > SHA256SUMS
+          sha256sum "$name.bin" "$name-ota.zip" manifest.json bootloader.bin partition-table.bin ota_data_initial.bin             > SHA256SUMS
           cat SHA256SUMS
 
       - uses: actions/upload-artifact@v4
@@ -117,4 +120,4 @@ jobs:
             -e "s#](\.\./#](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/docs/#g" > body.md
           printf '\nSHA-256:\n\n```\n%s\n```\n' "$(cat dist/SHA256SUMS)" >> body.md
           gh release create "$TAG" --draft --verify-tag --title "Firmware $TAG" --notes-file body.md \
-            dist/*.bin dist/*.zip
+            dist/*.bin dist/*.zip dist/manifest.json

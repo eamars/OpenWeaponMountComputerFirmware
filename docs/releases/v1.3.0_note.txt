@@ -1,0 +1,7 @@
+Firmware 1.3
+• The level reads right as soon as the screen comes back on
+• A unit lying still no longer wakes itself
+• A dark unit draws more: about 10% of the battery over a match day
+• Dope: a tap no longer moves the list
+• Wi-Fi remote control switch, network name and address on the Wi-Fi page
+• Settings and sensor calibration are kept
