@@ -91,8 +91,8 @@ REPLY_PREFIXES = {
     "bnoreset": "@ok bnoreset",
     "settings": "@ok settings",
     "ota": "@ok ota",
-    "bno": "@ok bno",
     "top": "@ok top",
+    "trace": "@ok trace",
 }
 FAILURE_MARKERS = (
     RESET_MARKER,
@@ -677,14 +677,11 @@ def scenario_watch(session: Session):
         session.command("state")
 
 
-# Wake profile (ADR-009): which of the level's reports keep running while the BNO085 sleeps, as (grv, la) always-on
-WAKE_PROFILE_VARIANTS = ((0, 0), (0, 1))   # the firmware's since ADR-009 step 2, then linear acceleration kept on
-WAKE_PROFILE_DEFAULT = (0, 0)
+# Wake profile (ADR-009)
 WAKE_PROFILE_CYCLES = 8
 WAKE_PROFILE_IDLE_S = 10.0
 WAKE_PROFILE_AFTER_WAKE_S = 2.5    # the device reports 1 s after LVGL resumes
-WAKE_PROFILE_FIELDS = ("exit", "panel_on", "resumed", "frame", "bno_cmd", "grv_first", "grv_100ms",
-                       "la_first", "la_100ms", "te_idle", "te_awake", "idle_ms")
+WAKE_PROFILE_FIELDS = ("exit", "panel_on", "resumed", "frame", "te_idle", "te_awake", "idle_ms")
 
 
 def wake_profile_summary(lines):
@@ -704,11 +701,10 @@ def wake_profile_summary(lines):
 
 
 def scenario_wake_profile(session: Session):
-    """Wake from idle on the level tile, timed by the device's `wake_prof:` lines, for each always-on variant.
+    """Wake from idle on the level tile, timed by the device's `wake_prof:` lines.
 
-    Needs a build with WAKE_PROFILING_ENABLED. Each variant: WAKE_PROFILE_CYCLES of idle for WAKE_PROFILE_IDLE_S
-    then `wake`. `top` once while active and once while idle (verification builds with run-time stats). Leaves the
-    sensor as the firmware sets it.
+    Needs a build with WAKE_PROFILING_ENABLED. WAKE_PROFILE_CYCLES of idle for WAKE_PROFILE_IDLE_S then `wake`.
+    `top` once while active and once while idle (verification builds with run-time stats).
     """
     session.command(f"tile {HOME_TILE[0]} {HOME_TILE[1]}")
     session.dwell(3.0)
@@ -719,28 +715,19 @@ def scenario_wake_profile(session: Session):
     session.command("wake")
     session.dwell(WAKE_PROFILE_AFTER_WAKE_S)
 
-    results = []
-    for grv, la in WAKE_PROFILE_VARIANTS:
-        session.command(f"bno alwayson grv {grv}")
-        session.command(f"bno alwayson la {la}")
-        session.dwell(1.0)
-        start_index = len(session.lines)
-        for _ in range(WAKE_PROFILE_CYCLES):
-            session.command("idle")
-            session.dwell(WAKE_PROFILE_IDLE_S)
-            session.command("wake")
-            session.dwell(WAKE_PROFILE_AFTER_WAKE_S)
-        results.append(((grv, la), wake_profile_summary(session.lines[start_index:])))
+    start_index = len(session.lines)
+    for _ in range(WAKE_PROFILE_CYCLES):
+        session.command("idle")
+        session.dwell(WAKE_PROFILE_IDLE_S)
+        session.command("wake")
+        session.dwell(WAKE_PROFILE_AFTER_WAKE_S)
+    count, medians = wake_profile_summary(session.lines[start_index:])
 
-    session.command(f"bno alwayson grv {WAKE_PROFILE_DEFAULT[0]}")
-    session.command(f"bno alwayson la {WAKE_PROFILE_DEFAULT[1]}")
-
-    print("wake profile (medians, ms from the wake request; bno from its wake command):")
-    for (grv, la), (count, medians) in results:
-        shown = " ".join(f"{name}={'-' if v is None else f'{v:.1f}'}" for name, v in medians.items())
-        print(f"  grv_alwayson={grv} la_alwayson={la} wakes={count}: {shown}")
-        if count < WAKE_PROFILE_CYCLES:
-            session.failures.append(f"grv={grv} la={la}: {count} of {WAKE_PROFILE_CYCLES} wake_prof lines")
+    print("wake profile (medians, ms from the wake request):")
+    shown = " ".join(f"{name}={'-' if v is None else f'{v:.1f}'}" for name, v in medians.items())
+    print(f"  wakes={count}: {shown}")
+    if count < WAKE_PROFILE_CYCLES:
+        session.failures.append(f"{count} of {WAKE_PROFILE_CYCLES} wake_prof lines")
 
 
 IDLE_CYCLES_DURATION_S = 600.0    # the owner caps cycle tests at 10 minutes

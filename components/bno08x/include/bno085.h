@@ -69,13 +69,6 @@ typedef struct {
     gpio_num_t boot_pin;
     gpio_num_t ps0_wake_pin;
 
-    // Wake profile (ADR-009): when the last bno085_wake_up() started, how long its command took, and per sensor
-    // the first report after it and the reports in its first 100 ms. Written by the poller task, under sh2_lock
-    int64_t wake_us;
-    uint32_t wake_cmd_us;
-    int64_t wake_first_report_us[BNO085_REPORT_TABLE_LEN];
-    uint16_t wake_burst_reports[BNO085_REPORT_TABLE_LEN];
-
     // Resets the hub announced (SH2_RESET): each restarts its sensors, which drops state built from their reports
     volatile uint32_t reset_count;
 
@@ -113,24 +106,6 @@ esp_err_t bno085_init_i2c(bno085_i2c_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus
 
 
 /**
- * @brief Put sensor in sleep state
- */
-esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx);
-
-/** 
- * @brief Wake up the sensor from sleep state
- */
-esp_err_t bno085_wake_up(bno085_ctx_t *ctx);
-
-/**
- * @brief The last wake's profile for one sensor (ADR-009): microseconds from the wake command to the sensor's first
- * report after it (0 if none yet), how many of its reports came within 100 ms of the command, and how long the
- * command itself took
- */
-void bno085_get_wake_profile(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t *first_report_us,
-                             uint32_t *burst_reports, uint32_t *wake_cmd_us);
-
-/**
  * @brief How many resets the hub has announced since init. A reset restarts every sensor without a report, so
  * state built from a sensor's earlier reports (for example the stability detector's still or moving) no longer holds
  */
@@ -154,12 +129,6 @@ esp_err_t bno085_clear_persisted_tare(bno085_ctx_t *ctx, bool *cleared);
  * after every reset of the hub (ADR-011)
  */
 esp_err_t bno085_set_dynamic_calibration(bno085_ctx_t *ctx, uint8_t sensors);
-
-/**
- * @brief Set whether a report keeps running while the hub sleeps (always-on), and send that to the sensor if the
- * report is on. Kept for the sensor's reset recovery; the report's enable function sets it back to its default
- */
-esp_err_t bno085_set_report_always_on(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, bool always_on);
 
 /**
  * @brief Pulse the reset line while running, so the sensor restarts as after an unexpected reset.

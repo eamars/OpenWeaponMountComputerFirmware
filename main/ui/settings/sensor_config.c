@@ -39,12 +39,11 @@ esp_err_t load_sensor_config() {
 }
 
 
-// Apply the settings to the running unit, as the page's switches do (Reload, Reset): a report switched off is
-// stopped; a report switched on starts when the view that uses it is enabled
+// Apply the settings to the running unit, as the page's switches do (Reload, Reset). The game rotation vector starts or
+// stops now; another report switched on starts when the view that uses it is enabled
 static void apply_sensor_config() {
-    if (!sensor_config.enable_game_rotation_vector_report) {
-        bno085_enable_game_rotation_vector_report(bno085_dev, 0);  // a failure is logged by the driver
-    }
+    bno085_enable_game_rotation_vector_report(bno085_dev, sensor_config.enable_game_rotation_vector_report ?
+                                              SENSOR_GAME_ROTATION_VECTOR_REPORT_PERIOD_MS : 0);  // a failure is logged by the driver
     if (!sensor_config.enable_linear_acceleration_report) {
         bno085_enable_linear_acceleration_report(bno085_dev, 0);
     }
@@ -80,7 +79,6 @@ static void format_recoil_level(char * buf, size_t size, int32_t value) {
 }
 
 
-// A report switched off is stopped now; a report switched on starts when the view that uses it is enabled
 static bool get_report(void * ctx) {
     return *(bool *) ctx;
 }

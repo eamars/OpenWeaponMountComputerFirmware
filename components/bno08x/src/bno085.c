@@ -100,17 +100,6 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     // Send it to the corresponding queue
     // ESP_LOGI(TAG, "Event Received %p", sensor_value.sensorId);
 
-    // Wake profile (ADR-009): the first report after the last wake, and the reports in its first 100 ms
-    if (ctx->wake_us != 0) {
-        int64_t since_wake_us = esp_timer_get_time() - ctx->wake_us;
-        if (ctx->wake_first_report_us[sensor_value.sensorId] == 0) {
-            ctx->wake_first_report_us[sensor_value.sensorId] = since_wake_us > 0 ? since_wake_us : 1;
-        }
-        if (since_wake_us < 100000 && ctx->wake_burst_reports[sensor_value.sensorId] < UINT16_MAX) {
-            ctx->wake_burst_reports[sensor_value.sensorId]++;
-        }
-    }
-
     if (sensor_value.sensorId == SH2_GAME_ROTATION_VECTOR) {
         ctx->grv_quat[0] = sensor_value.un.gameRotationVector.real;
         ctx->grv_quat[1] = sensor_value.un.gameRotationVector.i;
@@ -399,35 +388,6 @@ esp_err_t bno085_configure_report(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, s
 
 
 
-esp_err_t bno085_enter_sleep(bno085_ctx_t *ctx) {
-    sh2_lock(ctx);
-    int ret = sh2_devSleep();
-    sh2_unlock(ctx);
-    if (ret != SH2_OK) {
-        ESP_LOGE(TAG, "Failed to put sensor in sleep mode: %d", ret);
-        return ESP_FAIL;
-    }
-    return ESP_OK;
-}
-
-
-esp_err_t bno085_wake_up(bno085_ctx_t *ctx) {
-    sh2_lock(ctx);
-    // Under the lock, so the poller task is not in the sensor callback meanwhile
-    memset(ctx->wake_first_report_us, 0, sizeof(ctx->wake_first_report_us));
-    memset(ctx->wake_burst_reports, 0, sizeof(ctx->wake_burst_reports));
-    ctx->wake_us = esp_timer_get_time();
-    int ret = sh2_devOn();
-    ctx->wake_cmd_us = (uint32_t) (esp_timer_get_time() - ctx->wake_us);
-    sh2_unlock(ctx);
-    if (ret != SH2_OK) {
-        ESP_LOGE(TAG, "Failed to wake up the sensor: %d", ret);
-        return ESP_FAIL;
-    }
-    return ESP_OK;
-}
-
-
 uint32_t bno085_get_reset_count(bno085_ctx_t *ctx) {
     return ctx->reset_count;
 }
@@ -480,32 +440,6 @@ esp_err_t bno085_clear_persisted_tare(bno085_ctx_t *ctx, bool *cleared) {
 }
 
 
-void bno085_get_wake_profile(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, uint32_t *first_report_us,
-                             uint32_t *burst_reports, uint32_t *wake_cmd_us) {
-    sh2_lock(ctx);
-    if (first_report_us) {
-        *first_report_us = (uint32_t) ctx->wake_first_report_us[sensor_id];
-    }
-    if (burst_reports) {
-        *burst_reports = ctx->wake_burst_reports[sensor_id];
-    }
-    if (wake_cmd_us) {
-        *wake_cmd_us = ctx->wake_cmd_us;
-    }
-    sh2_unlock(ctx);
-}
-
-
-esp_err_t bno085_set_report_always_on(bno085_ctx_t *ctx, sh2_SensorId_t sensor_id, bool always_on) {
-    sensor_report_config_t * report = &ctx->enabled_sensor_report_list[sensor_id];
-    sh2_lock(ctx);
-    report->config.alwaysOnEnabled = always_on;
-    esp_err_t ret = report->config.reportInterval_us != 0 ? sh2_enable_report(ctx, sensor_id, &report->config) : ESP_OK;
-    sh2_unlock(ctx);
-    return ret;
-}
-
-
 esp_err_t bno085_hardware_reset(bno085_ctx_t *ctx) {
     if (ctx->reset_pin == GPIO_NUM_NC) {
         return ESP_ERR_NOT_SUPPORTED;
@@ -541,8 +475,6 @@ esp_err_t bno085_enable_game_rotation_vector_report(bno085_ctx_t *ctx, uint32_t 
 
 
 esp_err_t bno085_enable_linear_acceleration_report(bno085_ctx_t *ctx, uint32_t interval_ms) {
-    // Not always-on: kept running while the hub sleeps it cost the gyroscope and fusion for reports nobody read; the
-    // first report after a wake then comes about 130 ms after it instead of 23 ms (ADR-009 step 0)
     sh2_SensorConfig_t config = {
         .changeSensitivityEnabled = false,
         .wakeupEnabled = false,

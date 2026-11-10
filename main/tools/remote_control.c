@@ -67,7 +67,7 @@
 #define RC_MAX_ARGS 6   // "settings open How to pair"
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota bno top tear grav"
+#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota top tear grav trace"
 
 
 typedef struct {
@@ -1040,6 +1040,61 @@ static bool rc_cmd_grav(int argc, char **argv, char *reply, size_t reply_size) {
 }
 
 
+// Debug (ADR-014): `trace <s> [now]` logs the level's cant and pitch and the count of game rotation reports every
+// 50 ms for s seconds, from the next wake (or now). RAM only, one trace at a time. While armed its timer wakes the chip
+// 20 times a second
+#define RC_TRACE_PERIOD_US (50 * 1000)
+#define RC_TRACE_MAX_S 30
+static esp_timer_handle_t rc_trace_timer = NULL;
+static int64_t rc_trace_wake_us = 0;        // 0 until the wake is seen
+static int64_t rc_trace_length_us = 0;
+static bool rc_trace_seen_idle = false;
+
+static void rc_trace_timer_cb(void *arg) {
+    const bool idle = is_idle_mode_activated();
+    if (rc_trace_wake_us == 0) {
+        if (idle) {
+            rc_trace_seen_idle = true;
+            return;
+        }
+        if (!rc_trace_seen_idle) {
+            return;
+        }
+        rc_trace_wake_us = esp_timer_get_time();
+    }
+    const int64_t since_us = esp_timer_get_time() - rc_trace_wake_us;
+    float quat[4];
+    const uint32_t count = bno085_get_game_rotation_quaternion(bno085_dev, quat);
+    ESP_LOGI(TAG, "wtrace t=%" PRId64 " cant=%.2f pitch=%.2f n=%" PRIu32 " idle=%d", since_us / 1000,
+             (double) RAD_TO_DEG(sensor_roll_thread_unsafe), (double) RAD_TO_DEG(sensor_pitch_thread_unsafe), count,
+             idle ? 1 : 0);
+    if (since_us >= rc_trace_length_us) {
+        esp_timer_stop(rc_trace_timer);
+        ESP_LOGI(TAG, "wtrace end");
+    }
+}
+
+
+static bool rc_cmd_trace(int argc, char **argv, char *reply, size_t reply_size) {
+    // `trace <s>` from the next wake, `trace <s> now` from now
+    long seconds = 0;
+    const bool now = argc == 3 && strcmp(argv[2], "now") == 0;
+    if ((argc != 2 && !now) || !rc_parse_long(argv[1], &seconds) || seconds < 1 || seconds > RC_TRACE_MAX_S) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    esp_timer_stop(rc_trace_timer);
+    rc_trace_wake_us = now ? esp_timer_get_time() : 0;
+    rc_trace_seen_idle = false;
+    rc_trace_length_us = (int64_t) seconds * 1000000;
+    ESP_LOGI(TAG, "wtrace armed cant=%.2f", (double) RAD_TO_DEG(sensor_roll_thread_unsafe));
+    esp_err_t ret = esp_timer_start_periodic(rc_trace_timer, RC_TRACE_PERIOD_US);
+    if (ret != ESP_OK) {
+        return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(ret));
+    }
+    return rc_reply(reply, reply_size, true, "@ok trace %ld", seconds);
+}
+
+
 // Trial (ADR-010 step 2): `tear [free|off]` shows or sets anti-tearing (the flush's wait for the panel's scan).
 // RAM only: a reboot restores it
 static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
@@ -1053,30 +1108,6 @@ static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
         return rc_reply(reply, reply_size, false, "@err args");
     }
     return rc_reply(reply, reply_size, true, "@ok tear %s", display_flush_get_tear_free() ? "free" : "off");
-}
-
-
-// Debug (ADR-009): `bno alwayson grv|la 0|1` sets whether the level's game rotation vector or linear acceleration
-// keeps running while the hub sleeps. RAM only: the report's next enable (a tile change) sets its default again
-static bool rc_cmd_bno(int argc, char **argv, char *reply, size_t reply_size) {
-    if (argc != 4 || strcmp(argv[1], "alwayson") != 0 || (strcmp(argv[3], "0") != 0 && strcmp(argv[3], "1") != 0)) {
-        return rc_reply(reply, reply_size, false, "@err args");
-    }
-    sh2_SensorId_t id;
-    if (strcmp(argv[2], "grv") == 0) {
-        id = SH2_GAME_ROTATION_VECTOR;
-    }
-    else if (strcmp(argv[2], "la") == 0) {
-        id = SH2_LINEAR_ACCELERATION;
-    }
-    else {
-        return rc_reply(reply, reply_size, false, "@err args");
-    }
-    esp_err_t ret = bno085_set_report_always_on(bno085_dev, id, argv[3][0] == '1');
-    if (ret != ESP_OK) {
-        return rc_reply(reply, reply_size, false, "@err %s", esp_err_to_name(ret));
-    }
-    return rc_reply(reply, reply_size, true, "@ok bno alwayson %s %s", argv[2], argv[3]);
 }
 
 
@@ -1134,8 +1165,9 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "rot") == 0 || strcmp(cmd, "wifi") == 0 || strcmp(cmd, "save") == 0 ||
                     strcmp(cmd, "wake") == 0 || strcmp(cmd, "reboot") == 0 || strcmp(cmd, "hang") == 0 ||
                     strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0 ||
-                    strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0 || strcmp(cmd, "bno") == 0 ||
-                    strcmp(cmd, "top") == 0 || strcmp(cmd, "tear") == 0 || strcmp(cmd, "grav") == 0;
+                    strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0 ||
+                    strcmp(cmd, "top") == 0 || strcmp(cmd, "tear") == 0 || strcmp(cmd, "grav") == 0 ||
+                    strcmp(cmd, "trace") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -1243,9 +1275,6 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     if (strcmp(cmd, "kestrel") == 0) {
         return rc_cmd_kestrel(argc, argv, reply, reply_size);
     }
-    if (strcmp(cmd, "bno") == 0) {
-        return rc_cmd_bno(argc, argv, reply, reply_size);
-    }
     if (strcmp(cmd, "top") == 0) {
         return rc_cmd_top(argc, argv, reply, reply_size);
     }
@@ -1254,6 +1283,9 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     }
     if (strcmp(cmd, "grav") == 0) {
         return rc_cmd_grav(argc, argv, reply, reply_size);
+    }
+    if (strcmp(cmd, "trace") == 0) {
+        return rc_cmd_trace(argc, argv, reply, reply_size);
     }
     if (strcmp(cmd, "ota") == 0) {
         return rc_cmd_ota(argc, argv, reply, reply_size);
@@ -1311,6 +1343,13 @@ esp_err_t remote_control_init(void) {
     };
     ret = esp_timer_create(&idle_wake_timer_args, &rc_idle_wake_timer);
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to create idle wake timer: %s", esp_err_to_name(ret));
+
+    const esp_timer_create_args_t trace_timer_args = {
+        .callback = rc_trace_timer_cb,
+        .name = "rc_trace",
+    };
+    ret = esp_timer_create(&trace_timer_args, &rc_trace_timer);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to create trace timer: %s", esp_err_to_name(ret));
 
     if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
         ESP_LOGE(TAG, "Failed to take the LVGL lock");

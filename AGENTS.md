@@ -72,6 +72,7 @@ Changes are proven on a real unit, not only built. `tools/remote_control/rc_run.
 - `scenario state_change`: a tour of tiles, idle and wake, rotation and Wi-Fi, with a PASS or FAIL verdict. `--min-largest-dma 70000` also checks internal DMA memory.
 - `scenario rotation_sweep`: 2 minutes on the level in each rotation, about 8 minutes in all. Keep any one test under 10 minutes; no long soaks.
 - `idle <s>`: idle, then wake by a timer after s seconds.
+- `trace <s> [now]` (ADR-014): every 50 ms for s seconds from the next wake (or now), the level's cant and pitch, the count of game rotation reports and whether the unit is idle, in the log. The unit keeps its log through an idle, so a wake's first readings can be read over Wi-Fi afterwards.
 
 **Over Wi-Fi** (ADR-013): the same commands, snaps and log, with `--host` in place of `--port`.
 - Turn it on with Settings, Advanced, "Wi-Fi remote control" (off by default; "USB remote control" is its own switch). Anyone on the network can then send commands, so leave it off when you're done.
@@ -79,6 +80,7 @@ Changes are proven on a real unit, not only built. `tools/remote_control/rc_run.
   - The unit's Wi-Fi page shows its network name and address while connected.
   - `rc_run.py find` lists the units with the switch on: name, address and firmware version.
   - Use the name, not the address: the router can change the address. Example: `rc_run.py send state --host owmc-8626470.local`. `ui_snaps.py capture` takes `--host` too.
+- **The turret rig** (ADR-014): the unit on the OpenAutoTurret's pitch cradle (`http://rpi-turret.local:8080`, `manual_step` pitch or yaw by 0.5, 1 or 5 degrees; never the actuator). Turret pitch is the unit's cant. The turret's profile can't shake the unit hard enough to wake it, and an idle unit can't be reached over Wi-Fi: before any stretch you aren't driving it, park it with `idle <s>` so it wakes itself, or it stays asleep until someone touches it.
 - **Updating a unit with no cable** (the one on the turret): `scripts/ota_host.py --force --importance 1` serves the build, `send reboot --host ...` makes the unit check for it, then `tap` Install on the offer. Stop the host once the download is done, before you tap Restart: the restarted unit checks again, and with `--force` it would be offered the same build again. There is no app rollback, so a build that can't get back onto the network needs a USB cable.
 - Use it to test a unit on battery: on USB power the unit never light-sleeps, because the firmware holds a power lock. Connecting doesn't reset the unit, and snaps come back whole.
 - Idling stops the radio, which ends the session. Over Wi-Fi, scenarios idle with `idle <s>` and connect again after it. An idle unit can't be reached until something wakes it: a touch, the button, movement, or `wake` over USB.

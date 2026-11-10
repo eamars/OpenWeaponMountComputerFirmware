@@ -104,7 +104,7 @@ static void lvgl_idle_resume_timers(void) {
 
 #if WAKE_PROFILING_ENABLED
 // One wake from idle, timed (ADR-009): requested, exit started, panel on, LVGL resumed; reported by the monitor task
-// a second after the resume, with the first frame and the BNO085's first reports
+// a second after the resume, with the first frame
 static struct {
     const char * volatile cause;
     volatile int64_t request_us;
@@ -400,10 +400,6 @@ static void enter_idle_mode() {
     // its datasheet; its TE pulses stop) (ADR-009)
     ESP_ERROR_CHECK_WITHOUT_ABORT(set_display_sleep(io_handle, true));
 
-#if USE_BNO085
-    bno085_enter_sleep(bno085_dev);
-#endif  // USE_BNO085
-
     lvgl_port_unlock();
 
     // Outside the LVGL lock: the Wi-Fi service posts to the UI bridge, which takes it. Returns once the radio is
@@ -442,12 +438,8 @@ static void exit_idle_mode() {
 
     lvgl_port_lock(0);
 
-#if USE_BNO085
-    bno085_wake_up(bno085_dev);
-#endif  // USE_BNO085
-
     // Restore display brightness. LVGL is stopped, so the panel bus is idle. Sleep-out first; it returns once the
-    // panel may be switched on (the sensor's first report, 99 ms after its wake above, comes later anyway)
+    // panel may be switched on
     ESP_ERROR_CHECK_WITHOUT_ABORT(set_display_sleep(io_handle, false));
     esp_lcd_panel_disp_on_off(panel_handle, true);
 #if WAKE_PROFILING_ENABLED
@@ -499,22 +491,14 @@ static void wake_profile_report_if_due(void) {
     display_flush_timing_t te_awake;
     display_flush_take_timing(&te_awake);
     const int64_t frame_us = display_flush_first_frame_us();
-    uint32_t cmd_us = 0, grv_us = 0, grv_n = 0, la_us = 0, la_n = 0, st_us = 0, st_n = 0;
-#if USE_BNO085
-    bno085_get_wake_profile(bno085_dev, SH2_GAME_ROTATION_VECTOR, &grv_us, &grv_n, &cmd_us);
-    bno085_get_wake_profile(bno085_dev, SH2_LINEAR_ACCELERATION, &la_us, &la_n, NULL);
-    bno085_get_wake_profile(bno085_dev, SH2_STABILITY_DETECTOR, &st_us, &st_n, NULL);
-#endif  // USE_BNO085
 
     ESP_LOGI(TAG, "wake_prof: cause=%s idle_ms=%" PRIu32 " exit=%.1f panel_on=%.1f resumed=%.1f frame=%.1f"
-             " bno_cmd=%.1f grv_first=%.1f grv_100ms=%" PRIu32 " la_first=%.1f la_100ms=%" PRIu32
-             " stab_first=%.1f stab_100ms=%" PRIu32 " te_idle=%" PRIu32 " te_awake=%" PRIu32,
+             " te_idle=%" PRIu32 " te_awake=%" PRIu32,
              wake_prof.cause ? wake_prof.cause : "other",
              (uint32_t) ((wake_prof.exit_us - wake_prof.idle_start_us) / 1000),
              (wake_prof.exit_us - t0) / 1000.0, (wake_prof.panel_on_us - t0) / 1000.0,
              (wake_prof.resumed_us - t0) / 1000.0, frame_us ? (frame_us - t0) / 1000.0 : -1.0,
-             cmd_us / 1000.0, grv_us ? grv_us / 1000.0 : -1.0, grv_n, la_us ? la_us / 1000.0 : -1.0, la_n,
-             st_us ? st_us / 1000.0 : -1.0, st_n, wake_prof.idle_te_pulses, te_awake.te_pulses);
+             wake_prof.idle_te_pulses, te_awake.te_pulses);
 }
 #endif  // WAKE_PROFILING_ENABLED
 
@@ -633,11 +617,11 @@ void sensor_stability_detector_poller_task(void *p) {
             else if (stability & STABILITY_EXITED) {
                 unit_moving_reset_count = bno085_get_reset_count(bno085_dev);
                 unit_moving = true;
-            }
-
-            if (is_idle_mode_activated()) {
-                low_power_mode_note_wake_cause("motion");
-                wake_from_idle_mode();
+                // Only leaving the still state wakes the unit (ADR-014)
+                if (is_idle_mode_activated()) {
+                    low_power_mode_note_wake_cause("motion");
+                    wake_from_idle_mode();
+                }
             }
         }
     }
