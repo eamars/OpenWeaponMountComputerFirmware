@@ -35,7 +35,7 @@ A unit on USB charges its cell at the set current, from an ordinary 5 V supply (
 1. **A readout of the charger** (built on this branch, read only): `pmic regs` on the remote control prints the charger's registers raw and decoded; `pmic tdie on|off` switches the die temperature ADC channel. The PMIC monitor task does the reads, so it stays the only code talking to the chip.
 2. **VSYS DPM lowered,** written at start-up with the other charge settings. Not a setting: a property of the board. First 4.3 V: low enough for a supply that arrives at 4.4 to 4.6 V, and above the cell's 4.2 V. If 4.3 V still holds the current back on the PC port, 4.1 V, the lowest, measured the same way.
 
-   **Result: 4.1 V.** At 4.3 V the cell charged, but VSYS sat at 4.29 V, the DPM level, the whole time: the current was still held back. At 4.1 V the unit draws 0.43 A from USB against 0.30 A (the owner's inline meter, 4.98 V at the port), and VSYS sits at 4.05 to 4.09 V. It is a floor, not a ceiling: as the cell nears 4.2 V the current should taper, the drop across D2 shrink and VSYS rise, so the charger can still finish. Not watched: no run went to the end of a charge.
+   **Result: 4.1 V.** At 4.3 V the cell charged, but VSYS sat at 4.29 V, the DPM level, the whole time: the current was still held back. At 4.1 V the unit draws 0.43 A from USB against 0.30 A (the owner's inline meter, 4.98 V at the port), and VSYS sits at 4.05 to 4.09 V. It is a floor, not a ceiling: as the cell nears 4.2 V the current should taper, the drop across D2 shrink and VSYS rise, so the charger can still finish. After the release, COM12 charged through CV to done at 4.2 V, VSYS rising to 4.52 V before done ([progress](progress.md)).
 3. **Nothing else changes:** no stored settings, and the same charge current, voltage, termination and input limits. 4.35 V and 4.4 V stay on the settings page (not this ADR).
 
 ## How the unit shows it works
@@ -44,7 +44,7 @@ On the turret unit, on the same PC port and cable, over Wi-Fi:
 - **Before:** the readings above (0x14 = 4.7 V, 3.73 V, 26%, no rise in a day).
 - **After:** `pmic regs` shows 0x14 at 4.3 V. Within 10 minutes, the cell voltage rises and the gauge's percentage follows; VSYS sits at or above 4.3 V. A rise of a few tens of mV at once is the cell's resistance carrying current; the trend over 10 minutes is the charge.
 - **No harm to the unit:** `scenario state_change` over Wi-Fi passes while it charges.
-- **COM12,** if the owner brings it back: the same check, to see whether its "fault" was this.
+- **COM12,** if the owner brings it back: the same check, to see whether its "fault" was this. Done after the release: it charged in CC and on to done ([progress](progress.md)).
 
 ## Not in this ADR
 
