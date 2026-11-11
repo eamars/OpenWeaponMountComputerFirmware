@@ -44,7 +44,7 @@ typedef enum {
     PMIC_INIT_SUCCESS_EVENT_BIT = (1 << 1),
     PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT = (1 << 2),  // the monitor task writes the saved charge settings
     PMIC_POWER_OFF_EVENT_BIT = (1 << 3),  // the monitor task shuts the unit down
-    PMIC_READ_CHARGER_REGS_EVENT_BIT = (1 << 4),  // the monitor task reads the charger registers
+    PMIC_READ_CHARGER_REGS_EVENT_BIT = (1 << 4),  // the monitor task reads the charger registers and the dump
     PMIC_CHARGER_REGS_READ_EVENT_BIT = (1 << 5),  // set by the monitor task when it has read them
     PMIC_DIE_TEMP_ADC_ON_EVENT_BIT = (1 << 6),    // the monitor task turns the die temperature ADC channel on
     PMIC_DIE_TEMP_ADC_OFF_EVENT_BIT = (1 << 7),   // and off
@@ -196,6 +196,14 @@ esp_err_t pmic_request_power_off();
  * timeout_ms, ESP_FAIL if a read failed.
  */
 esp_err_t pmic_read_charger_regs(pmic_charger_regs_t *regs, uint32_t timeout_ms);
+
+#define PMIC_DUMP_REG_COUNT 0xA5  // registers 0x00-0xA4, the datasheet's register map (6.13.1)
+
+/**
+ * @brief Have the PMIC monitor task read every register from 0x00 to 0xA4, and wait for them. Reads only. One caller
+ * at a time. Returns as pmic_read_charger_regs.
+ */
+esp_err_t pmic_dump_registers(uint8_t regs[PMIC_DUMP_REG_COUNT], uint32_t timeout_ms);
 
 /**
  * @brief Have the PMIC monitor task turn the die temperature ADC channel (reg 0x30 bit 4) on or off. Not saved; the

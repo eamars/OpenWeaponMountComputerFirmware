@@ -64,7 +64,7 @@ Changes are proven on a real unit, not only built. `tools/remote_control/rc_run.
 - `send <command>`: one command and its reply. Examples:
   - `state`;
   - `grav` (the sensor's live gravity and cant);
-  - `pmic` (battery, USB and the charge state); `pmic regs` (the charger's registers, raw and decoded; reads only; ADR-016);
+  - `pmic` (battery, USB and the charge state); `pmic regs` (the charger's registers, raw and decoded; reads only; ADR-016); `pmic dump` (every register from 0x00 to 0xA4 in hex, reads only);
   - `snap` (the screen as a PNG under `logs/rc/snaps/`);
   - `tile <col> <row>`;
   - `settings open <page title>`;

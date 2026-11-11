@@ -29,3 +29,12 @@ Each row: the remote control's `pmic` every 30 s. VBUS and VSYS are the PMIC's A
 - The end of a charge (constant voltage and termination at 4.2 V with VSYS DPM at 4.1 V).
 - The charge current itself: the AXP2101 has no current ADC.
 - COM12: parked by the owner; the same check would show whether its charging fault was this.
+
+## After the release: USB good switching on a PC port (2026-11-11)
+
+The turret unit (`pmic dump`, read over USB on the PC's port for COM11; cell 4.07-4.08 V):
+- USB current limit 2000 mA, then 500 mA: reg 0x00 bit 5 (VBUS good) switched off and on every 1-2 s. The charger went between trickle (0x01 = 30) and discharge (0x01 = 55); the ADC read VBUS and VSYS at 4.55-4.65 V throughout.
+- 100 mA, after a reboot: steady, 0x00 = 39 (VBUS good, input current limit), 0x01 = 32 (CC), VBUS 4.53 V, VSYS 4.10 V.
+- Tried and dropped: VSYS DPM following the cell (VBAT + 0.2 V, at least 4.1 V), for the charger's VBUS > VBAT + 150 mV condition (datasheet p.11, p.23). At 4.3 V with the cell at 4.07 V, 500 mA, the same port: it still switched (8 of 10 samples not good). That condition is not the cause.
+- Through the owner's inline meter (the ADR-016 runs), the charger held CC with no switching.
+- COM12 (v1.4.1, 192.168.2.161), 2026-11-12, through the inline meter on another supply, USB limit 500 mA, cell 4.105-4.122 V: 23 of 23 readings over 90 s VBUS good, CC (0x00 = 38, 0x01 = 32); VBUS 4.27 V, VSYS 4.21-4.23 V; the meter steady at 0.362 A. VBUS was about 0.15 V above the cell, and the charger held. The switching follows the PC's port or its cable, not the unit or the firmware; the port itself was not measured.
