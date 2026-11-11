@@ -617,6 +617,12 @@ esp_err_t axp2101_init(axp2101_ctx_t *ctx, i2c_master_bus_handle_t i2c_bus_handl
     PMU.setChargerTerminationCurr(XPOWERS_AXP2101_CHG_ITERM_100MA);
     ESP_LOGI(TAG, "Set battery charge termination current to %d", PMU.getChargerTerminationCurr());
 
+    // The charger holds VSYS at this level by cutting its current (reg 0x14, datasheet p.33; the chip's default is
+    // 4.7 V). USB arrives at 4.6 V through D2, below 4.7 V, so at the default the charger reports CC with next to no
+    // current. 4.3 V: above the T9's 4.2 V charge voltage (ADR-016)
+    PMU.setLinearChargerVsysDpm(XPOWERS_AXP2101_VSYS_VOL_4V3);
+    ESP_LOGI(TAG, "Set linear charger VSYS DPM to %d", PMU.getLinearChargerVsysDpm());
+
     // VBUS current limit, charge current and charge voltage from the settings page
     axp2101_apply_charge_settings();
 
