@@ -902,11 +902,13 @@ static bool rc_cmd_pmic_regs(char *reply, size_t reply_size, const char *tdie) {
 
     bool tdie_adc = (r.adc_ctrl & 0x10) != 0;
     char tdie_text[16];
-    if (tdie_adc) {
+    if (!tdie_adc) {
+        snprintf(tdie_text, sizeof(tdie_text), "off");
+    } else if (r.tdie_raw == 0) {
+        snprintf(tdie_text, sizeof(tdie_text), "none");  // no conversion yet after the channel was turned on
+    } else {
         // XPowersLib's conversion (XPOWERS_AXP2101_CONVERSION); the datasheet gives the channel in mV only
         snprintf(tdie_text, sizeof(tdie_text), "%.1f", 22.0 + (7274 - (int) r.tdie_raw) / 20.0);
-    } else {
-        snprintf(tdie_text, sizeof(tdie_text), "off");
     }
 
     return rc_reply(reply, reply_size, true,
