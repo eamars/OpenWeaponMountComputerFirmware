@@ -124,10 +124,25 @@ static bool pmic_read_charger_regs_now(pmic_charger_regs_t *regs) {
 }
 
 
-esp_err_t pmic_read_charger_regs(pmic_charger_regs_t *regs, uint32_t timeout_ms) {
-    if (regs == NULL) {
-        return ESP_ERR_INVALID_ARG;
+// Written by the monitor task with pmic_charger_regs
+static uint8_t pmic_dump[PMIC_DUMP_REG_COUNT];
+static bool pmic_dump_ok;
+
+
+static bool pmic_read_dump_now(uint8_t *regs) {
+    bool ok = true;
+    for (int reg = 0; reg < PMIC_DUMP_REG_COUNT; reg++) {
+        if (!pmic_read_reg((uint8_t) reg, &regs[reg])) {
+            regs[reg] = 0;
+            ok = false;
+        }
     }
+    return ok;
+}
+
+
+// Asks the monitor task to read the charger registers and the dump, and waits for it
+static esp_err_t pmic_request_reads(uint32_t timeout_ms) {
     if (pmic_ctx == NULL || pmic_ctx->pmic_event_control == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -136,11 +151,33 @@ esp_err_t pmic_read_charger_regs(pmic_charger_regs_t *regs, uint32_t timeout_ms)
     xEventGroupSetBits(events, PMIC_READ_CHARGER_REGS_EVENT_BIT);
     EventBits_t bits = xEventGroupWaitBits(events, PMIC_CHARGER_REGS_READ_EVENT_BIT, pdTRUE, pdFALSE,
                                            pdMS_TO_TICKS(timeout_ms));
-    if ((bits & PMIC_CHARGER_REGS_READ_EVENT_BIT) == 0) {
-        return ESP_ERR_TIMEOUT;
+    return (bits & PMIC_CHARGER_REGS_READ_EVENT_BIT) ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+
+esp_err_t pmic_read_charger_regs(pmic_charger_regs_t *regs, uint32_t timeout_ms) {
+    if (regs == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t ret = pmic_request_reads(timeout_ms);
+    if (ret != ESP_OK) {
+        return ret;
     }
     *regs = pmic_charger_regs;
     return pmic_charger_regs_ok ? ESP_OK : ESP_FAIL;
+}
+
+
+esp_err_t pmic_dump_registers(uint8_t regs[PMIC_DUMP_REG_COUNT], uint32_t timeout_ms) {
+    if (regs == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t ret = pmic_request_reads(timeout_ms);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    memcpy(regs, pmic_dump, PMIC_DUMP_REG_COUNT);
+    return pmic_dump_ok ? ESP_OK : ESP_FAIL;
 }
 
 
@@ -348,6 +385,7 @@ void axp2101_monitor_task(void * args) {
         }
         if (bits & PMIC_READ_CHARGER_REGS_EVENT_BIT) {
             pmic_charger_regs_ok = pmic_read_charger_regs_now(&pmic_charger_regs);
+            pmic_dump_ok = pmic_read_dump_now(pmic_dump);
             xEventGroupSetBits(ctx->pmic_event_control, PMIC_CHARGER_REGS_READ_EVENT_BIT);
         }
         if (bits & PMIC_INTERRUPT_EVENT_BIT) {

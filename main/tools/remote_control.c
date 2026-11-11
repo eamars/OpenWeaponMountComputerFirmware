@@ -881,6 +881,28 @@ static const char *rc_pmic_current_direction(uint8_t status2) {
 }
 
 
+// Every register from 0x00 to 0xA4, read only (`pmic dump`): two hex digits each, 0x00 first
+// Static, not on the transports' stacks (rc_serial has had 564 B left); commands run one at a time
+static uint8_t rc_pmic_dump_regs[PMIC_DUMP_REG_COUNT];
+static char rc_pmic_dump_text[PMIC_DUMP_REG_COUNT * 2 + 1];
+
+static bool rc_cmd_pmic_dump(char *reply, size_t reply_size) {
+    uint8_t *regs = rc_pmic_dump_regs;
+    esp_err_t ret = pmic_dump_registers(regs, RC_PMIC_REGS_TIMEOUT_MS);
+    if (ret != ESP_OK) {
+        return rc_reply(reply, reply_size, false, "@err pmic %s", esp_err_to_name(ret));
+    }
+    static const char hex[] = "0123456789abcdef";
+    char *data = rc_pmic_dump_text;
+    for (int i = 0; i < PMIC_DUMP_REG_COUNT; i++) {
+        data[2 * i] = hex[regs[i] >> 4];
+        data[2 * i + 1] = hex[regs[i] & 0x0F];
+    }
+    data[PMIC_DUMP_REG_COUNT * 2] = '\0';
+    return rc_reply(reply, reply_size, true, "@ok pmic dump from=00 n=%d data=%s", PMIC_DUMP_REG_COUNT, data);
+}
+
+
 // The charger's registers, raw and decoded (`pmic regs`); `pmic tdie on|off` switches the die temperature ADC
 // channel, then replies the same. Neither changes a charge setting
 static bool rc_cmd_pmic_regs(char *reply, size_t reply_size, const char *tdie) {
@@ -1315,6 +1337,9 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
         }
         if (argc == 2 && strcmp(argv[1], "regs") == 0) {
             return rc_cmd_pmic_regs(reply, reply_size, NULL);
+        }
+        if (argc == 2 && strcmp(argv[1], "dump") == 0) {
+            return rc_cmd_pmic_dump(reply, reply_size);
         }
         if (argc == 3 && strcmp(argv[1], "tdie") == 0) {
             return rc_cmd_pmic_regs(reply, reply_size, argv[2]);
