@@ -84,6 +84,76 @@ esp_err_t pmic_request_power_off() {
 }
 
 
+// Written by the monitor task, then PMIC_CHARGER_REGS_READ_EVENT_BIT set
+static pmic_charger_regs_t pmic_charger_regs;
+static bool pmic_charger_regs_ok;
+
+
+static bool pmic_read_reg(uint8_t reg, uint8_t *value) {
+    int v = PMU.readRegister(reg);
+    if (v < 0) {
+        return false;
+    }
+    *value = (uint8_t) v;
+    return true;
+}
+
+
+static bool pmic_read_charger_regs_now(pmic_charger_regs_t *regs) {
+    uint8_t tdie_h = 0;
+    uint8_t tdie_l = 0;
+    bool ok = pmic_read_reg(XPOWERS_AXP2101_STATUS1, &regs->status1) &&
+              pmic_read_reg(XPOWERS_AXP2101_STATUS2, &regs->status2) &&
+              pmic_read_reg(0x13, &regs->die_temp_ctrl) &&
+              pmic_read_reg(0x14, &regs->vsys_dpm) &&
+              pmic_read_reg(0x15, &regs->vindpm) &&
+              pmic_read_reg(0x16, &regs->input_current) &&
+              pmic_read_reg(0x18, &regs->charger_ctrl) &&
+              pmic_read_reg(XPOWERS_AXP2101_ADC_CHANNEL_CTRL, &regs->adc_ctrl) &&
+              pmic_read_reg(0x61, &regs->precharge) &&
+              pmic_read_reg(0x62, &regs->charge_current) &&
+              pmic_read_reg(0x63, &regs->termination) &&
+              pmic_read_reg(0x64, &regs->charge_voltage) &&
+              pmic_read_reg(0x65, &regs->thermal_regulation) &&
+              pmic_read_reg(0x67, &regs->charge_timer) &&
+              pmic_read_reg(0x68, &regs->battery_detect) &&
+              pmic_read_reg(XPOWERS_AXP2101_ADC_DATA_RELUST8, &tdie_h) &&
+              pmic_read_reg(XPOWERS_AXP2101_ADC_DATA_RELUST9, &tdie_l);
+    regs->tdie_raw = (uint16_t) (((tdie_h & 0x3F) << 8) | tdie_l);
+    return ok;
+}
+
+
+esp_err_t pmic_read_charger_regs(pmic_charger_regs_t *regs, uint32_t timeout_ms) {
+    if (regs == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (pmic_ctx == NULL || pmic_ctx->pmic_event_control == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    EventGroupHandle_t events = pmic_ctx->pmic_event_control;
+    xEventGroupClearBits(events, PMIC_CHARGER_REGS_READ_EVENT_BIT);
+    xEventGroupSetBits(events, PMIC_READ_CHARGER_REGS_EVENT_BIT);
+    EventBits_t bits = xEventGroupWaitBits(events, PMIC_CHARGER_REGS_READ_EVENT_BIT, pdTRUE, pdFALSE,
+                                           pdMS_TO_TICKS(timeout_ms));
+    if ((bits & PMIC_CHARGER_REGS_READ_EVENT_BIT) == 0) {
+        return ESP_ERR_TIMEOUT;
+    }
+    *regs = pmic_charger_regs;
+    return pmic_charger_regs_ok ? ESP_OK : ESP_FAIL;
+}
+
+
+esp_err_t pmic_request_die_temp_adc(bool on) {
+    if (pmic_ctx == NULL || pmic_ctx->pmic_event_control == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xEventGroupSetBits(pmic_ctx->pmic_event_control,
+                       on ? PMIC_DIE_TEMP_ADC_ON_EVENT_BIT : PMIC_DIE_TEMP_ADC_OFF_EVENT_BIT);
+    return ESP_OK;
+}
+
+
 // The datasheet's NTC table (p.26, a 10 kOhm TH11-3H103F at 50 uA): resistance in kOhm every 5 degC from -20 to 60.
 // XPowersLib's getTsTemperature() assumes 50 uA after its enableTSPinMeasure() sets 60 uA, so it read about 5 degC
 // low; we set the current and convert here
@@ -254,7 +324,8 @@ void axp2101_monitor_task(void * args) {
         // Wait until the interrupt happens, or the settings page asks for the charge settings to be applied
         EventBits_t bits = xEventGroupWaitBits(ctx->pmic_event_control,
                                                PMIC_INTERRUPT_EVENT_BIT | PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT |
-                                               PMIC_POWER_OFF_EVENT_BIT,
+                                               PMIC_POWER_OFF_EVENT_BIT | PMIC_READ_CHARGER_REGS_EVENT_BIT |
+                                               PMIC_DIE_TEMP_ADC_ON_EVENT_BIT | PMIC_DIE_TEMP_ADC_OFF_EVENT_BIT,
                                                pdTRUE, pdFALSE, pdMS_TO_TICKS(is_idle_mode_activated() ?
                                                    PMIC_IDLE_READ_PERIOD_MS : PMIC_READ_PERIOD_MS));
         // The IRQ line stays low until its status is cleared (datasheet p.29), and the interrupt is on the falling
@@ -268,6 +339,16 @@ void axp2101_monitor_task(void * args) {
         }
         if (bits & PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT) {
             axp2101_apply_charge_settings();
+        }
+        if (bits & PMIC_DIE_TEMP_ADC_ON_EVENT_BIT) {
+            PMU.enableTemperatureMeasure();
+        }
+        if (bits & PMIC_DIE_TEMP_ADC_OFF_EVENT_BIT) {
+            PMU.disableTemperatureMeasure();
+        }
+        if (bits & PMIC_READ_CHARGER_REGS_EVENT_BIT) {
+            pmic_charger_regs_ok = pmic_read_charger_regs_now(&pmic_charger_regs);
+            xEventGroupSetBits(ctx->pmic_event_control, PMIC_CHARGER_REGS_READ_EVENT_BIT);
         }
         if (bits & PMIC_INTERRUPT_EVENT_BIT) {
             // Handle PMIC interrupt

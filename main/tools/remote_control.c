@@ -846,6 +846,92 @@ static bool rc_cmd_pmic(char *reply, size_t reply_size) {
 }
 
 
+#define RC_PMIC_REGS_TIMEOUT_MS 1000
+
+// Field decodes from the AXP2101 datasheet, 6.13.2; -1 for a reserved code
+static int rc_pmic_input_current_ma(uint8_t reg) {
+    static const int ma[] = {100, 500, 900, 1000, 1500, 2000};
+    unsigned n = reg & 0x07;
+    return n < sizeof(ma) / sizeof(ma[0]) ? ma[n] : -1;
+}
+
+static int rc_pmic_charge_current_ma(uint8_t reg) {
+    unsigned n = reg & 0x1F;
+    if (n <= 8) {
+        return (int) (25 * n);
+    }
+    return n <= 16 ? (int) (200 + 100 * (n - 8)) : -1;
+}
+
+static int rc_pmic_charge_voltage_mv(uint8_t reg) {
+    static const int mv[] = {5000, 4000, 4100, 4200, 4350, 4400};
+    unsigned n = reg & 0x07;
+    return n < sizeof(mv) / sizeof(mv[0]) ? mv[n] : -1;
+}
+
+static const char *rc_pmic_charging_state(uint8_t status2) {
+    static const char *names[] = {"tri", "pre", "cc", "cv", "done", "none"};
+    unsigned n = status2 & 0x07;
+    return n < sizeof(names) / sizeof(names[0]) ? names[n] : "reserved";
+}
+
+static const char *rc_pmic_current_direction(uint8_t status2) {
+    static const char *names[] = {"standby", "charge", "discharge", "reserved"};
+    return names[(status2 >> 5) & 0x03];
+}
+
+
+// The charger's registers, raw and decoded (`pmic regs`); `pmic tdie on|off` switches the die temperature ADC
+// channel, then replies the same. Neither changes a charge setting
+static bool rc_cmd_pmic_regs(char *reply, size_t reply_size, const char *tdie) {
+    if (tdie != NULL) {
+        bool on = strcmp(tdie, "on") == 0;
+        if (!on && strcmp(tdie, "off") != 0) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        if (pmic_request_die_temp_adc(on) != ESP_OK) {
+            return rc_reply(reply, reply_size, false, "@err pmic none");
+        }
+    }
+
+    pmic_charger_regs_t r;
+    esp_err_t ret = pmic_read_charger_regs(&r, RC_PMIC_REGS_TIMEOUT_MS);
+    if (ret != ESP_OK) {
+        return rc_reply(reply, reply_size, false, "@err pmic %s", esp_err_to_name(ret));
+    }
+
+    bool tdie_adc = (r.adc_ctrl & 0x10) != 0;
+    char tdie_text[16];
+    if (tdie_adc) {
+        // XPowersLib's conversion (XPOWERS_AXP2101_CONVERSION); the datasheet gives the channel in mV only
+        snprintf(tdie_text, sizeof(tdie_text), "%.1f", 22.0 + (7274 - (int) r.tdie_raw) / 20.0);
+    } else {
+        snprintf(tdie_text, sizeof(tdie_text), "off");
+    }
+
+    return rc_reply(reply, reply_size, true,
+                    "@ok pmic regs 00=%02x 01=%02x 13=%02x 14=%02x 15=%02x 16=%02x 18=%02x 30=%02x 61=%02x 62=%02x"
+                    " 63=%02x 64=%02x 65=%02x 67=%02x 68=%02x tdie_raw=%u"
+                    " vbus_good=%d batfet=%d bat=%d active=%d thermal_reg=%d current_limit=%d"
+                    " dir=%s system_on=%d vindpm_active=%d chg=%s"
+                    " die_detect=%d vsys_dpm_mv=%d vindpm_mv=%d input_ma=%d chg_en=%d gauge=%d wdt=%d"
+                    " pre_ma=%d cc_ma=%d iterm_en=%d iterm_ma=%d cv_mv=%d treg_c=%d bat_det=%d tdie_adc=%d tdie=%s",
+                    r.status1, r.status2, r.die_temp_ctrl, r.vsys_dpm, r.vindpm, r.input_current, r.charger_ctrl,
+                    r.adc_ctrl, r.precharge, r.charge_current, r.termination, r.charge_voltage,
+                    r.thermal_regulation, r.charge_timer, r.battery_detect, (unsigned) r.tdie_raw,
+                    (r.status1 >> 5) & 1, (r.status1 >> 4) & 1, (r.status1 >> 3) & 1, (r.status1 >> 2) & 1,
+                    (r.status1 >> 1) & 1, r.status1 & 1,
+                    rc_pmic_current_direction(r.status2), (r.status2 >> 4) & 1, (r.status2 >> 3) & 1,
+                    rc_pmic_charging_state(r.status2),
+                    r.die_temp_ctrl & 1, 4100 + 100 * ((r.vsys_dpm >> 4) & 0x07), 3880 + 80 * (r.vindpm & 0x0F),
+                    rc_pmic_input_current_ma(r.input_current), (r.charger_ctrl >> 1) & 1,
+                    (r.charger_ctrl >> 3) & 1, r.charger_ctrl & 1,
+                    25 * (r.precharge & 0x0F), rc_pmic_charge_current_ma(r.charge_current),
+                    (r.termination >> 4) & 1, 25 * (r.termination & 0x0F), rc_pmic_charge_voltage_mv(r.charge_voltage),
+                    60 + 20 * (r.thermal_regulation & 0x03), r.battery_detect & 1, tdie_adc ? 1 : 0, tdie_text);
+}
+
+
 // Debug: copy what the screen shows and print it, for layout checks without a camera (ADR-006). The image is
 // RGB565 (LVGL's byte order), run-length encoded as little-endian (uint16 count, uint16 pixel) pairs, printed as
 // base64 lines "@sd <data>" between "@snap <w> <h> rgb565rle" and the reply. The copy lives in PSRAM only while
@@ -1222,10 +1308,16 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
         return rc_cmd_snap(reply, reply_size);
     }
     if (strcmp(cmd, "pmic") == 0) {
-        if (argc != 1) {
-            return rc_reply(reply, reply_size, false, "@err args");
+        if (argc == 1) {
+            return rc_cmd_pmic(reply, reply_size);
         }
-        return rc_cmd_pmic(reply, reply_size);
+        if (argc == 2 && strcmp(argv[1], "regs") == 0) {
+            return rc_cmd_pmic_regs(reply, reply_size, NULL);
+        }
+        if (argc == 3 && strcmp(argv[1], "tdie") == 0) {
+            return rc_cmd_pmic_regs(reply, reply_size, argv[2]);
+        }
+        return rc_reply(reply, reply_size, false, "@err args");
     }
     if (strcmp(cmd, "idle") == 0) {
         return rc_cmd_idle(argc, argv, reply, reply_size);
