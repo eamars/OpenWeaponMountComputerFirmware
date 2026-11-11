@@ -26,9 +26,8 @@ Each row: the remote control's `pmic` every 30 s. VBUS and VSYS are the PMIC's A
 
 ## Not measured
 
-- The end of a charge (constant voltage and termination at 4.2 V with VSYS DPM at 4.1 V).
 - The charge current itself: the AXP2101 has no current ADC.
-- COM12: parked by the owner; the same check would show whether its charging fault was this.
+- The end of a charge and COM12: measured after the release (below).
 
 ## After the release: USB good switching on a PC port (2026-11-11)
 
@@ -38,3 +37,20 @@ The turret unit (`pmic dump`, read over USB on the PC's port for COM11; cell 4.0
 - Tried and dropped: VSYS DPM following the cell (VBAT + 0.2 V, at least 4.1 V), for the charger's VBUS > VBAT + 150 mV condition (datasheet p.11, p.23). At 4.3 V with the cell at 4.07 V, 500 mA, the same port: it still switched (8 of 10 samples not good). That condition is not the cause.
 - Through the owner's inline meter (the ADR-016 runs), the charger held CC with no switching.
 - COM12 (v1.4.1, 192.168.2.161), 2026-11-12, through the inline meter on another supply, USB limit 500 mA, cell 4.105-4.122 V: 23 of 23 readings over 90 s VBUS good, CC (0x00 = 38, 0x01 = 32); VBUS 4.27 V, VSYS 4.21-4.23 V; the meter steady at 0.362 A. VBUS was about 0.15 V above the cell, and the charger held. The switching follows the PC's port or its cable, not the unit or the firmware; the port itself was not measured.
+
+## After the release: a charge to done on COM12 (2026-11-12)
+
+COM12 (v1.4.1, 192.168.2.161), on USB, kept awake by the owner (no idle, no sleep). `pmic regs` and `pmic` once a minute over Wi-Fi, from 00:05 to 00:55. Its settings as `pmic regs` read them: USB limit 500 mA, charge current 1000 mA, charge voltage 4.2 V, termination 100 mA, VSYS DPM 4.1 V.
+
+| Time | Charger | Cell | VBUS / VSYS | Gauge | Board (TH1) |
+|---|---|---|---|---|---|
+| 00:05 | CC (`00=38 01=32`) | 4.141 V | 4.27 / 4.20 V | 85% | 41.7 °C |
+| 00:28 | CV (`01=33`) | 4.199 V | 4.30 / 4.26 V | 98% | 40.9 °C |
+| 00:52 | CV, the last reading | 4.199 V | 4.52 / 4.52 V | 100% | 37.9 °C |
+| 00:53 | done, standby (`00=28 01=14`) | 4.165 V | 4.66 / 4.67 V | 100% | 37.3 °C |
+
+- From 85% to done in 48 minutes: 23 in CC, 25 in CV.
+- In CV the cell held 4.195-4.199 V.
+- VBUS good on all 51 readings; the charger never reported discharge, and every read got a reply.
+- VBUS rose from 4.27 to 4.52 V through CV, and to 4.66 V at done.
+- After done, VSYS (4.67 V) stayed above the cell, which settled to 4.158 V by 00:55.
