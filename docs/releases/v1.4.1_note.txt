@@ -1,0 +1,4 @@
+Firmware 1.4.1
+• Charges from USB again: units barely charged from a PC port or phone charger
+• Keep Charge voltage at 4.2 V (Settings, Advanced)
+• Settings and sensor calibration are kept
