@@ -44,6 +44,10 @@ typedef enum {
     PMIC_INIT_SUCCESS_EVENT_BIT = (1 << 1),
     PMIC_APPLY_CHARGE_SETTINGS_EVENT_BIT = (1 << 2),  // the monitor task writes the saved charge settings
     PMIC_POWER_OFF_EVENT_BIT = (1 << 3),  // the monitor task shuts the unit down
+    PMIC_READ_CHARGER_REGS_EVENT_BIT = (1 << 4),  // the monitor task reads the charger registers
+    PMIC_CHARGER_REGS_READ_EVENT_BIT = (1 << 5),  // set by the monitor task when it has read them
+    PMIC_DIE_TEMP_ADC_ON_EVENT_BIT = (1 << 6),    // the monitor task turns the die temperature ADC channel on
+    PMIC_DIE_TEMP_ADC_OFF_EVENT_BIT = (1 << 7),   // and off
 } pmic_event_control_bit_e;
 
 
@@ -134,6 +138,27 @@ typedef struct {
 } axp2101_status_t;
 
 
+// The charger's registers as the chip holds them (datasheet 6.13.2), for diagnostics
+typedef struct {
+    uint8_t status1;            // 0x00 PMU status 1
+    uint8_t status2;            // 0x01 PMU status 2
+    uint8_t die_temp_ctrl;      // 0x13 die temperature control
+    uint8_t vsys_dpm;           // 0x14 linear charger Vsys voltage DPM
+    uint8_t vindpm;             // 0x15 input voltage limit
+    uint8_t input_current;      // 0x16 input current limit
+    uint8_t charger_ctrl;       // 0x18 charger, fuel gauge, watchdog on/off
+    uint8_t adc_ctrl;           // 0x30 ADC channel enable
+    uint8_t precharge;          // 0x61 precharge current
+    uint8_t charge_current;     // 0x62 constant current charge current
+    uint8_t termination;        // 0x63 termination current and its enable
+    uint8_t charge_voltage;     // 0x64 constant voltage charge voltage
+    uint8_t thermal_regulation; // 0x65 thermal regulation threshold
+    uint8_t charge_timer;       // 0x67 charger safety timers
+    uint8_t battery_detect;     // 0x68 battery detection
+    uint16_t tdie_raw;          // 0x3C-0x3D, 14 bits; meaningful only with 0x30 bit 4 set
+} pmic_charger_regs_t;
+
+
 typedef struct {
     EventGroupHandle_t pmic_event_control;
     i2c_master_dev_handle_t dev_handle;
@@ -164,6 +189,19 @@ esp_err_t load_pmic_config();
  * ESP_ERR_INVALID_STATE on a unit without a PMIC.
  */
 esp_err_t pmic_request_power_off();
+
+/**
+ * @brief Have the PMIC monitor task read the charger registers, and wait for them. Reads only. One caller at a
+ * time. Returns ESP_ERR_INVALID_STATE on a unit without a PMIC, ESP_ERR_TIMEOUT if the task did not answer in
+ * timeout_ms, ESP_FAIL if a read failed.
+ */
+esp_err_t pmic_read_charger_regs(pmic_charger_regs_t *regs, uint32_t timeout_ms);
+
+/**
+ * @brief Have the PMIC monitor task turn the die temperature ADC channel (reg 0x30 bit 4) on or off. Not saved; the
+ * chip keeps it until it loses power, and start-up does not change it. Returns at once.
+ */
+esp_err_t pmic_request_die_temp_adc(bool on);
 
 uint32_t idle_timeout_to_secs(idle_timeout_t timeout);
 uint32_t sleep_timeout_to_secs(sleep_timeout_t timeout);
