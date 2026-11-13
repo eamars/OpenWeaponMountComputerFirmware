@@ -1,6 +1,6 @@
 # ADR-017: the level tile in two layers, a background and a foreground
 
-Status: **Built** 2026-11-13. The owner agreed the approach in the discussion of that day and asked for it to be built first ("draft all known ADRs first, then build the first one"). Built and proven on COM13 ([progress](progress.md)): the settings tile stays in place, the eight pairs show in both rotations, free internal RAM is the same as on main and comes back to the byte after a tour of every pair. The owner's own look at the unit is still to come.
+Status: **Built** 2026-11-13. The owner agreed the approach in the discussion of that day and asked for it to be built first ("draft all known ADRs first, then build the first one"). Built and proven on COM13 ([progress](progress.md)): the settings tile stays in place, the eight pairs show in both rotations, free internal RAM is the same as on main and comes back to the byte after a tour of every pair. Checked by the owner on the unit the same day ("I've tried, and it works").
 
 ## What we want
 

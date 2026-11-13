@@ -48,6 +48,6 @@ The 664 bytes and the one 4 KB step between the release and main came with what 
 - **"Foreground colour"** on the Level page is the colour of the Level style's line and the Block style's dark blocks. Beside the new "Foreground" row the name misleads. Not changed here; for the owner.
 - **One baseline snap was a torn picture:** on v1.4.1, the first snap after `rot 1` (the timer tile in landscape) showed parts of three tiles. The same capture on this build was whole. Seen once, not looked into.
 
-## Not done
+## The owner's check
 
-- The owner's own look at the unit.
+The owner tried the build on COM13 by hand on 2026-11-13: "I've tried, and it works." No comment on the code.
