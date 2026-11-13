@@ -124,7 +124,7 @@ READY_DRAIN_S = 1.0       # after the first answer, replies to earlier probes ma
 FINAL_PUMP_S = 5.0        # keep reading this long after a scenario's last command
 # The level tile's layers (ADR-017), by their stored numbers (digital_level_view_controller.h)
 LAYER_BACKGROUNDS = 4     # Level, Block, Chevrons, Off
-LAYER_FOREGROUNDS = 2     # Match, Off
+LAYER_FOREGROUNDS = 3     # Match, Off, Dope
 LAYER_TOUR_ROUNDS = 3
 LAYER_TOUR_DWELL_S = 2.0
 LAYER_TOUR_MAX_LOSS_BYTES = 1024    # free internal RAM may end this much lower than it started

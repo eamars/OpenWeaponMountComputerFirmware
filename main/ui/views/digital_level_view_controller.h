@@ -30,6 +30,7 @@ typedef enum {
 typedef enum {
     LEVEL_FOREGROUND_MATCH = 0,  // the band: the timer bar and the dope (level_band.c)
     LEVEL_FOREGROUND_OFF,
+    LEVEL_FOREGROUND_DOPE,       // the card as rows, no timer (level_card.c, ADR-018)
     LEVEL_FOREGROUND_COUNT,
 } level_foreground_type_t;
 

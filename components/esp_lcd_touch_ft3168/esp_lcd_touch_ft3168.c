@@ -1,4 +1,7 @@
 #include "esp_lcd_touch_ft3168.h"
+
+#include <inttypes.h>
+
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "esp_check.h"
@@ -11,11 +14,9 @@
 #define FT3168_I2C_TIMEOUT_MS 100
 
 
-esp_err_t esp_lcd_touch_ft3168_read_data(esp_lcd_touch_handle_t ctx) {
-    if (!ctx) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
+// Read the touch points and publish them. An I2C error (a NACK from the controller, a bus that stayed busy) is
+// returned, and nothing is published
+static esp_err_t ft3168_read_points(esp_lcd_touch_handle_t ctx) {
     // Read touch data from the FT3168
     uint8_t write_cmd;
     uint8_t touch_points = 0;
@@ -62,6 +63,25 @@ esp_err_t esp_lcd_touch_ft3168_read_data(esp_lcd_touch_handle_t ctx) {
     ctx->data.points = touch_points;
     portEXIT_CRITICAL(&ctx->data.lock);
 
+    return ESP_OK;
+}
+
+
+esp_err_t esp_lcd_touch_ft3168_read_data(esp_lcd_touch_handle_t ctx) {
+    if (!ctx) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // A failed read is a missed touch, never an error to the caller. esp_lvgl_port's read callback aborts on any
+    // error from here (ESP_ERROR_CHECK), and one NACK from the controller rebooted a unit that way (2026-11-13).
+    // Nothing was published and the last points were taken by get_xy, so this read shows no touch
+    static uint32_t failed_reads = 0;
+    esp_err_t ret = ft3168_read_points(ctx);
+    if (ret != ESP_OK) {
+        failed_reads++;
+        ESP_LOGW(TAG, "Touch read failed (%s), taken as no touch; %" PRIu32 " since start", esp_err_to_name(ret),
+                 failed_reads);
+    }
     return ESP_OK;
 }
 
