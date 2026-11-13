@@ -77,6 +77,12 @@ typedef struct {
     float grv_quat[4];
     uint32_t grv_count;
 
+    // The newest gyro rotation vector (real, i, j, k), its angular velocity (rad/s) and how many have arrived
+    // (ADR-019); written and read as the game rotation vector's
+    float girv_quat[4];
+    float girv_rate[3];
+    uint32_t girv_count;
+
     // Which sensors may calibrate themselves (SH2_CAL_* bits) once the host has set it, and whether it still has to
     // be sent: the setting does not persist across the hub's resets (datasheet 3.1.1), so each reset sets it pending
     // again and the poller task sends it (ADR-011)
@@ -116,6 +122,18 @@ uint32_t bno085_get_reset_count(bno085_ctx_t *ctx);
  * (ADR-011). Returns 0 before the first report
  */
 uint32_t bno085_get_game_rotation_quaternion(bno085_ctx_t *ctx, float quat[4]);
+
+/**
+ * @brief The gyro rotation vector (datasheet 2.2.6): the gyroscope integrated at a high rate and corrected toward
+ * the game rotation vector, made for head tracking. A report every interval_us (down to 1000); 0 stops it (ADR-019)
+ */
+esp_err_t bno085_enable_gyro_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_us);
+
+/**
+ * @brief The newest gyro rotation vector as a quaternion (real, i, j, k) and its angular velocity in rad/s about
+ * the sensor's axes; returns how many have arrived since start-up. `rate` may be NULL
+ */
+uint32_t bno085_get_gyro_rotation_quaternion(bno085_ctx_t *ctx, float quat[4], float rate[3]);
 
 /**
  * @brief If a tare is persisted (the master sensor orientation record, FRS 0x2D3E, holds data), clear it: the

@@ -107,6 +107,16 @@ static void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
         ctx->grv_quat[3] = sensor_value.un.gameRotationVector.k;
         ctx->grv_count++;
     }
+    else if (sensor_value.sensorId == SH2_GYRO_INTEGRATED_RV) {
+        ctx->girv_quat[0] = sensor_value.un.gyroIntegratedRV.real;
+        ctx->girv_quat[1] = sensor_value.un.gyroIntegratedRV.i;
+        ctx->girv_quat[2] = sensor_value.un.gyroIntegratedRV.j;
+        ctx->girv_quat[3] = sensor_value.un.gyroIntegratedRV.k;
+        ctx->girv_rate[0] = sensor_value.un.gyroIntegratedRV.angVelX;
+        ctx->girv_rate[1] = sensor_value.un.gyroIntegratedRV.angVelY;
+        ctx->girv_rate[2] = sensor_value.un.gyroIntegratedRV.angVelZ;
+        ctx->girv_count++;
+    }
 
     xQueueOverwrite(target_report_config->sensor_value_queue, &sensor_value);
 }
@@ -399,6 +409,35 @@ uint32_t bno085_get_game_rotation_quaternion(bno085_ctx_t *ctx, float quat[4]) {
     const uint32_t count = ctx->grv_count;
     sh2_unlock(ctx);
     return count;
+}
+
+
+uint32_t bno085_get_gyro_rotation_quaternion(bno085_ctx_t *ctx, float quat[4], float rate[3]) {
+    sh2_lock(ctx);
+    memcpy(quat, ctx->girv_quat, sizeof(ctx->girv_quat));
+    if (rate != NULL) {
+        memcpy(rate, ctx->girv_rate, sizeof(ctx->girv_rate));
+    }
+    const uint32_t count = ctx->girv_count;
+    sh2_unlock(ctx);
+    return count;
+}
+
+
+esp_err_t bno085_enable_gyro_rotation_vector_report(bno085_ctx_t *ctx, uint32_t interval_us) {
+    sh2_SensorConfig_t config = {
+        .changeSensitivityEnabled = false,
+        .wakeupEnabled = false,
+        .changeSensitivityRelative = false,
+        .alwaysOnEnabled = false,
+        .changeSensitivity = 0,
+        .batchInterval_us = 0,
+        .sensorSpecific = 0,
+    };
+
+    config.reportInterval_us = interval_us;
+
+    return bno085_configure_report(ctx, SH2_GYRO_INTEGRATED_RV, &config);
 }
 
 

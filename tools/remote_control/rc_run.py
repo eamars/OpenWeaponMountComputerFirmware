@@ -94,6 +94,7 @@ REPLY_PREFIXES = {
     "top": "@ok top",
     "trace": "@ok trace",
     "layer": "@ok layer",
+    "aim": "@ok aim",
 }
 FAILURE_MARKERS = (
     RESET_MARKER,
