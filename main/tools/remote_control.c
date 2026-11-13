@@ -68,7 +68,7 @@
 #define RC_MAX_ARGS 6   // "settings open How to pair"
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota top tear grav trace layer"
+#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota top tear grav trace layer aim"
 
 
 typedef struct {
@@ -1206,6 +1206,70 @@ static bool rc_cmd_trace(int argc, char **argv, char *reply, size_t reply_size) 
 }
 
 
+// Debug (ADR-019): where the unit points. `aim <s> [us]` logs, 25 times a second for s seconds, the game rotation
+// vector and the gyro rotation vector as quaternions (real, i, j, k) at full resolution, their report counts and
+// the gyro rotation vector's angular velocity; the host works out yaw and pitch. The gyro rotation vector runs
+// only during the trace, a report every `us` microseconds (5000 when left out). `aim cal <0|1>` switches the
+// gyroscope's dynamic calibration (RAM only: a reboot turns it back on)
+#define RC_AIM_PERIOD_US (40 * 1000)
+#define RC_AIM_MAX_S 120
+#define RC_AIM_GIRV_DEFAULT_US 5000
+static esp_timer_handle_t rc_aim_timer = NULL;
+static int64_t rc_aim_start_us = 0;
+static int64_t rc_aim_length_us = 0;
+
+static void rc_aim_timer_cb(void *arg) {
+    const int64_t since_us = esp_timer_get_time() - rc_aim_start_us;
+    float g[4];
+    float i[4];
+    float w[3];
+    const uint32_t g_count = bno085_get_game_rotation_quaternion(bno085_dev, g);
+    const uint32_t i_count = bno085_get_gyro_rotation_quaternion(bno085_dev, i, w);
+    ESP_LOGI(TAG, "aim t=%" PRId64 " g=%.6f,%.6f,%.6f,%.6f gn=%" PRIu32 " i=%.6f,%.6f,%.6f,%.6f in=%" PRIu32
+             " w=%.4f,%.4f,%.4f",
+             since_us / 1000, (double) g[0], (double) g[1], (double) g[2], (double) g[3], g_count,
+             (double) i[0], (double) i[1], (double) i[2], (double) i[3], i_count,
+             (double) w[0], (double) w[1], (double) w[2]);
+    if (since_us >= rc_aim_length_us) {
+        esp_timer_stop(rc_aim_timer);
+        bno085_enable_gyro_rotation_vector_report(bno085_dev, 0);
+        ESP_LOGI(TAG, "aim end");
+    }
+}
+
+
+static bool rc_cmd_aim(int argc, char **argv, char *reply, size_t reply_size) {
+#if USE_BNO085
+    long value = 0;
+    if (argc == 3 && strcmp(argv[1], "cal") == 0 && rc_parse_long(argv[2], &value) && (value == 0 || value == 1)) {
+        esp_err_t ret = bno085_set_dynamic_calibration(bno085_dev, value ? SH2_CAL_GYRO : 0);
+        return rc_reply(reply, reply_size, ret == ESP_OK, ret == ESP_OK ? "@ok aim cal=%ld" : "@err aim cal=%ld",
+                        value);
+    }
+
+    long interval_us = RC_AIM_GIRV_DEFAULT_US;
+    if ((argc != 2 && argc != 3) || !rc_parse_long(argv[1], &value) || value < 1 || value > RC_AIM_MAX_S ||
+        (argc == 3 && (!rc_parse_long(argv[2], &interval_us) || interval_us < 1000 || interval_us > 100000))) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    esp_timer_stop(rc_aim_timer);
+    esp_err_t ret = bno085_enable_gyro_rotation_vector_report(bno085_dev, (uint32_t) interval_us);
+    if (ret != ESP_OK) {
+        return rc_reply(reply, reply_size, false, "@err aim %s", esp_err_to_name(ret));
+    }
+    rc_aim_start_us = esp_timer_get_time();
+    rc_aim_length_us = (int64_t) value * 1000000;
+    ret = esp_timer_start_periodic(rc_aim_timer, RC_AIM_PERIOD_US);
+    if (ret != ESP_OK) {
+        return rc_reply(reply, reply_size, false, "@err aim %s", esp_err_to_name(ret));
+    }
+    return rc_reply(reply, reply_size, true, "@ok aim %ld s, gyro rotation vector every %ld us", value, interval_us);
+#else
+    return rc_reply(reply, reply_size, false, "@err aim needs the sensor");
+#endif  // USE_BNO085
+}
+
+
 // `layer` gives the level tile's background and foreground by their stored numbers (ADR-017); `layer bg <n>` or
 // `layer fg <n>` shows another one. Not saved, as `rot`: a reboot brings the saved pair back (a change on the Level
 // page meanwhile saves the page's whole block, this pair with it)
@@ -1310,7 +1374,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0 ||
                     strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0 ||
                     strcmp(cmd, "top") == 0 || strcmp(cmd, "tear") == 0 || strcmp(cmd, "grav") == 0 ||
-                    strcmp(cmd, "trace") == 0 || strcmp(cmd, "layer") == 0;
+                    strcmp(cmd, "trace") == 0 || strcmp(cmd, "layer") == 0 || strcmp(cmd, "aim") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -1442,6 +1506,9 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     if (strcmp(cmd, "layer") == 0) {
         return rc_cmd_layer(argc, argv, reply, reply_size);
     }
+    if (strcmp(cmd, "aim") == 0) {
+        return rc_cmd_aim(argc, argv, reply, reply_size);
+    }
     if (strcmp(cmd, "ota") == 0) {
         return rc_cmd_ota(argc, argv, reply, reply_size);
     }
@@ -1505,6 +1572,13 @@ esp_err_t remote_control_init(void) {
     };
     ret = esp_timer_create(&trace_timer_args, &rc_trace_timer);
     ESP_RETURN_ON_ERROR(ret, TAG, "Failed to create trace timer: %s", esp_err_to_name(ret));
+
+    const esp_timer_create_args_t aim_timer_args = {
+        .callback = rc_aim_timer_cb,
+        .name = "rc_aim",
+    };
+    ret = esp_timer_create(&aim_timer_args, &rc_aim_timer);
+    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to create aim timer: %s", esp_err_to_name(ret));
 
     if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
         ESP_LOGE(TAG, "Failed to take the LVGL lock");

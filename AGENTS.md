@@ -70,7 +70,8 @@ Changes are proven on a real unit, not only built. `tools/remote_control/rc_run.
   - `settings open <page title>`;
   - `tap <x> <y> <ms>`;
   - `rot <n>` (RAM only);
-  - `layer` (the level tile's background and foreground, by number); `layer bg <n>` or `layer fg <n>` shows another one (not saved; ADR-017).
+  - `layer` (the level tile's background and foreground, by number); `layer bg <n>` or `layer fg <n>` shows another one (not saved; ADR-017);
+  - `aim <s>` (ADR-019): 25 times a second for s seconds, the game rotation vector and the gyro rotation vector as quaternions at full resolution, in the log; `aim cal <0|1>` switches the gyroscope's self-calibration (RAM only).
 - `scenario state_change`: a tour of tiles, idle and wake, rotation and Wi-Fi, with a PASS or FAIL verdict. `--min-largest-dma 70000` also checks internal DMA memory.
 - `scenario rotation_sweep`: 2 minutes on the level in each rotation, about 8 minutes in all. Keep any one test under 10 minutes; no long soaks.
 - `scenario layer_tour`: every pair of the level tile's background and foreground, three times, about a minute. Fails when free internal RAM does not come back; run it with `--min-largest-dma 70000` after adding a background or a foreground.

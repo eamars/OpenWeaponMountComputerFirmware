@@ -1,10 +1,10 @@
 # ADR-019: a Target background, the point of aim on a real-size target
 
-Status: **Draft** 2026-11-13. Not approved. Needs ADR-017 (the background slot). The design waits on this ADR's first step, a measurement.
+Status: **Stopped** 2026-11-13, by the owner's decision after trying it. Steps 1 (the measurement) and 2 (the simplest Target) were built and measured ([progress](progress.md)); the sensor's own noise and drift are as large as the rings a real-size target would be drawn with. The Target view was removed; the record and the measuring tools stay.
 
 ## What we want
 
-A background for training: a target face, and a mark that shows where the rifle points on it, so a shooter sees their hold against the rings they will shoot at.
+A background for training: a target face in its real angular size, and a mark that shows where the rifle points on it, so a shooter sees their hold against the rings they will shoot at.
 
 ## Owner's direction (2026-11-13)
 
@@ -12,6 +12,10 @@ A background for training: a target face, and a mark that shows where the rifle 
 - F-class and target rifle targets, by the NZ rules.
 - The face mimics the real target's size, roughly, at a fixed distance (300 yd, 500 yd and so on).
 - If the existing code has the target wrong, fix it.
+- The old view used the rotation vector. Do not stop there: use the research, for example how a VR headset tracks where it points, and the full potential of the BNO085.
+- For measuring: the Wi-Fi unit on the turret (`owmc-8626470`, 192.168.2.165) and the turret at `rpi-turret`. The turret's pitch motor is very noisy.
+- Dry fire.
+- One fixed face, at 500 or 300 yards: the targets are much alike in mil at every distance.
 
 ## What we know
 
@@ -46,39 +50,84 @@ As angles:
 - **The mark** is a chart of the last 25 points of yaw and pitch from the game rotation vector, zeroed by a tap on the chart.
 - **It cannot run as it is.** It has its own task, reads the sensor itself beside the level's reader, and switches the game rotation report with the tile, which ADR-014 forbids (the fusion runs whenever the unit is on).
 
-### The sensor against these sizes (COM13 lying still on the level tile, 2026-11-13, 600 readings in 30 s)
+### How a headset knows where it points (research, 2026-11-13)
 
-| Reading | Drift over 30 s | Largest move inside 0.5 s |
+- **Three sources, each for what it can see.** A VR headset integrates its gyroscope at about 1000 times a second for a smooth, fast orientation. That drifts, so it is corrected: tilt (pitch and roll) from gravity, read from the accelerometer only while the head is nearly still; yaw from a magnetometer, after correcting for the iron in the headset, or from cameras ([LaValle and others, "Head Tracking for the Oculus Rift"](https://typeset.io/pdf/head-tracking-for-the-oculus-rift-463noprt22.pdf); [Oculus, "Sensor Fusion: Keeping It Simple"](https://developers.meta.com/horizon/blog/sensor-fusion-keeping-it-simple/)).
+- **Yaw has no reference inside the sensor.** Gravity says nothing about heading. Headsets with no magnetometer or camera let yaw drift and give the user a re-centre; the ones that hold yaw for good do it with cameras or base stations outside the IMU ([VR/AR wiki, sensor fusion](https://vrarwiki.com/wiki/Sensor_fusion)).
+- **Position always needs an outside reference** (cameras, base stations). A target at 300 yd or more does not need it: moving the rifle 10 cm sideways moves the point of aim 10 cm, 0.1 mil at 1000 m. Only the rifle's angle matters.
+- **Corrections are hidden.** A correction that makes the picture jump while the head is still is disturbing, so it is applied while the head moves.
+- **IMU-only shooting trainers do not show an absolute point of aim.** MantisX (gyroscope and accelerometer on the gun, 1000 samples a second) shows the muzzle's movement around each shot: the hold, the trigger press, the break. Live shots are found by recoil; dry-fire shots by their click, with 65 to 95% found depending on the firearm ([Recoil](https://www.recoilweb.com/preview-mantisx-88211.html?nonamp=1), [Guns and Ammo](https://www.gunsandammo.com/editorial/improve-shooting-fundamentals-mantisx-10-elite/389318), [tacticalhyve](https://tacticalhyve.com/mantis-x10-elite-review/)).
+
+### What the BNO085 has for this (datasheet v1.17, SH-2 reference manual)
+
+Used today: the game rotation vector at 50 a second, linear acceleration, the stability detector. Gyro calibration is on; accelerometer and magnetometer calibration are off (ADR-011).
+
+| Feature | What it gives | For the target |
 |---|---|---|
-| Cant | 3.3 mil | 0.5 mil |
-| Pitch | 1.75 mil | 0.35 mil |
+| Game rotation vector | Gyro and accelerometer, no magnetometer. Heading drift 0.5 degrees a minute while moving (8.7 mil a minute) | The base: smooth, drifts in yaw |
+| AR/VR-stabilised game rotation vector | The same, with corrections applied only while the device moves, so the output never jumps while still | Made for a mark on a display |
+| Gyro rotation vector | Up to 1000 a second, low delay, built for head tracking; based on either rotation vector | The trigger press and the break are fast: 50 a second misses them |
+| Rotation vector (with magnetometer) | An absolute heading. Error 2 degrees still and 3.5 moving, "in practice 5"; the datasheet advises against it for smooth tracking (its calibration makes jumps) | 2 degrees is 35 mil, seventeen aiming marks. Not for the mark |
+| Gyro calibration | Converges when the device is very still; slow turns about the vertical can fool it, and without hand tremor the datasheet advises switching it off | A rifle on a bipod is still, and pans slowly: the case it warns about |
+| Stability classifier | On table, stable (held still), motion | Says when a hold begins |
+| Tap detector | Single and double taps | A candidate for finding a dry-fire click; untried |
 
-- The `trace` command prints 0.01 degrees, which is 0.17 mil: too coarse to see the short moves properly.
-- This agrees with ADR-014: the fusion wanders 0.15 to 0.26 degrees over 30 s while still.
-- **Yaw is not measured.** The game rotation vector has no compass: nothing corrects yaw, so it should drift more than pitch.
-- So at real size the mark of a rifle held perfectly still would leave the aiming mark by itself within about half a minute, and the bull is about the size of the reading's own short moves. One desk run is not a verdict; it is the reason for step 1.
+### Measured: tilt, the half that gravity corrects
 
-## What we propose
+The gravity vector from the remote control's `grav`, four times a second for 60 s, the level tile shown. One digit is 0.1 mil. Each unit left untouched.
 
-1. **Measure first, on the turret,** with a trace that logs pitch and yaw at the sensor's full resolution: the unit still for 60 s; then turret steps in pitch and in yaw. Three numbers decide the design: the noise within 1 s, the drift over 10 s (one aimed shot), and the drift over 60 s.
-2. **The verdict decides which of these is built:**
-   - **Real size holds for a shot** (drift over 10 s well inside the bull): the real face at the chosen distance, re-centred by holding the tilt box before a shot.
-   - **Real size holds only for the wobble** (noise small, drift not): the real face, with the mark shown against its own slow average. It shows whether the hold stays inside the bull, not where on the target the rifle points.
-   - **Neither:** the real ring proportions, enlarged, with the scale shown on screen. The owner decides whether that is worth building.
-3. **The face** by the NZ rules, chosen by distance (300, 500, 600, 800, 900, 1000 yd), with the supervee ring for F-class.
-4. **Drawn as a background** fed by the level's one reader: no task of its own, nothing switched on the sensor.
-5. **The zero** is the tilt box's hold, as for the level, not a tap on the target (a tap there belongs to the foreground).
+| Unit | Scatter (sd) | Largest move inside 10 s | Drift, first half to second half |
+|---|---|---|---|
+| COM13 on a stable desk | 0.12 and 0.19 mil | 0.5 and 0.7 mil | 0.09 and 0.01 mil |
+| Turret unit, quiet axis | 0.22 and 0.27 mil | 0.9 and 1.3 mil | 0.00 and 0.09 mil |
+| Turret unit, the axis the pitch motor holds | 0.78 mil | 3.1 mil | 0.01 mil |
 
-## How the unit shows it works
+- **Tilt does not drift.** Its noise is about 0.15 mil on a quiet mount: half a V-bull, a quarter of a bull.
+- **The turret's pitch motor shakes the unit** by about 0.8 mil while holding. Still tests belong on the desk, or need the motor quiet.
+- **An earlier run was wrong.** On 2026-11-13 afternoon COM13 showed 3.3 mil of cant drift in 30 s; the desk was not stable (the owner moved the unit to a stable one, and the drift was gone). Read with the old `trace`, which prints 0.17 mil a digit.
 
-Step 1's numbers in `progress.md`, then to be written for the design that follows.
+### Measured: yaw (step 1, 2026-11-13, [progress](progress.md))
 
-## Open questions
+Read with the `aim` trace built for this ADR: both orientation outputs as quaternions at full resolution, 25 times a second.
 
-- Which distances, and whether metres are needed beside yards.
-- What the foreground may cover: the face needs the middle of the screen.
+- **Left still on a quiet desk, yaw holds.** COM13, in three runs after a fresh start: 0.13 to 0.28 mil of movement in 45 to 60 s. The hub sees that it is still, reports no rotation at all, and holds the heading.
+- **Once the unit is not that still, yaw wanders 10 to 40 mil a minute.** On the turret, whose pitch motor shakes the unit, 16 mil a minute; on the desk in the disturbed state below, 8 to 42. The datasheet's figure for a moving device is 8.7 mil a minute.
+- **A slow turn on a steady mount fools the gyro's self-calibration,** as the datasheet warns. On the turret, after a 5 degree step and back, the hub reported about 40 mil a second of rotation with the turret standing still, for about a minute, and yaw ran away by more than 2000 mil.
+- **Switching that calibration off is not the cure.** On the turret it stopped the runaway: the same steps and a slow pan read within 2 to 8 mil of the turret's encoder over 90 s. But on the quiet desk it made things worse: 8 to 22 mil a minute of steady drift, the hub no longer holding still, and the gyro rotation vector jumping by tens of mil. Switching it on again did not bring the quiet state back; a restart did.
+- **The level's own reading is not at risk:** through the runaway, tilt stayed within 3.5 mil (0.2 degrees) of where it began.
+- **The gyro rotation vector** arrives 200 times a second as asked and agrees with the game rotation vector in yaw.
 
-## Not in this ADR
+### Measured: the Target in the owner's hands (step 2, 2026-11-13)
 
-- A compass (the magnetometer) for yaw: a rifle is steel.
-- Scoring, or recording shots.
+The simplest Target was built and put on the unit: the 500 yard face at real size, a mark with a short trail from the game rotation vector, centred by a hold on the face. The owner: "it will drift even if stable." Measured at once on COM13 as it sat, untouched, in its normal state:
+
+| Axis | Slide | Scatter left after removing the slide | Largest move inside 2 s |
+|---|---|---|---|
+| Windage (yaw) | 0.45 mil a second (27 mil a minute) | 0.47 mil | 1.7 mil |
+| Elevation (pitch) | none (0.5 mil a minute) | 0.25 mil | 1.0 mil |
+
+The quiet runs above were the special case: a unit just restarted and left alone on a quiet desk, where the hub decides it is still and freezes the heading. A unit that has been handled, on an ordinary surface, is not in that state.
+
+## Why it was stopped (owner, 2026-11-13)
+
+- **The sensor's own movement is as large as the rings.** At 500 yards the bull is 0.63 mil across and the V-bull 0.32. Windage slides across the whole face in about 6 s, and with the slide taken out it still scatters by about a ring; elevation moves up to 1 mil inside 2 s. A good prone hold is 0.1 to 0.3 mil: the unit could show a bad hold, and could not tell a good one from its own noise.
+- **It would show false information.** A mark on a real-size target looks exact, and most of what it showed would be the sensor. No information is better than misleading information.
+- **Nothing in the unit can supply what is missing,** a reference for heading: the magnetometer is 20 times too coarse, and there is no camera. What was left (the firmware learning the slide, finding a dry-fire click) was research with no sure end, each part needing sessions on a rifle.
+
+## What stays in the tree
+
+- **This record,** so the idea is not tried again without a better sensor: the NZ target sizes, the research, and the measurements ([progress](progress.md)).
+- **The `aim` trace** on the remote control and **the gyro rotation vector in the sensor driver** (`bno085_enable_gyro_rotation_vector_report`, `bno085_get_gyro_rotation_quaternion`): the instruments the measurements were made with.
+
+The Target view itself (`level_target.c`), its place on the Level page and its touch handling were removed. The old `point_of_aim_view.c` stays disabled, as before.
+
+## What else was learnt
+
+- **The gyro's self-calibration.** A slow turn on a steady mount fools it (the turret run), and switching it off leaves the hub in a worse state until a restart (the desk runs). It is left on, as it was. The level's reading stayed within 0.2 degrees through the worst of it.
+- **A unit left "still" is only as still as what it sits on.** The first drift figure of the day was the desk.
+- **The turret's pitch motor shakes the unit;** it is no rig for small angles.
+
+## If it is taken up again
+
+- With this sensor, only a coarse picture could be honest: the wobble of a positional hold against rings of 1, 2 and 5 mil, several times the sensor's noise. That is a different idea from a target at real size, and is not planned.
+- A target at real size needs a heading reference outside the IMU.
