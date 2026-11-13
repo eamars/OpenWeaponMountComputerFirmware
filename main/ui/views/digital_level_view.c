@@ -18,6 +18,7 @@
 #include "countdown_timer.h"
 #include "dope_view.h"
 #include "level_band.h"
+#include "level_card.h"
 #include "display_shape.h"
 #include "common.h"
 #include "system_config.h"
@@ -262,6 +263,13 @@ static const level_foreground_t level_foregrounds[LEVEL_FOREGROUND_COUNT] = {
         .set_rotation = set_rotation_no_foreground,
         .tiles = LV_DIR_NONE,
     },
+    // The card as rows, no timer (ADR-018): the dope tile for entry and the Kestrel pull, not the timer tile
+    [LEVEL_FOREGROUND_DOPE] = {
+        .constructor = level_card_create,
+        .destructor = level_card_delete,
+        .set_rotation = level_card_set_rotation,
+        .tiles = LV_DIR_BOTTOM,
+    },
 };
 
 static const level_foreground_t * current_foreground = NULL;
@@ -441,7 +449,11 @@ bool digital_level_view_show_foreground(int foreground) {
 
 // In the order of their stored values
 static const char * const background_names[DIGITAL_LEVEL_VIEW_TYPE_COUNT] = {"Level", "Block", "Chevrons", "Off"};
-static const char * const foreground_names[LEVEL_FOREGROUND_COUNT] = {"Match", "Off"};
+// As the page lists them, Off last; the stored values are in the order they were added
+static const char * const foreground_names[LEVEL_FOREGROUND_COUNT] = {"Match", "Dope", "Off"};
+static const uint8_t foreground_values[LEVEL_FOREGROUND_COUNT] = {
+    LEVEL_FOREGROUND_MATCH, LEVEL_FOREGROUND_DOPE, LEVEL_FOREGROUND_OFF,
+};
 
 // The colours a tilt or the level can show: LVGL's palette, and black (LV_PALETTE_BLACK, after the palette)
 static const char * const colour_names[MAX_NUM_COLOURS] = {
@@ -472,15 +484,24 @@ static void set_style(int index, void * ctx) {
 }
 
 
+// The row the stored foreground is on; one this firmware does not know shows as the default
 static int get_foreground(void * ctx) {
-    return digital_level_view_config.foreground < LEVEL_FOREGROUND_COUNT ? digital_level_view_config.foreground :
-                                                                          digital_level_view_config_default.foreground;
+    int default_row = 0;
+    for (int row = 0; row < LEVEL_FOREGROUND_COUNT; row++) {
+        if (foreground_values[row] == digital_level_view_config.foreground) {
+            return row;
+        }
+        if (foreground_values[row] == digital_level_view_config_default.foreground) {
+            default_row = row;
+        }
+    }
+    return default_row;
 }
 
 
 static void set_foreground(int index, void * ctx) {
-    digital_level_view_config.foreground = (uint8_t) index;
-    show_level_foreground(select_level_foreground(index));
+    digital_level_view_config.foreground = foreground_values[index];
+    show_level_foreground(select_level_foreground(digital_level_view_config.foreground));
     save_level();
 }
 

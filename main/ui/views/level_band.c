@@ -43,24 +43,13 @@ static lv_obj_t * gust_label = NULL;
 
 static countdown_timer_t * band_timer = NULL;
 static bool timer_shown = false;
-static int current_target = -1;         // the target shown; RAM only, so stepping never writes NVS
-
-
-static int find_set_target(int from, int direction) {
-    for (int i = from; i >= 0 && i < dope_target_count(); i += direction) {
-        if (dope_target_is_set(&dope_card.target[i])) {
-            return i;
-        }
-    }
-    return -1;
-}
 
 
 static void update_visibility() {
     if (band == NULL) {
         return;
     }
-    if (timer_shown || current_target >= 0) {
+    if (timer_shown || dope_current_target() >= 0) {
         lv_obj_set_hidden(band, false);
     }
     else {
@@ -81,11 +70,14 @@ static void update_visibility() {
 }
 
 
+// The card's listener (dope_set_card_listener) while the band exists: the card, the names or the current target
+// changed
 static void show_target() {
     if (band == NULL) {
         return;
     }
 
+    const int current_target = dope_current_target();
     if (current_target < 0) {
         lv_label_set_text(name_label, "");
         lv_label_set_text(info_label, "");
@@ -107,7 +99,7 @@ static void show_target() {
     if (target->range_m > 0) {
         snprintf(range, sizeof(range), "%u m", (unsigned) target->range_m);
     }
-    int next_index = find_set_target(current_target + 1, 1);
+    int next_index = dope_find_set_target(current_target + 1, 1);
     if (next_index >= 0) {
         dope_target_name(name, sizeof(name), next_index);
         snprintf(next, sizeof(next), "next %s", name);
@@ -138,39 +130,9 @@ static void show_target() {
 }
 
 
-void level_band_refresh_dope(void) {
-    // A target gone, or past a smaller card size: the first set target
-    if (current_target < 0 || current_target >= dope_target_count() ||
-        !dope_target_is_set(&dope_card.target[current_target])) {
-        current_target = find_set_target(0, 1);
-    }
-    show_target();
-}
-
-
-// One set target on, or back; `wrap` goes round the card (after the last the first, before the first the last)
-static void step_target(int direction, bool wrap) {
-    int found = find_set_target(current_target + direction, direction);
-    if (found < 0 && wrap) {
-        found = find_set_target(direction > 0 ? 0 : dope_target_count() - 1, direction);
-    }
-    if (found >= 0) {
-        current_target = found;
-        show_target();
-    }
-}
-
-
-// Recoil: stops at the last target, so a further shot or a false trigger there does not bring back the first
-// target's dope during the stage
-void level_band_next_target(void) {
-    step_target(1, false);
-}
-
-
 // The band's tap and long press: round the card (owner, 2026-11-07)
 static void band_event_cb(lv_event_t * e) {
-    step_target(lv_event_get_code(e) == LV_EVENT_SHORT_CLICKED ? 1 : -1, true);
+    dope_step_target(lv_event_get_code(e) == LV_EVENT_SHORT_CLICKED ? 1 : -1, true);
 }
 
 
@@ -376,7 +338,8 @@ void level_band_create(lv_obj_t * overlay, countdown_timer_t * timer) {
     lv_obj_set_style_text_font(gust_label, &lv_font_montserrat_28, LV_PART_MAIN);
 
     level_band_set_rotation(system_config.rotation);
-    level_band_refresh_dope();
+    dope_set_card_listener(show_target);
+    show_target();
     update_visibility();
 }
 
@@ -385,6 +348,7 @@ void level_band_delete(void) {
     if (band == NULL) {
         return;
     }
+    dope_set_card_listener(NULL);
     lv_obj_delete(band);  // everything in it too; the time label leaves the hardware button's group with it
     band = NULL;
     timer_bar = NULL;
@@ -400,7 +364,6 @@ void level_band_delete(void) {
     wind_label = NULL;
     gust_label = NULL;
     timer_shown = false;
-    // The current target is kept: the band built again shows the same one
 }
 
 

@@ -82,6 +82,28 @@ static inline bool dope_target_is_set(const dope_target_t * target) {
     return (target->flags & DOPE_TARGET_SET) != 0;
 }
 
+// The current target (ADR-018): the one position every foreground of the level shows and steps. RAM only, so
+// stepping on every shot never writes NVS. LVGL lock held for all four
+
+/** @brief The first set target at `from` or beyond it in `direction` (+1 or -1); -1 when there is none */
+int dope_find_set_target(int from, int direction);
+/**
+ * @brief The current target, or -1 when no target is set. One that was cleared, or lies past a smaller card, gives
+ * way to the first set target
+ */
+int dope_current_target(void);
+/**
+ * @brief One set target on (+1) or back (-1), and the listener is told. `wrap` goes round the card (after the last
+ * the first); without it the step stops at the end: recoil, so a further shot or a false trigger at the last target
+ * does not bring back the first target's dope during the stage
+ */
+void dope_step_target(int direction, bool wrap);
+/**
+ * @brief Who shows the card on the level, called when the card, the target names or the current target changed.
+ * One at a time (the level's foreground); NULL when nothing shows it
+ */
+void dope_set_card_listener(void (*listener)(void));
+
 /** @brief "8.5" (up), "-0.3" (down) */
 void dope_format_elevation(char * buf, size_t size, int32_t elevation_x10);
 /** @brief A wind value: "R0.4", "L0.4", "0.0" */

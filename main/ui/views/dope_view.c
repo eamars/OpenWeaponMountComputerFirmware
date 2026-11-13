@@ -12,7 +12,6 @@
 #include "display_shape.h"
 #include "value_editor.h"
 #include "settings_ui.h"
-#include "level_band.h"
 #include "kestrel_service.h"
 
 #include <math.h>
@@ -49,6 +48,10 @@ static const dope_settings_t dope_settings_default = {
     .target_count = 12,
 };
 static const uint8_t target_count_values[] = {10, 12, 15};
+
+// The target the level shows (ADR-018), and who shows it there (the level's foreground)
+static int current_target = -1;
+static void (*card_listener)(void) = NULL;
 
 
 typedef enum {
@@ -172,6 +175,45 @@ esp_err_t save_dope_settings() {
 }
 
 
+int dope_find_set_target(int from, int direction) {
+    for (int i = from; i >= 0 && i < dope_target_count(); i += direction) {
+        if (dope_target_is_set(&dope_card.target[i])) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+
+int dope_current_target(void) {
+    // A target gone, or past a smaller card size: the first set target
+    if (current_target < 0 || current_target >= dope_target_count() ||
+        !dope_target_is_set(&dope_card.target[current_target])) {
+        current_target = dope_find_set_target(0, 1);
+    }
+    return current_target;
+}
+
+
+void dope_step_target(int direction, bool wrap) {
+    int found = dope_find_set_target(dope_current_target() + direction, direction);
+    if (found < 0 && wrap) {
+        found = dope_find_set_target(direction > 0 ? 0 : dope_target_count() - 1, direction);
+    }
+    if (found >= 0 && found != current_target) {
+        current_target = found;
+        if (card_listener != NULL) {
+            card_listener();
+        }
+    }
+}
+
+
+void dope_set_card_listener(void (*listener)(void)) {
+    card_listener = listener;
+}
+
+
 void dope_target_name(char * buf, size_t size, int index) {
     if (dope_settings.target_names == DOPE_TARGET_NAMES_NUMBERS) {
         snprintf(buf, size, "%d", index + 1);
@@ -249,7 +291,9 @@ static void refresh_card() {
     if (target_list != NULL) {
         display_locked_list_snap(target_list, locked_rows_per_screen);
     }
-    level_band_refresh_dope();
+    if (card_listener != NULL) {
+        card_listener();
+    }
 }
 
 

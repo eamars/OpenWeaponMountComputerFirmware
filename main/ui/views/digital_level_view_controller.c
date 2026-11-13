@@ -192,9 +192,9 @@ void unified_sensor_poller_task(void *p) {
                         ESP_LOGI(TAG, "Countdown timer started due to recoil");
                     }
 
-                    // The Dope page's setting: the level shows the next target (ADR-007)
+                    // The Dope page's setting: the level shows the next target (ADR-007). It stops at the last one
                     if (dope_settings.next_target_on_recoil && lvgl_port_lock(LVGL_UNLOCK_WAIT_TIME_MS)) {
-                        level_band_next_target();
+                        dope_step_target(1, false);
                         lvgl_port_unlock();
                     }
                 }
