@@ -69,9 +69,11 @@ Changes are proven on a real unit, not only built. `tools/remote_control/rc_run.
   - `tile <col> <row>`;
   - `settings open <page title>`;
   - `tap <x> <y> <ms>`;
-  - `rot <n>` (RAM only).
+  - `rot <n>` (RAM only);
+  - `layer` (the level tile's background and foreground, by number); `layer bg <n>` or `layer fg <n>` shows another one (not saved; ADR-017).
 - `scenario state_change`: a tour of tiles, idle and wake, rotation and Wi-Fi, with a PASS or FAIL verdict. `--min-largest-dma 70000` also checks internal DMA memory.
 - `scenario rotation_sweep`: 2 minutes on the level in each rotation, about 8 minutes in all. Keep any one test under 10 minutes; no long soaks.
+- `scenario layer_tour`: every pair of the level tile's background and foreground, three times, about a minute. Fails when free internal RAM does not come back; run it with `--min-largest-dma 70000` after adding a background or a foreground.
 - `idle <s>`: idle, then wake by a timer after s seconds.
 - `trace <s> [now]` (ADR-014): every 50 ms for s seconds from the next wake (or now), the level's cant and pitch, the count of game rotation reports and whether the unit is idle, in the log. The unit keeps its log through an idle, so a wake's first readings can be read over Wi-Fi afterwards.
 

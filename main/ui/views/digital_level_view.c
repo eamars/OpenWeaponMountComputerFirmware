@@ -1,5 +1,6 @@
 #include <limits.h>
 #include <math.h>
+#include <stddef.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -7,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_check.h"
+#include "esp_macros.h"
 
 #include "digital_level_view.h"
 #include "settings_ui.h"
@@ -23,6 +25,8 @@
 #include "digital_level_view_type_1.h"
 #include "digital_level_view_type_2.h"
 #include "digital_level_view_type_3.h"
+#include "main_tileview.h"
+#include "timer_view.h"
 
 
 #define TAG "DigitalLevelView"
@@ -41,6 +45,7 @@ const digital_level_view_config_t digital_level_view_config_default = {
     .colour_horizontal_level_indicator = LV_PALETTE_LIGHT_GREEN,
     .colour_foreground = LV_PALETTE_BLACK,
     .level_style = DIGITAL_LEVEL_VIEW_TYPE_1,
+    .foreground = LEVEL_FOREGROUND_MATCH,
 };
 
 static lv_obj_t * tilt_angle_label = NULL;
@@ -201,6 +206,92 @@ void create_roll_deg_indicator(lv_obj_t * parent) {
 }
 
 
+/*
+----------------------------------------------------
+The foreground (ADR-017): what is shown over the background, beside the tilt box. Built when it is chosen and
+deleted when another is, as the backgrounds are
+----------------------------------------------------
+*/
+
+typedef struct {
+    void (*constructor)(lv_obj_t * overlay);
+    void (*destructor)(void);
+    void (*set_rotation)(lv_display_rotation_t rotation);
+    // The level tile's neighbours this foreground has a use for: LV_DIR_TOP the timer tile, LV_DIR_BOTTOM the dope
+    // tile. The others are not offered
+    lv_dir_t tiles;
+} level_foreground_t;
+
+
+static void create_match_foreground(lv_obj_t * overlay) {
+    level_band_create(overlay, &countdown_timer);
+}
+
+
+static void delete_match_foreground(void) {
+    // The band is the timer's only display, so an armed timer goes with it
+    countdown_timer_view_disarm();
+    level_band_delete();
+}
+
+
+static void create_no_foreground(lv_obj_t * overlay) {
+    ESP_UNUSED(overlay);
+}
+
+
+static void delete_no_foreground(void) {
+}
+
+
+static void set_rotation_no_foreground(lv_display_rotation_t rotation) {
+    ESP_UNUSED(rotation);
+}
+
+
+static const level_foreground_t level_foregrounds[LEVEL_FOREGROUND_COUNT] = {
+    [LEVEL_FOREGROUND_MATCH] = {
+        .constructor = create_match_foreground,
+        .destructor = delete_match_foreground,
+        .set_rotation = level_band_set_rotation,
+        .tiles = LV_DIR_VER,
+    },
+    [LEVEL_FOREGROUND_OFF] = {
+        .constructor = create_no_foreground,
+        .destructor = delete_no_foreground,
+        .set_rotation = set_rotation_no_foreground,
+        .tiles = LV_DIR_NONE,
+    },
+};
+
+static const level_foreground_t * current_foreground = NULL;
+
+
+// A value this firmware does not know (saved by a later one) shows the default
+static const level_foreground_t * select_level_foreground(int foreground) {
+    if (foreground < 0 || foreground >= LEVEL_FOREGROUND_COUNT) {
+        foreground = digital_level_view_config_default.foreground;
+    }
+    return &level_foregrounds[foreground];
+}
+
+
+// LVGL lock held. The first call builds the start-up foreground
+static void show_level_foreground(const level_foreground_t * wanted) {
+    if (wanted == current_foreground) {
+        return;
+    }
+    if (current_foreground != NULL) {
+        current_foreground->destructor();
+    }
+    current_foreground = wanted;
+    current_foreground->constructor(overlay_container);
+
+    // Right to the settings always; up and down only to a tile this foreground uses
+    main_tileview_set_tile_dir(parent_container, LV_DIR_RIGHT | current_foreground->tiles);
+}
+
+
 void create_digital_level_overlay(lv_obj_t *parent)
 {
     overlay_container = lv_obj_create(parent);
@@ -212,7 +303,7 @@ void create_digital_level_overlay(lv_obj_t *parent)
 
     create_roll_deg_indicator(overlay_container);
     countdown_timer_setup(&countdown_timer, level_band_timer_update_cb, NULL);
-    level_band_create(overlay_container, &countdown_timer);
+    show_level_foreground(select_level_foreground(digital_level_view_config.foreground));
     create_hint(overlay_container);
 
     // While the timer is armed or paused, a tap anywhere on the level (not the band or the tilt box) starts it:
@@ -221,23 +312,59 @@ void create_digital_level_overlay(lv_obj_t *parent)
 }
 
 
+/*
+----------------------------------------------------
+The background "Off" (ADR-017): a black screen under the tilt box and the foreground
+----------------------------------------------------
+*/
+
+static lv_obj_t * create_no_background(lv_obj_t * parent);
+static void delete_no_background(lv_obj_t * container);
+static void update_no_background(float roll_rad, float pitch_rad);
+
+static digital_level_view_t no_background_context = {
+    .constructor = create_no_background,
+    .destructor = delete_no_background,
+    .update_callback = update_no_background,
+};
+
+
+static lv_obj_t * create_no_background(lv_obj_t * parent) {
+    lv_obj_t * container = lv_obj_create(parent);
+    no_background_context.container = container;
+    lv_obj_remove_style_all(container);
+    lv_obj_set_size(container, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(container, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(container, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_scrollable(container, false);
+    return container;
+}
+
+
+static void delete_no_background(lv_obj_t * container) {
+    lv_obj_delete(container);
+}
+
+
+static void update_no_background(float roll_rad, float pitch_rad) {
+    ESP_UNUSED(roll_rad);
+    ESP_UNUSED(pitch_rad);
+}
+
+
+// A value this firmware does not know (saved by a later one) shows the default
 digital_level_view_t * select_digital_level_view(digital_level_view_type_t level_style) {
-    digital_level_view_t * selected = NULL;
-    // Load digital level view widget
     switch(level_style) {
-        case DIGITAL_LEVEL_VIEW_TYPE_1:
-            selected = &digital_level_view_type_1_context;
-            break;
         case DIGITAL_LEVEL_VIEW_TYPE_2:
-            selected = &digital_level_view_type_2_context;
-            break;
+            return &digital_level_view_type_2_context;
         case DIGITAL_LEVEL_VIEW_TYPE_3:
-            selected = &digital_level_view_type_3_context;
-            break;
+            return &digital_level_view_type_3_context;
+        case DIGITAL_LEVEL_VIEW_OFF:
+            return &no_background_context;
+        case DIGITAL_LEVEL_VIEW_TYPE_1:
         default:
-            break;
+            return &digital_level_view_type_1_context;
     }
-    return selected;
 }
 
 void create_digital_level_view(lv_obj_t *parent)
@@ -269,10 +396,10 @@ Settings page: Level (ADR-008: each change stored when made)
 ----------------------------------------------------
 */
 
-// Show the style the settings ask for; the level reads its other settings live
+// Show the background the settings ask for; the level reads its other settings live
 static void apply_digital_level_view_style() {
     digital_level_view_t * wanted = select_digital_level_view(digital_level_view_config.level_style);
-    if (wanted == NULL || wanted == current_digital_level_view) {
+    if (wanted == current_digital_level_view) {
         return;
     }
 
@@ -288,12 +415,33 @@ static void apply_digital_level_view_style() {
 
 void digital_level_view_rotation_event_callback(lv_event_t * e) {
     set_rotation_roll_deg_indicator(system_config.rotation);
-    level_band_set_rotation(system_config.rotation);
+    current_foreground->set_rotation(system_config.rotation);
 }
 
 
-static const char * const level_style_names[] = {"Level", "Block", "Chevrons"};
-#define LEVEL_STYLE_COUNT (sizeof(level_style_names) / sizeof(level_style_names[0]))
+bool digital_level_view_show_background(int background) {
+    if (background < 0 || background >= DIGITAL_LEVEL_VIEW_TYPE_COUNT) {
+        return false;
+    }
+    digital_level_view_config.level_style = (digital_level_view_type_t) background;
+    apply_digital_level_view_style();
+    return true;
+}
+
+
+bool digital_level_view_show_foreground(int foreground) {
+    if (foreground < 0 || foreground >= LEVEL_FOREGROUND_COUNT) {
+        return false;
+    }
+    digital_level_view_config.foreground = (uint8_t) foreground;
+    show_level_foreground(select_level_foreground(foreground));
+    return true;
+}
+
+
+// In the order of their stored values
+static const char * const background_names[DIGITAL_LEVEL_VIEW_TYPE_COUNT] = {"Level", "Block", "Chevrons", "Off"};
+static const char * const foreground_names[LEVEL_FOREGROUND_COUNT] = {"Match", "Off"};
 
 // The colours a tilt or the level can show: LVGL's palette, and black (LV_PALETTE_BLACK, after the palette)
 static const char * const colour_names[MAX_NUM_COLOURS] = {
@@ -320,6 +468,19 @@ static int get_style(void * ctx) {
 static void set_style(int index, void * ctx) {
     digital_level_view_config.level_style = (digital_level_view_type_t) index;
     apply_digital_level_view_style();
+    save_level();
+}
+
+
+static int get_foreground(void * ctx) {
+    return digital_level_view_config.foreground < LEVEL_FOREGROUND_COUNT ? digital_level_view_config.foreground :
+                                                                          digital_level_view_config_default.foreground;
+}
+
+
+static void set_foreground(int index, void * ctx) {
+    digital_level_view_config.foreground = (uint8_t) index;
+    show_level_foreground(select_level_foreground(index));
     save_level();
 }
 
@@ -357,6 +518,12 @@ static bool gains_shown(void) {
 }
 
 
+// The threshold and the colours belong to the backgrounds that show the level; "Off" uses none of them
+static bool background_shown(void) {
+    return digital_level_view_config.level_style != DIGITAL_LEVEL_VIEW_OFF;
+}
+
+
 static int get_colour(void * ctx) {
     return *(lv_palette_t *) ctx;
 }
@@ -375,13 +542,15 @@ static void reset_level(void * ctx) {
     memcpy(&digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
     digital_level_view_config.user_roll_rad_offset = zero_rad;
     apply_digital_level_view_style();
+    show_level_foreground(select_level_foreground(digital_level_view_config.foreground));
     save_level();
 }
 
 
 void digital_level_settings_summary(char * buf, size_t size, void * ctx) {
     int32_t tenths = (int32_t) lroundf(digital_level_view_config.delta_level_threshold * 10.0f);
-    snprintf(buf, size, "%s, within %ld.%ld\xC2\xB0", level_style_names[digital_level_view_config.level_style % LEVEL_STYLE_COUNT],
+    snprintf(buf, size, "%s, within %ld.%ld\xC2\xB0",
+             background_names[digital_level_view_config.level_style % DIGITAL_LEVEL_VIEW_TYPE_COUNT],
              (long) (tenths / 10), (long) (tenths % 10));
 }
 
@@ -395,7 +564,10 @@ settings_page_t * create_digital_level_settings_page(void) {
                                                 .format_value = format_degrees, .format_step = format_tenth_step};
 
     settings_page_t * page = settings_page_create("Level");
-    settings_row_choice(page, "Level style", level_style_names, LEVEL_STYLE_COUNT, get_style, set_style, NULL);
+    settings_row_choice(page, "Background", background_names, DIGITAL_LEVEL_VIEW_TYPE_COUNT, get_style, set_style,
+                        NULL);
+    settings_row_choice(page, "Foreground", foreground_names, LEVEL_FOREGROUND_COUNT, get_foreground, set_foreground,
+                        NULL);
     settings_row_number(page, "Roll display gain", &roll_gain, get_tenths, set_tenths,
                         &digital_level_view_config.roll_display_gain);
     settings_row_shown_when(page, gains_shown);
@@ -404,21 +576,28 @@ settings_page_t * create_digital_level_settings_page(void) {
     settings_row_shown_when(page, gains_shown);
     settings_row_number(page, "Level threshold", &threshold, get_tenths, set_tenths,
                         &digital_level_view_config.delta_level_threshold);
+    settings_row_shown_when(page, background_shown);
     settings_row_colour(page, "Left tilt colour", colour_names, MAX_NUM_COLOURS, colour_of, get_colour, set_colour,
                         &digital_level_view_config.colour_left_tilt_indicator);
+    settings_row_shown_when(page, background_shown);
     settings_row_colour(page, "Right tilt colour", colour_names, MAX_NUM_COLOURS, colour_of, get_colour, set_colour,
                         &digital_level_view_config.colour_right_tilt_indicator);
+    settings_row_shown_when(page, background_shown);
     settings_row_colour(page, "Levelled colour", colour_names, MAX_NUM_COLOURS, colour_of, get_colour, set_colour,
                         &digital_level_view_config.colour_horizontal_level_indicator);
+    settings_row_shown_when(page, background_shown);
     settings_row_colour(page, "Foreground colour", colour_names, MAX_NUM_COLOURS, colour_of, get_colour, set_colour,
                         &digital_level_view_config.colour_foreground);
+    settings_row_shown_when(page, background_shown);
     settings_row_reset(page, "Reset Level settings", "Reset the Level settings? The zero stays.", reset_level, NULL);
     return page;
 }
 
 
 esp_err_t load_digital_level_view_config() {
-    return load_config(NVS_NAMESPACE, &digital_level_view_config, &digital_level_view_config_default, sizeof(digital_level_view_config));
+    // Settings saved before the foreground was added (ADR-017) load as they were, the zero included
+    return load_config_grown(NVS_NAMESPACE, &digital_level_view_config, &digital_level_view_config_default,
+                             sizeof(digital_level_view_config), offsetof(digital_level_view_config_t, foreground));
 }
 
 esp_err_t save_digital_level_view_config() {

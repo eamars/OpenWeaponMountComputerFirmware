@@ -31,6 +31,7 @@
 #include "common.h"
 #include "bno085.h"
 #include "digital_level_view_controller.h"  // the level's raw cant and pitch (grav)
+#include "digital_level_view.h"             // the level tile's layers (layer)
 #include "sensor_frame.h"
 #include "low_power_mode.h"
 #include "pmic_axp2101.h"
@@ -67,7 +68,7 @@
 #define RC_MAX_ARGS 6   // "settings open How to pair"
 
 #define RC_BT_DEPTH 24
-#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota top tear grav trace"
+#define RC_HELP_COMMANDS "help state stats sleep bt pmic snap outline tap swipe tile rot wifi kestrel save idle wake reboot hang bnoreset settings ota top tear grav trace layer"
 
 
 typedef struct {
@@ -1205,6 +1206,38 @@ static bool rc_cmd_trace(int argc, char **argv, char *reply, size_t reply_size) 
 }
 
 
+// `layer` gives the level tile's background and foreground by their stored numbers (ADR-017); `layer bg <n>` or
+// `layer fg <n>` shows another one. Not saved, as `rot`: a reboot brings the saved pair back (a change on the Level
+// page meanwhile saves the page's whole block, this pair with it)
+static bool rc_cmd_layer(int argc, char **argv, char *reply, size_t reply_size) {
+#if USE_BNO085
+    if (argc == 3) {
+        long n;
+        const bool background = strcmp(argv[1], "bg") == 0;
+        if ((!background && strcmp(argv[1], "fg") != 0) || !rc_parse_long(argv[2], &n)) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+        if (!lvgl_port_lock(RC_LVGL_LOCK_TIMEOUT_MS)) {
+            return rc_reply(reply, reply_size, false, "@err busy");
+        }
+        const bool shown = background ? digital_level_view_show_background((int) n) :
+                                        digital_level_view_show_foreground((int) n);
+        lvgl_port_unlock();
+        if (!shown) {
+            return rc_reply(reply, reply_size, false, "@err args");
+        }
+    }
+    else if (argc != 1) {
+        return rc_reply(reply, reply_size, false, "@err args");
+    }
+    return rc_reply(reply, reply_size, true, "@ok layer bg=%d fg=%d", (int) digital_level_view_config.level_style,
+                    (int) digital_level_view_config.foreground);
+#else
+    return rc_reply(reply, reply_size, false, "@err layer needs the sensor");
+#endif  // USE_BNO085
+}
+
+
 // Trial (ADR-010 step 2): `tear [free|off]` shows or sets anti-tearing (the flush's wait for the panel's scan).
 // RAM only: a reboot restores it
 static bool rc_cmd_tear(int argc, char **argv, char *reply, size_t reply_size) {
@@ -1277,7 +1310,7 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
                     strcmp(cmd, "bnoreset") == 0 || strcmp(cmd, "outline") == 0 || strcmp(cmd, "kestrel") == 0 ||
                     strcmp(cmd, "settings") == 0 || strcmp(cmd, "ota") == 0 ||
                     strcmp(cmd, "top") == 0 || strcmp(cmd, "tear") == 0 || strcmp(cmd, "grav") == 0 ||
-                    strcmp(cmd, "trace") == 0;
+                    strcmp(cmd, "trace") == 0 || strcmp(cmd, "layer") == 0;
 
     if (!is_known) {
         return rc_reply(reply, reply_size, false, "@err unknown %s", cmd);
@@ -1405,6 +1438,9 @@ static bool rc_execute_locked(char *line, char *reply, size_t reply_size) {
     }
     if (strcmp(cmd, "trace") == 0) {
         return rc_cmd_trace(argc, argv, reply, reply_size);
+    }
+    if (strcmp(cmd, "layer") == 0) {
+        return rc_cmd_layer(argc, argv, reply, reply_size);
     }
     if (strcmp(cmd, "ota") == 0) {
         return rc_cmd_ota(argc, argv, reply, reply_size);

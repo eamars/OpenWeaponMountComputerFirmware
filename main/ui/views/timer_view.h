@@ -29,6 +29,12 @@ void countdown_timer_settings_summary(char * buf, size_t size, void * ctx);
 esp_err_t load_countdown_timer_config();
 esp_err_t save_countdown_timer_config();
 
+/**
+ * @brief Stop and hide an armed timer, as a tap on its preset does: the level's foreground no longer shows it
+ * (ADR-017). LVGL lock held
+ */
+void countdown_timer_view_disarm();
+
 /** @brief Whether the first shot starts an armed timer */
 bool countdown_timer_start_on_first_shot();
 

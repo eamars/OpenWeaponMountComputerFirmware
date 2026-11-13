@@ -175,7 +175,9 @@ static void band_event_cb(lv_event_t * e) {
 
 
 void level_band_show_timer(bool show) {
-    timer_shown = show;
+    // The band is the timer's only display: without it (another foreground, ADR-017) no timer is shown, so none
+    // is started by a tap on the level or by recoil
+    timer_shown = show && band != NULL;
     if (band != NULL) {
         update_visibility();
         if (show) {
@@ -376,6 +378,29 @@ void level_band_create(lv_obj_t * overlay, countdown_timer_t * timer) {
     level_band_set_rotation(system_config.rotation);
     level_band_refresh_dope();
     update_visibility();
+}
+
+
+void level_band_delete(void) {
+    if (band == NULL) {
+        return;
+    }
+    lv_obj_delete(band);  // everything in it too; the time label leaves the hardware button's group with it
+    band = NULL;
+    timer_bar = NULL;
+    header_row = NULL;
+    name_label = NULL;
+    info_label = NULL;
+    time_label = NULL;
+    value_row = NULL;
+    elevation_group = NULL;
+    elevation_label = NULL;
+    unit_label = NULL;
+    wind_group = NULL;
+    wind_label = NULL;
+    gust_label = NULL;
+    timer_shown = false;
+    // The current target is kept: the band built again shows the same one
 }
 
 

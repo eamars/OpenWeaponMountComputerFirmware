@@ -18,6 +18,8 @@
 #include "sensor_calibration_view.h"
 #include "low_power_mode.h"
 
+#include "widgets/tileview/lv_tileview_private.h"  // lv_tileview_tile_t.dir (not in lvgl.h)
+
 #define TAG "MainTileView"
 
 
@@ -91,6 +93,15 @@ lv_obj_t * main_tileview_jump_to(lv_obj_t * tile) {
 }
 
 
+void main_tileview_set_tile_dir(lv_obj_t * tile, lv_dir_t dir) {
+    // The tile view takes a tile's directions when it becomes the active one; the active tile's are set at once
+    ((lv_tileview_tile_t *) tile)->dir = dir;
+    if (lv_tileview_get_tile_active(main_tileview) == tile) {
+        lv_obj_set_scroll_dir(main_tileview, dir);
+    }
+}
+
+
 void create_main_tileview(lv_obj_t *parent)
 {
     main_tileview = lv_tileview_create(parent);
@@ -108,7 +119,7 @@ void create_main_tileview(lv_obj_t *parent)
     create_countdown_timer_config_view(tile_countdown_timer_config_view);
     lv_obj_add_event_cb(tile_countdown_timer_config_view, countdown_timer_rotation_event_callback, LV_EVENT_SIZE_CHANGED, NULL);
 
-    // Digital level view (main tile)
+    // Digital level view (main tile). The view takes away the swipes its foreground has no use for (ADR-017)
     lv_obj_t * tile_digital_level_view = lv_tileview_add_tile(main_tileview, 2, 1, LV_DIR_VER | LV_DIR_RIGHT);
     lv_obj_set_user_data(tile_digital_level_view, enable_digital_level_view_controller);
     create_digital_level_view(tile_digital_level_view);
@@ -150,8 +161,8 @@ void create_main_tileview(lv_obj_t *parent)
     create_sensor_calibration_view(tile_sensor_calibration_view);
 
     // Configuration view (Swiped right from digital level view). Every setting it shows is read at start-up, so it
-    // does not depend on the other views being created first
-    lv_obj_t * tile_config_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_HOR);
+    // does not depend on the other views being created first. The last column: the only swipe is back to the level
+    lv_obj_t * tile_config_view = lv_tileview_add_tile(main_tileview, 3, 1, LV_DIR_LEFT);
     create_config_view(tile_config_view);
 
     // Switch to the default view
