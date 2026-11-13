@@ -14,6 +14,11 @@
 // All calls with the LVGL lock held, unless said otherwise.
 
 void level_band_create(lv_obj_t * overlay, countdown_timer_t * timer);
+/**
+ * @brief Delete the band (the level's foreground is another one, ADR-017). Every other call here is safe without a
+ * band and shows nothing; the timer cannot be shown until the band is created again
+ */
+void level_band_delete(void);
 void level_band_set_rotation(lv_display_rotation_t rotation);
 
 /** @brief The card or the target names changed: show the current target again */

@@ -34,8 +34,11 @@ typedef struct {
     // size and the level's zero survives the update
     bool reserved_was_auto_move_dope_card;
 
-    // Type of digital level view
+    // The background (ADR-017; "level style" before it)
     digital_level_view_type_t level_style;
+
+    // Appended (ADR-017): settings saved before it load as they were, the zero included, with the default here
+    uint8_t foreground;         // level_foreground_type_t
 
 } digital_level_view_config_t;
 
@@ -60,6 +63,13 @@ void update_digital_level_view(float roll_rad, float pitch_rad);
 void update_roll_deg_indicator(float roll_rad);
 
 void digital_level_view_rotation_event_callback(lv_event_t * e);
+
+/**
+ * @brief Show another background or foreground without saving it (the remote control's `layer`, ADR-017). False
+ * when there is no such one. LVGL lock held
+ */
+bool digital_level_view_show_background(int background);
+bool digital_level_view_show_foreground(int foreground);
 
 // Shared state, defined in digital_level_view.c
 extern digital_level_view_config_t digital_level_view_config;

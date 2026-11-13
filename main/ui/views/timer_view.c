@@ -127,6 +127,13 @@ static void disarm_timer() {
 }
 
 
+void countdown_timer_view_disarm() {
+    if (selected_preset >= 0) {
+        disarm_timer();
+    }
+}
+
+
 static void preset_clicked_cb(lv_event_t * e) {
     int preset = (int) (intptr_t) lv_event_get_user_data(e);
 

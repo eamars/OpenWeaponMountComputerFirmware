@@ -93,6 +93,7 @@ REPLY_PREFIXES = {
     "ota": "@ok ota",
     "top": "@ok top",
     "trace": "@ok trace",
+    "layer": "@ok layer",
 }
 FAILURE_MARKERS = (
     RESET_MARKER,
@@ -121,6 +122,12 @@ KEEP_AWAKE_S = 20.0       # re-select the home tile this often during long dwell
 WATCH_PERIOD_S = 10.0     # watch scenario: one `state` check this often
 READY_DRAIN_S = 1.0       # after the first answer, replies to earlier probes may still arrive
 FINAL_PUMP_S = 5.0        # keep reading this long after a scenario's last command
+# The level tile's layers (ADR-017), by their stored numbers (digital_level_view_controller.h)
+LAYER_BACKGROUNDS = 4     # Level, Block, Chevrons, Off
+LAYER_FOREGROUNDS = 2     # Match, Off
+LAYER_TOUR_ROUNDS = 3
+LAYER_TOUR_DWELL_S = 2.0
+LAYER_TOUR_MAX_LOSS_BYTES = 1024    # free internal RAM may end this much lower than it started
 
 
 class NetPort:
@@ -887,7 +894,44 @@ def scenario_level_motion(session: Session):
     if summary["windows"] < LEVEL_MOTION_MIN_WINDOWS:
         session.failures.append(f"only {summary['windows']} redrawing windows in {LEVEL_MOTION_RECORD_S:.0f} s")
 
+def free_internal(session: Session) -> int:
+    """Free internal RAM from a stats reading now, or -1 without one."""
+    match = re.search(r"free_int=(\d+)", session.command("stats"))
+    return int(match.group(1)) if match else -1
+
+
+def scenario_layer_tour(session: Session):
+    """Every pair of the level tile's background and foreground, LAYER_TOUR_ROUNDS times (ADR-017).
+
+    A layer that is not chosen is freed, so free internal RAM must come back to where it started. Run it with
+    --min-largest-dma 70000. The pair the unit showed is put back at the end (`layer` saves nothing).
+    """
+    session.command("wake")
+    session.command(f"tile {HOME_TILE[0]} {HOME_TILE[1]}")
+    own = re.search(r"bg=(\d+) fg=(\d+)", session.command("layer"))
+    session.pump(LAYER_TOUR_DWELL_S)
+    start = free_internal(session)
+    for _ in range(LAYER_TOUR_ROUNDS):
+        for foreground in range(LAYER_FOREGROUNDS):
+            session.command(f"layer fg {foreground}")
+            for background in range(LAYER_BACKGROUNDS):
+                session.command(f"layer bg {background}")
+                session.pump(LAYER_TOUR_DWELL_S)
+                session.stats()
+    if own:
+        session.command(f"layer bg {own.group(1)}")
+        session.command(f"layer fg {own.group(2)}")
+    session.pump(LAYER_TOUR_DWELL_S)
+    end = free_internal(session)
+    print(f"READING free_int start={start} end={end}")
+    if start < 0 or end < 0:
+        session.failures.append("no free_int reading")
+    elif end < start - LAYER_TOUR_MAX_LOSS_BYTES:
+        session.failures.append(f"free_int {end} ended more than {LAYER_TOUR_MAX_LOSS_BYTES} below its start {start}")
+
+
 SCENARIOS = {
+    "layer_tour": scenario_layer_tour,
     "state_change": scenario_state_change,
     "rotation_sweep": scenario_rotation_sweep,
     "watch": scenario_watch,

@@ -14,6 +14,12 @@ void create_main_tileview(lv_obj_t *parent);
  */
 lv_obj_t * main_tileview_jump_to(lv_obj_t * tile);
 
+/**
+ * @brief The directions a tile can be swiped away in, changed after the tile was added: a neighbour that has no use
+ * in the unit's present state is not offered (ADR-017). Call with the LVGL lock held.
+ */
+void main_tileview_set_tile_dir(lv_obj_t * tile, lv_dir_t dir);
+
 // Shared state, defined in main_tileview.c
 extern lv_obj_t * main_tileview;
 extern lv_obj_t * default_tile;
